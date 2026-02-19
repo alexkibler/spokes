@@ -1,0 +1,23 @@
+{
+  "name": "paper-peloton",
+  "version": "0.1.0",
+  "description": "2D Cycling Simulator – Phaser 3 + TypeScript + FTMS Bluetooth",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "phaser": "^3.88.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "@types/web-bluetooth": "^0.0.20",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vitest": "^3.0.5"
+  }
+}
