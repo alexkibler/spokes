@@ -34,6 +34,8 @@ export const CONTROL_POINT_UUID = 'fitness_machine_control_point';
 // ─── Control Point Op Codes (FTMS spec §4.16.1) ──────────────────────────────
 
 const OP_REQUEST_CONTROL = 0x00;
+/** Start or Resume – begins/resumes the workout session on the server */
+const OP_START_RESUME = 0x07;
 /** Set Indoor Bike Simulation Parameters – sends wind, grade, Crr, CWA */
 const OP_SET_INDOOR_BIKE_SIMULATION = 0x11;
 
@@ -153,6 +155,10 @@ export class TrainerService implements ITrainerService {
   private controlGranted = false;
   private dataCallback: ((data: Partial<TrainerData>) => void) | null = null;
 
+  // Store the most recent simulation parameters in case they are sent 
+  // before the trainer is ready (e.g. during the connection handshake).
+  private pendingParams: { grade: number; crr: number; cwa: number } | null = null;
+
   async connect(): Promise<void> {
     this.device = await navigator.bluetooth.requestDevice({
       filters: [{ services: [FTMS_SERVICE_UUID] }],
@@ -238,14 +244,28 @@ export class TrainerService implements ITrainerService {
    * At sea level with CdA = 0.325 m²: CWA = 0.5 × 1.225 × 0.325 ≈ 0.199 → 20
    */
   async setSimulationParams(grade: number, crr: number, cwa: number): Promise<void> {
-    if (!this.controlPoint || !this.controlGranted) return;
+    if (!this.controlPoint) return;
+
+    // Always store the latest params so we can (re)sync once control is ready
+    this.pendingParams = { grade, crr, cwa };
+
+    if (!this.controlGranted) {
+      console.log('[TrainerService] Queuing simulation params (waiting for control)');
+      return;
+    }
+
     const buf = new DataView(new ArrayBuffer(7));
     buf.setUint8(0, OP_SET_INDOOR_BIKE_SIMULATION);
     buf.setInt16(1, 0, true);                                             // wind speed: 0
     buf.setInt16(3, Math.round(grade * 10000), true);                     // grade in 0.01% units
     buf.setUint8(5, Math.min(255, Math.round(crr / 0.0001)));             // Crr
     buf.setUint8(6, Math.min(255, Math.round(cwa / 0.01)));               // CWA
-    await this.controlPoint.writeValueWithResponse(buf.buffer);
+    
+    try {
+      await this.controlPoint.writeValueWithResponse(buf.buffer);
+    } catch (err) {
+      console.error('[TrainerService] Failed to set simulation params:', err);
+    }
   }
 
   // ── Private event handlers ─────────────────────────────────────────────────
@@ -272,8 +292,22 @@ export class TrainerService implements ITrainerService {
     if (view.byteLength >= 3 && view.getUint8(0) === 0x80) {
       const opCode = view.getUint8(1);
       const result = view.getUint8(2);
+
       if (opCode === OP_REQUEST_CONTROL && result === 0x01) {
+        console.log('[TrainerService] Control granted. Starting session...');
         this.controlGranted = true;
+        // Automatically start/resume session once control is granted.
+        // This ensures the trainer exits any default pause/erg modes.
+        void this.controlPoint.writeValueWithResponse(
+          new Uint8Array([OP_START_RESUME]).buffer,
+        );
+      } else if (opCode === OP_START_RESUME && result === 0x01) {
+        console.log('[TrainerService] Workout session started.');
+        // Once the session is active, sync the initial simulation state
+        if (this.pendingParams) {
+          const { grade, crr, cwa } = this.pendingParams;
+          void this.setSimulationParams(grade, crr, cwa);
+        }
       }
     }
   };

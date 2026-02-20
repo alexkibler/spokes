@@ -31,8 +31,6 @@ export const DEFAULT_PHYSICS: PhysicsConfig = {
 };
 
 const G = 9.80665; // m/s²
-const BISECT_ITERATIONS = 64;
-const BISECT_TOLERANCE = 0.001; // m/s
 
 /**
  * Compute the forces and resulting acceleration (m/s²) for a given power and velocity.
@@ -66,54 +64,6 @@ export function calculateAcceleration(
   const netForce = propulsionForce - (aeroForce + rollingForce + gradeForce);
 
   return netForce / massKg;
-}
-
-/**
- * Compute the steady-state velocity (m/s) for a given power output.
- * If power is 0, this returns the terminal velocity (e.g. coasting downhill).
- */
-export function powerToVelocityMs(
-  powerW: number,
-  config: PhysicsConfig = DEFAULT_PHYSICS,
-): number {
-  const { massKg, cdA, rhoAir, crr, grade } = config;
-  const theta = Math.atan(grade);
-  const cosTheta = Math.cos(theta);
-  const sinTheta = Math.sin(theta);
-
-  // F_net(v) = P/v - (½ρCdA·v² + Crr·m·g·cosθ + m·g·sinθ)
-  // We want to find v where F_net(v) = 0, or P = (½ρCdA·v² + Crr·m·g·cosθ + m·g·sinθ) * v
-  const powerRequiredAtV = (v: number): number => {
-    const aeroForce = 0.5 * rhoAir * cdA * v * v;
-    const rollingForce = crr * massKg * G * cosTheta;
-    const gradeForce = massKg * G * sinTheta;
-    return (aeroForce + rollingForce + gradeForce) * v;
-  };
-
-  // If powerW is 0, we are looking for the velocity where gravity balances rolling resistance and drag.
-  // If the hill is flat or uphill, this is 0.
-  // If downhill, gravity might overcome rolling resistance.
-
-  // Bisection: find v in [lo, hi] such that powerRequiredAtV(v) ≈ powerW
-  let lo = 0;
-  let hi = 40; // ~144 km/h
-
-  // Ensure hi is a valid upper bound for positive power or steep descents
-  while (powerRequiredAtV(hi) < powerW) {
-    hi *= 2;
-  }
-
-  for (let i = 0; i < BISECT_ITERATIONS; i++) {
-    const mid = (lo + hi) / 2;
-    if (hi - lo < BISECT_TOLERANCE) break;
-    if (powerRequiredAtV(mid) < powerW) {
-      lo = mid;
-    } else {
-      hi = mid;
-    }
-  }
-
-  return (lo + hi) / 2;
 }
 
 /** Convert m/s to km/h */

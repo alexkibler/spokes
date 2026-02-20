@@ -162,8 +162,8 @@ export class GameScene extends Phaser.Scene {
   private distanceM = 0;                // total cumulative distance
   private currentGrade = 0;
   private currentSurface: SurfaceType = 'asphalt';
-  private lastSentGrade = 0;
-  private lastSentSurface: SurfaceType = 'asphalt';
+  private lastSentGrade = -999;
+  private lastSentSurface: SurfaceType = 'asphalt'; // will be overridden by first sync
   private smoothGrade = 0;
 
   // World container (holds all parallax layers; rotated for grade tilt)
@@ -392,8 +392,8 @@ export class GameScene extends Phaser.Scene {
     this.currentGrade     = 0;
     this.currentSurface   = 'asphalt';
     this.smoothGrade      = 0;
-    this.lastSentGrade    = 0;
-    this.lastSentSurface  = 'asphalt';
+    this.lastSentGrade    = -999;
+    this.lastSentSurface  = '' as any;
     this.latestPower      = 200;
     this.crankAngle       = 0;
     this.cadenceHistory   = [];
@@ -472,19 +472,6 @@ export class GameScene extends Phaser.Scene {
       this.trainer.onData((data) => this.handleData(data));
       this.isDemoMode = false;
       this.setStatus('ok', 'BT CONNECTED');
-      // Sync simulation params immediately so the trainer receives the starting conditions
-      if (this.trainer.setSimulationParams) {
-        // FTMS trainers assume a ~75kg (165lb) default rider. 
-        // We scale the Crr up so the physical hardware applies the correct 
-        // rolling resistance force for a heavier rider.
-        const assumedTrainerMass = 83; // 75kg + 8kg bike
-        const effectiveCrr = this.physicsConfig.crr * (this.physicsConfig.massKg / assumedTrainerMass);
-        
-        const cwa = 0.5 * this.physicsConfig.rhoAir * this.physicsConfig.cdA;
-        void this.trainer.setSimulationParams(this.smoothGrade, effectiveCrr, cwa);
-        this.lastSentGrade   = this.smoothGrade;
-        this.lastSentSurface = this.currentSurface;
-      }
     } else {
       // No BT trainer → demo mode with mock data
       this.trainer = new MockTrainerService({ power: 200, speed: 30, cadence: 90 });
