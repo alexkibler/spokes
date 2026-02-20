@@ -25,7 +25,7 @@ import { MockTrainerService } from '../services/MockTrainerService';
 import { HeartRateService } from '../services/HeartRateService';
 import type { HeartRateData } from '../services/HeartRateService';
 import {
-  powerToVelocityMs,
+  calculateAcceleration,
   msToKmh,
   msToMph,
   DEFAULT_PHYSICS,
@@ -110,9 +110,6 @@ function computeKnee(
 /** Pixels scrolled per (m/s) of velocity — road layer multiplier */
 const WORLD_SCALE = 50; // px/(m/s)
 
-/** Velocity smoothing time constant (higher = faster response) */
-const LERP_FACTOR = 1.5;
-
 /** Minimum grade delta before broadcasting to the trainer (avoids BT spam) */
 const GRADE_SEND_THRESHOLD = 0.001; // 0.1%
 
@@ -155,7 +152,6 @@ export class GameScene extends Phaser.Scene {
 
   // Physics state
   private latestPower = 200;
-  private targetVelocityMs = 0;
   private smoothVelocityMs = 0;
   /** Base config (mass + aero constants) – grade is layered on top each frame. */
   private basePhysics: PhysicsConfig = { ...DEFAULT_PHYSICS };
@@ -381,13 +377,18 @@ export class GameScene extends Phaser.Scene {
     this.preConnectedHrm     = data?.hrm     ?? null;
 
     // Bike weight is fixed; rider weight comes from the menu (default 75 kg)
-    const massKg = (data?.weightKg ?? 75) + 8; // +8 kg for the bike
-    this.basePhysics = { ...DEFAULT_PHYSICS, massKg };
+    const riderWeightKg = data?.weightKg ?? 75;
+    const massKg = riderWeightKg + 8; // +8 kg for the bike
+
+    // Scale CdA: larger riders push more air. 
+    // A common physics approximation is scaling by (mass / baseline)^0.66
+    const cdA = 0.325 * Math.pow(riderWeightKg / 75, 0.66);
+
+    this.basePhysics = { ...DEFAULT_PHYSICS, massKg, cdA };
 
     // Reset per-ride state so restarts start fresh
     this.distanceM        = 0;
     this.smoothVelocityMs = 0;
-    this.targetVelocityMs = 0;
     this.currentGrade     = 0;
     this.currentSurface   = 'asphalt';
     this.smoothGrade      = 0;
@@ -473,8 +474,14 @@ export class GameScene extends Phaser.Scene {
       this.setStatus('ok', 'BT CONNECTED');
       // Sync simulation params immediately so the trainer receives the starting conditions
       if (this.trainer.setSimulationParams) {
+        // FTMS trainers assume a ~75kg (165lb) default rider. 
+        // We scale the Crr up so the physical hardware applies the correct 
+        // rolling resistance force for a heavier rider.
+        const assumedTrainerMass = 83; // 75kg + 8kg bike
+        const effectiveCrr = this.physicsConfig.crr * (this.physicsConfig.massKg / assumedTrainerMass);
+        
         const cwa = 0.5 * this.physicsConfig.rhoAir * this.physicsConfig.cdA;
-        void this.trainer.setSimulationParams(this.smoothGrade, this.physicsConfig.crr, cwa);
+        void this.trainer.setSimulationParams(this.smoothGrade, effectiveCrr, cwa);
         this.lastSentGrade   = this.smoothGrade;
         this.lastSentSurface = this.currentSurface;
       }
@@ -558,16 +565,27 @@ export class GameScene extends Phaser.Scene {
     ) {
       this.lastSentGrade   = this.smoothGrade;
       this.lastSentSurface = this.currentSurface;
+      
+      // FTMS trainers assume a ~75kg (165lb) default rider. 
+      // We scale the Crr up so the physical hardware applies the correct 
+      // rolling resistance force for a heavier rider.
+      const assumedTrainerMass = 83; // 75kg + 8kg bike
+      const effectiveCrr = this.physicsConfig.crr * (this.physicsConfig.massKg / assumedTrainerMass);
+      
       const cwa = 0.5 * this.physicsConfig.rhoAir * this.physicsConfig.cdA;
-      void this.trainer.setSimulationParams(this.smoothGrade, this.physicsConfig.crr, cwa);
+      
+      void this.trainer.setSimulationParams(this.smoothGrade, effectiveCrr, cwa);
     }
 
     // ── Physics ─────────────────────────────────────────────────────────────
-    this.targetVelocityMs = powerToVelocityMs(this.latestPower, this.physicsConfig);
+    const acceleration = calculateAcceleration(this.latestPower, this.smoothVelocityMs, this.physicsConfig);
 
-    // Smooth velocity toward target
-    this.smoothVelocityMs +=
-      (this.targetVelocityMs - this.smoothVelocityMs) * dt * LERP_FACTOR;
+    this.smoothVelocityMs += acceleration * dt;
+
+    // Safety: prevent the bike from rolling backward on flat ground
+    if (this.smoothVelocityMs < 0) {
+      this.smoothVelocityMs = 0;
+    }
 
     // ── Parallax scroll ──────────────────────────────────────────────────────
     const baseScroll = this.smoothVelocityMs * WORLD_SCALE * dt;
