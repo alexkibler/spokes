@@ -44,21 +44,16 @@ type EffectType = 'headwind' | 'tailwind';
 
 interface ActiveEffect {
   type: EffectType;
-  durationMs: number;
-  remainingMs: number;
 }
-
-const EFFECT_DURATION_MS = 60_000; // 1 minute
 
 const EFFECT_META: Record<EffectType, {
   label: string;
-  sub: string;
   multiplier: number;
   color: number;
   hexColor: string;
 }> = {
-  headwind: { label: 'HEADWIND!', sub: '× ½ POWER  |  60s', multiplier: 0.5, color: 0xff5544, hexColor: '#ff5544' },
-  tailwind: { label: 'TAILWIND!', sub: '× 2 POWER  |  60s', multiplier: 2,   color: 0xffcc00, hexColor: '#ffcc00' },
+  headwind: { label: 'HEADWIND', multiplier: 0.5, color: 0xff5544, hexColor: '#ff5544' },
+  tailwind: { label: 'TAILWIND', multiplier: 2,   color: 0xffcc00, hexColor: '#ffcc00' },
 };
 
 // ─── IK helper ────────────────────────────────────────────────────────────────
@@ -166,14 +161,17 @@ export class GameScene extends Phaser.Scene {
 
   // Effect / powerup state
   private activeEffect: ActiveEffect | null = null;
-  private nextEffectMs = 0;   // countdown until next random effect (ms)
   private rawPower     = 200; // unmodified power from trainer
 
-  // Effect indicator UI
+  // Effect indicator UI (unused or repurposed for status)
   private effectContainer!:   Phaser.GameObjects.Container;
   private effectArcGraphics!: Phaser.GameObjects.Graphics;
   private effectNameText!:    Phaser.GameObjects.Text;
   private effectSecsText!:    Phaser.GameObjects.Text;
+
+  // Manual effect buttons
+  private btnHeadwind!: Phaser.GameObjects.Rectangle;
+  private btnTailwind!: Phaser.GameObjects.Rectangle;
 
   // Notification banner UI
   private notifContainer!: Phaser.GameObjects.Container;
@@ -242,7 +240,6 @@ export class GameScene extends Phaser.Scene {
     this.avgCadence       = 0;
     this.rawPower         = 200;
     this.activeEffect     = null;
-    this.nextEffectMs     = 0;
     this.physicsConfig    = { ...this.basePhysics };
   }
 
@@ -268,6 +265,7 @@ export class GameScene extends Phaser.Scene {
     this.buildElevationGraph();
     this.buildBottomControls();
     this.buildEffectUI();
+    this.buildManualEffectButtons();
 
     // Start in demo mode with 200 W so the world scrolls immediately
     this.trainer = new MockTrainerService({ power: 200, speed: 30, cadence: 90 });
@@ -275,17 +273,10 @@ export class GameScene extends Phaser.Scene {
     void this.trainer.connect();
     this.updateDemoButtonStyle();
     this.setStatus('demo', 'DEMO');
-
-    // Always start with a random effect so it's easy to demo/test
-    const startEffect: EffectType = Math.random() < 0.5 ? 'headwind' : 'tailwind';
-    this.triggerEffect(startEffect);
   }
 
   update(_time: number, delta: number): void {
     const dt = delta / 1000; // seconds
-
-    // ── Effect ticking ───────────────────────────────────────────────────────
-    this.updateEffectTick(delta);
 
     // ── Grade from course ────────────────────────────────────────────────────
     this.distanceM += this.smoothVelocityMs * dt;
@@ -1106,43 +1097,82 @@ export class GameScene extends Phaser.Scene {
 
   // ── Effect / powerup system ───────────────────────────────────────────────
 
-  private buildEffectUI(): void {
-    const RADIUS = 34;
-    const cx = 860;
-    const cy = 135;
+  private buildManualEffectButtons(): void {
+    const x = 860;
+    const yHead = 120;
+    const yTail = 170;
 
-    // ── Circular countdown indicator ────────────────────────────────────────
+    this.btnHeadwind = this.add
+      .rectangle(x, yHead, 100, 34, 0x444444)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(15);
+    this.add
+      .text(x, yHead, 'HEADWIND', {
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5)
+      .setDepth(16);
+
+    this.btnTailwind = this.add
+      .rectangle(x, yTail, 100, 34, 0x444444)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(15);
+    this.add
+      .text(x, yTail, 'TAILWIND', {
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5)
+      .setDepth(16);
+
+    this.btnHeadwind.on('pointerdown', () => this.toggleEffect('headwind'));
+    this.btnTailwind.on('pointerdown', () => this.toggleEffect('tailwind'));
+
+    this.updateEffectButtonStyles();
+  }
+
+  private toggleEffect(type: EffectType): void {
+    if (this.activeEffect?.type === type) {
+      this.clearEffect();
+    } else {
+      this.triggerEffect(type);
+    }
+    this.updateEffectButtonStyles();
+  }
+
+  private updateEffectButtonStyles(): void {
+    const isHead = this.activeEffect?.type === 'headwind';
+    const isTail = this.activeEffect?.type === 'tailwind';
+
+    this.btnHeadwind.setFillStyle(isHead ? 0xff5544 : 0x444444);
+    this.btnTailwind.setFillStyle(isTail ? 0xffcc00 : 0x444444);
+  }
+
+  private buildEffectUI(): void {
+    // Keep container for text/notification, but arc logic is removed
+    const cx = 860;
+    const cy = 230; // Move down a bit
+
     this.effectContainer = this.add.container(cx, cy).setDepth(15).setAlpha(0);
 
     const bgGfx = this.add.graphics();
     bgGfx.fillStyle(0x000000, 0.65);
-    bgGfx.fillCircle(0, 0, RADIUS + 8);
+    bgGfx.fillCircle(0, 0, 42);
     this.effectContainer.add(bgGfx);
 
-    this.effectArcGraphics = this.add.graphics();
-    this.effectContainer.add(this.effectArcGraphics);
-
     this.effectNameText = this.add
-      .text(0, -9, '', {
+      .text(0, 0, '', {
         fontFamily: 'monospace',
-        fontSize: '9px',
+        fontSize: '11px',
         fontStyle: 'bold',
         color: '#ffffff',
         align: 'center',
       })
       .setOrigin(0.5);
     this.effectContainer.add(this.effectNameText);
-
-    this.effectSecsText = this.add
-      .text(0, 10, '', {
-        fontFamily: 'monospace',
-        fontSize: '18px',
-        fontStyle: 'bold',
-        color: '#ffffff',
-        align: 'center',
-      })
-      .setOrigin(0.5);
-    this.effectContainer.add(this.effectSecsText);
 
     // ── Notification banner ─────────────────────────────────────────────────
     this.notifContainer = this.add.container(W / 2, 200).setDepth(20).setAlpha(0);
@@ -1178,30 +1208,24 @@ export class GameScene extends Phaser.Scene {
   private triggerEffect(type: EffectType): void {
     const meta = EFFECT_META[type];
 
-    this.activeEffect = {
-      type,
-      durationMs: EFFECT_DURATION_MS,
-      remainingMs: EFFECT_DURATION_MS,
-    };
+    this.activeEffect = { type };
 
-    // Show circular countdown indicator
+    // Show indicator
     this.effectContainer.setAlpha(1);
     this.effectNameText
-      .setText(type === 'headwind' ? 'HEAD\nWIND' : 'TAIL\nWIND')
+      .setText(type === 'headwind' ? 'ACTIVE:\nHEADWIND' : 'ACTIVE:\nTAILWIND')
       .setColor(meta.hexColor);
-    this.effectSecsText.setText('60');
-    this.drawEffectArc();
 
-    // Show notification banner, then fade it out
-    this.notifTitle.setText(meta.label).setColor(meta.hexColor);
-    this.notifSub.setText(meta.sub);
+    // Show notification banner
+    this.notifTitle.setText(meta.label + '!').setColor(meta.hexColor);
+    this.notifSub.setText(`x${meta.multiplier} POWER MULTIPLIER`);
     if (this.notifTween) this.notifTween.stop();
     this.notifContainer.setAlpha(1);
     this.notifTween = this.tweens.add({
       targets: this.notifContainer,
       alpha: 0,
-      delay: 3200,
-      duration: 700,
+      delay: 2000,
+      duration: 500,
       ease: 'Power2',
     });
 
@@ -1211,51 +1235,15 @@ export class GameScene extends Phaser.Scene {
   private clearEffect(): void {
     this.activeEffect = null;
     this.effectContainer.setAlpha(0);
-    // Schedule next effect in 20–40 seconds
-    this.nextEffectMs = 20_000 + Math.random() * 20_000;
     this.updatePowerDisplay();
   }
 
-  private updateEffectTick(delta: number): void {
-    if (this.activeEffect) {
-      this.activeEffect.remainingMs -= delta;
-      if (this.activeEffect.remainingMs <= 0) {
-        this.clearEffect();
-        return;
-      }
-      this.effectSecsText.setText(String(Math.ceil(this.activeEffect.remainingMs / 1000)));
-      this.drawEffectArc();
-    } else if (this.nextEffectMs > 0) {
-      this.nextEffectMs -= delta;
-      if (this.nextEffectMs <= 0) {
-        this.nextEffectMs = 0;
-        const type: EffectType = Math.random() < 0.5 ? 'headwind' : 'tailwind';
-        this.triggerEffect(type);
-      }
-    }
+  private updateEffectTick(_delta: number): void {
+    // No-op for manual mode
   }
 
   private drawEffectArc(): void {
-    if (!this.activeEffect) return;
-
-    const g        = this.effectArcGraphics;
-    const radius   = 34;
-    const meta     = EFFECT_META[this.activeEffect.type];
-    const fraction = this.activeEffect.remainingMs / this.activeEffect.durationMs;
-
-    g.clear();
-
-    // Background ring
-    g.lineStyle(5, 0x333333, 0.8);
-    g.strokeCircle(0, 0, radius);
-
-    // Remaining-time arc (sweeps clockwise from 12 o'clock, depletes over time)
-    const startAngle = -Math.PI / 2;
-    const endAngle   = startAngle + fraction * Math.PI * 2;
-    g.lineStyle(5, meta.color, 1);
-    g.beginPath();
-    g.arc(0, 0, radius, startAngle, endAngle, false);
-    g.strokePath();
+    // No-op for manual mode
   }
 
   private updatePowerDisplay(): void {
