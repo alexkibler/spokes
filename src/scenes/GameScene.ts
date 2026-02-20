@@ -35,6 +35,41 @@ import {
   type ElevationSample,
 } from '../course/CourseProfile';
 
+// ─── IK helper ────────────────────────────────────────────────────────────────
+
+/**
+ * Computes the knee joint position for a two-bone leg chain.
+ * @param kneeSide  -1 → knee bends "forward" (right leg); +1 → "backward" (left leg)
+ */
+function computeKnee(
+  hipX: number, hipY: number,
+  footX: number, footY: number,
+  upperLen: number, lowerLen: number,
+  kneeSide: 1 | -1,
+): [number, number] {
+  const dx = footX - hipX;
+  const dy = footY - hipY;
+  const dist = Math.hypot(dx, dy);
+  const total = upperLen + lowerLen;
+
+  if (dist >= total - 0.01) {
+    // Fully extended – place knee proportionally along the line
+    const t = upperLen / total;
+    return [hipX + dx * t, hipY + dy * t];
+  }
+
+  // Law of cosines: angle at the hip
+  const cosA = (dist * dist + upperLen * upperLen - lowerLen * lowerLen)
+    / (2 * dist * upperLen);
+  const angleA = Math.acos(Math.max(-1, Math.min(1, cosA)));
+  const kneeAngle = Math.atan2(dy, dx) + kneeSide * angleA;
+
+  return [
+    hipX + Math.cos(kneeAngle) * upperLen,
+    hipY + Math.sin(kneeAngle) * upperLen,
+  ];
+}
+
 // ─── Layout constants ──────────────────────────────────────────────────────────
 
 const W = 960;
@@ -91,6 +126,12 @@ export class GameScene extends Phaser.Scene {
   // World container (holds all parallax layers; rotated for grade tilt)
   private worldContainer!: Phaser.GameObjects.Container;
 
+  // Cyclist animation
+  private cyclistGraphics!: Phaser.GameObjects.Graphics;
+  private crankAngle = 0;
+  private cadenceHistory: Array<{ rpm: number; timeMs: number }> = [];
+  private avgCadence = 0;
+
   private elevationSamples: ElevationSample[] = [];
   private minElevM = 0;
   private maxElevM = 0;
@@ -135,6 +176,7 @@ export class GameScene extends Phaser.Scene {
     this.maxElevM = Math.max(...this.elevationSamples.map((s) => s.elevationM));
 
     this.buildParallaxLayers();
+    this.buildCyclist();
 
     // Pre-seed grade so the world starts already tilted at the correct angle
     this.currentGrade = getGradeAtDistance(this.course, 0);
@@ -203,6 +245,17 @@ export class GameScene extends Phaser.Scene {
     this.hudSpeed.setText(msToKmh(this.smoothVelocityMs).toFixed(1));
     this.updateGradeDisplay(this.currentGrade);
     this.hudDistance.setText((this.distanceM / 1000).toFixed(2));
+
+    // ── Cyclist animation ────────────────────────────────────────────────────
+    // Average cadence over rolling 3-second window
+    const now = Date.now();
+    const recent = this.cadenceHistory.filter((h) => now - h.timeMs <= 3000);
+    if (recent.length > 0) {
+      this.avgCadence = recent.reduce((sum, h) => sum + h.rpm, 0) / recent.length;
+    }
+    // Advance crank: avgCadence rpm → revolutions per second → radians per second
+    this.crankAngle += (this.avgCadence / 60) * 2 * Math.PI * dt;
+    this.drawCyclist();
 
     // ── Elevation graph ──────────────────────────────────────────────────────
     this.drawElevationGraph(wrappedDist);
@@ -339,6 +392,167 @@ export class GameScene extends Phaser.Scene {
     for (let x = 0; x < W; x += dashW + gapW) {
       g.fillRect(x, lineY, dashW, lineH);
     }
+  }
+
+  // ── Cyclist ───────────────────────────────────────────────────────────────
+
+  /**
+   * Road surface in worldContainer space:
+   *   worldContainer origin = screen (480, 270)
+   *   road top drawn at screen y=420 → container y = 420 − 270 = 150
+   */
+  private static readonly CYC_GROUND_Y = 150;
+  private static readonly WHEEL_R      = 18;
+
+  private buildCyclist(): void {
+    // Add AFTER all parallax layers so the cyclist renders on top
+    this.cyclistGraphics = this.add.graphics();
+    this.worldContainer.add(this.cyclistGraphics);
+  }
+
+  private drawCyclist(): void {
+    const g  = this.cyclistGraphics;
+    g.clear();
+
+    const gY   = GameScene.CYC_GROUND_Y;
+    const wR   = GameScene.WHEEL_R;
+    const axleY = gY - wR;  // = 132 in container space
+
+    // ── Key bike coordinates (worldContainer space, x=0 is screen centre) ──
+    const rearX   = -22;     // rear axle x
+    const frontX  =  26;     // front axle x
+    const crankX  =   0;     // bottom bracket x
+    const crankY  = axleY;   // bottom bracket at axle height
+    const crankLen =  9;     // crank arm length (px)
+
+    // Frame geometry
+    const seatX  = -5;  const seatY  = axleY - 35;  // saddle top
+    const hbarX  = 22;  const hbarY  = axleY - 33;  // handlebar grip
+
+    // Rider body
+    const hipX      = -2;  const hipY      = axleY - 30;  // hip joint
+    const shoulderX = 14;  const shoulderY = axleY - 43;  // shoulder
+    const headX     = 22;  const headY     = axleY - 53;  // head centre
+    const headR     =  7;
+
+    // Leg segment lengths
+    const upperLen = 22;
+    const lowerLen = 19;
+
+    // ── Foot positions (pedal endpoints rotate with crankAngle) ─────────────
+    const rA  = this.crankAngle;
+    const lA  = this.crankAngle + Math.PI;
+    const rFX = crankX + Math.cos(rA) * crankLen;
+    const rFY = crankY + Math.sin(rA) * crankLen;
+    const lFX = crankX + Math.cos(lA) * crankLen;
+    const lFY = crankY + Math.sin(lA) * crankLen;
+
+    // ── Knee positions via two-bone IK ───────────────────────────────────────
+    // kneeSide -1 → knee bends forward (right/near leg)
+    // kneeSide +1 → knee bends backward (left/far leg)
+    const [rKX, rKY] = computeKnee(hipX, hipY, rFX, rFY, upperLen, lowerLen, -1);
+    const [lKX, lKY] = computeKnee(hipX, hipY, lFX, lFY, upperLen, lowerLen,  1);
+
+    // ── Palette (paper-cutout aesthetic matching the game) ───────────────────
+    const BIKE   = 0x2a2018;   // charcoal for frame & wheels
+    const JERSEY = 0x5a3a1a;   // dark kraft brown for torso & helmet
+    const SKIN   = 0xc49a6a;   // warm paper tone for head & arms
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Draw order: far leg → wheels/frame → near leg → body → head
+    // ════════════════════════════════════════════════════════════════════════
+
+    // ── Far leg (left, behind bike) ──────────────────────────────────────────
+    g.lineStyle(4, BIKE, 0.38);
+    g.beginPath();
+    g.moveTo(hipX, hipY);
+    g.lineTo(lKX, lKY);
+    g.lineTo(lFX, lFY);
+    g.strokePath();
+    g.fillStyle(BIKE, 0.38);
+    g.fillRect(lFX - 5, lFY - 1.5, 10, 3);  // far pedal
+
+    // ── Rear wheel ───────────────────────────────────────────────────────────
+    g.lineStyle(3, BIKE, 1);
+    g.strokeCircle(rearX, axleY, wR);
+    g.lineStyle(1.5, BIKE, 0.45);
+    g.strokeCircle(rearX, axleY, wR * 0.55);  // inner rim
+    g.fillStyle(BIKE, 1);
+    g.fillCircle(rearX, axleY, 2.5);           // hub
+
+    // ── Frame ────────────────────────────────────────────────────────────────
+    g.lineStyle(3, BIKE, 1);
+    // Chain stay: rear axle → bottom bracket
+    g.beginPath(); g.moveTo(rearX, axleY); g.lineTo(crankX, crankY + 2); g.strokePath();
+    // Seat tube: BB → saddle
+    g.beginPath(); g.moveTo(crankX, crankY); g.lineTo(seatX, seatY); g.strokePath();
+    // Top tube: saddle → handlebars
+    g.beginPath(); g.moveTo(seatX, seatY); g.lineTo(hbarX, hbarY); g.strokePath();
+    // Down tube: head-tube area → BB
+    g.beginPath(); g.moveTo(hbarX - 2, hbarY + 8); g.lineTo(crankX, crankY); g.strokePath();
+    // Fork: handlebars → front axle
+    g.beginPath(); g.moveTo(hbarX, hbarY); g.lineTo(frontX, axleY); g.strokePath();
+    // Saddle rail
+    g.lineStyle(4, BIKE, 1);
+    g.beginPath(); g.moveTo(seatX - 6, seatY); g.lineTo(seatX + 8, seatY); g.strokePath();
+
+    // ── Front wheel ──────────────────────────────────────────────────────────
+    g.lineStyle(3, BIKE, 1);
+    g.strokeCircle(frontX, axleY, wR);
+    g.lineStyle(1.5, BIKE, 0.45);
+    g.strokeCircle(frontX, axleY, wR * 0.55);
+    g.fillStyle(BIKE, 1);
+    g.fillCircle(frontX, axleY, 2.5);
+
+    // ── Crank arms ───────────────────────────────────────────────────────────
+    g.lineStyle(3, BIKE, 1);
+    g.beginPath(); g.moveTo(crankX, crankY); g.lineTo(rFX, rFY); g.strokePath();
+    g.lineStyle(2.5, BIKE, 0.5);
+    g.beginPath(); g.moveTo(crankX, crankY); g.lineTo(lFX, lFY); g.strokePath();
+    // Chainring
+    g.lineStyle(2, BIKE, 0.7);
+    g.strokeCircle(crankX, crankY, 6);
+
+    // ── Near leg (right, in front of bike) ───────────────────────────────────
+    g.lineStyle(5, BIKE, 1);
+    g.beginPath();
+    g.moveTo(hipX, hipY);
+    g.lineTo(rKX, rKY);
+    g.lineTo(rFX, rFY);
+    g.strokePath();
+    g.fillStyle(BIKE, 1);
+    g.fillRect(rFX - 5, rFY - 1.5, 10, 3);  // near pedal
+
+    // ── Rider body ───────────────────────────────────────────────────────────
+    // Torso (filled quad)
+    g.fillStyle(JERSEY, 1);
+    g.fillPoints([
+      { x: hipX - 2,      y: hipY },
+      { x: hipX + 5,      y: hipY - 2 },
+      { x: shoulderX,     y: shoulderY },
+      { x: shoulderX - 5, y: shoulderY + 4 },
+    ], true);
+
+    // Arms reaching to handlebars
+    g.lineStyle(3, SKIN, 1);
+    g.beginPath();
+    g.moveTo(shoulderX - 1, shoulderY + 2);
+    g.lineTo(hbarX, hbarY + 1);
+    g.strokePath();
+
+    // Head
+    g.fillStyle(SKIN, 1);
+    g.fillCircle(headX, headY, headR);
+
+    // Helmet cap
+    g.fillStyle(JERSEY, 1);
+    g.fillPoints([
+      { x: headX - headR + 1, y: headY },
+      { x: headX - headR + 1, y: headY - headR * 0.5 },
+      { x: headX,             y: headY - headR - 2 },
+      { x: headX + headR,     y: headY - headR * 0.5 },
+      { x: headX + headR,     y: headY },
+    ], true);
   }
 
   // ── HUD (top strip – 5 metrics) ───────────────────────────────────────────
@@ -687,6 +901,12 @@ export class GameScene extends Phaser.Scene {
     }
     if (data.instantaneousCadence !== undefined) {
       this.hudCadence.setText(String(Math.round(data.instantaneousCadence)));
+      // Track rolling cadence history for the pedaling animation
+      const ts = Date.now();
+      this.cadenceHistory.push({ rpm: data.instantaneousCadence, timeMs: ts });
+      // Trim entries older than 5 seconds (keeps the array small)
+      const cutoff = ts - 5000;
+      this.cadenceHistory = this.cadenceHistory.filter((h) => h.timeMs > cutoff);
     }
   }
 
