@@ -49,6 +49,7 @@ export class MapScene extends Phaser.Scene {
   private weightKg = 75;
   private trainer: ITrainerService | null = null;
   private hrm: HeartRateService | null = null;
+  private isDevMode = false;
 
   private mapContainer!: Phaser.GameObjects.Container;
   private graphics!: Phaser.GameObjects.Graphics;
@@ -68,11 +69,13 @@ export class MapScene extends Phaser.Scene {
     units: Units;
     trainer: ITrainerService | null;
     hrm: HeartRateService | null;
+    isDevMode?: boolean;
   }): void {
     this.weightKg = data.weightKg;
     this.units = data.units;
     this.trainer = data.trainer;
     this.hrm = data.hrm;
+    this.isDevMode = data.isDevMode ?? false;
 
     const run = RunStateManager.getRun();
     if (run && run.nodes.length === 0) {
@@ -111,7 +114,7 @@ export class MapScene extends Phaser.Scene {
 
   private updateGoldUI(): void {
     const run = RunStateManager.getRun();
-    if (!run) return;
+    if (!run || !this.sys.isActive()) return;
 
     if (!this.goldText) {
       this.goldText = this.add.text(this.scale.width - 20, 20, `GOLD: ${run.gold}`, {
@@ -127,6 +130,7 @@ export class MapScene extends Phaser.Scene {
   }
 
   private onResize(): void {
+    if (!this.sys.isActive()) return;
     this.mapContainer.setPosition(0, 0);
     this.drawMap();
     this.updateGoldUI();
@@ -514,7 +518,8 @@ export class MapScene extends Phaser.Scene {
         units: this.units,
         trainer: this.trainer,
         hrm: this.hrm,
-        isRoguelike: true
+        isRoguelike: true,
+        isDevMode: this.isDevMode
       });
     }
   }
@@ -605,5 +610,9 @@ export class MapScene extends Phaser.Scene {
     closeBtn.on('pointerdown', () => overlay.destroy());
     closeBtn.on('pointerover', () => closeBtn.setFillStyle(0x666666));
     closeBtn.on('pointerout', () => closeBtn.setFillStyle(0x444444));
+  }
+
+  shutdown(): void {
+    this.scale.off('resize', this.onResize, this);
   }
 }

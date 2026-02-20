@@ -128,6 +128,10 @@ export class MenuScene extends Phaser.Scene {
   private devicesSection!: Phaser.GameObjects.Container;
   private startBtnContainer!: Phaser.GameObjects.Container;
 
+  // ── Dev Mode ──────────────────────────────────────────────────────────────
+  private isDevMode = false;
+  private devModeToggle!: Phaser.GameObjects.Container;
+
   constructor() {
     super({ key: 'MenuScene' });
   }
@@ -149,6 +153,10 @@ export class MenuScene extends Phaser.Scene {
     this.buildRunLengthSection();
     this.buildDevicesSection();
     this.buildStartButton();
+
+    if (import.meta.env.DEV) {
+      this.buildDevToggle();
+    }
 
     this.scale.on('resize', this.onResize, this);
     this.onResize();
@@ -186,6 +194,9 @@ export class MenuScene extends Phaser.Scene {
 
     // Row 4: Start buttons
     if (this.startBtnContainer) this.startBtnContainer.setPosition(cx, height - 60);
+
+    // Dev Toggle
+    if (this.devModeToggle) this.devModeToggle.setPosition(width - 120, 30);
   }
 
   update(_time: number, delta: number): void {
@@ -751,6 +762,28 @@ export class MenuScene extends Phaser.Scene {
     });
   }
 
+  private buildDevToggle(): void {
+    this.devModeToggle = this.add.container(0, 0);
+
+    const btn = this.add.rectangle(0, 0, 100, 24, this.isDevMode ? 0x224422 : 0x444444)
+      .setInteractive({ useHandCursor: true });
+    
+    const txt = this.add.text(0, 0, this.isDevMode ? 'DEV MODE: ON' : 'DEV MODE: OFF', {
+      fontFamily: 'monospace', fontSize: '10px', 
+      color: this.isDevMode ? '#00ff00' : '#aaaaaa', 
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+
+    this.devModeToggle.add([btn, txt]);
+
+    btn.on('pointerdown', () => {
+      this.isDevMode = !this.isDevMode;
+      txt.setText(this.isDevMode ? 'DEV MODE: ON' : 'DEV MODE: OFF');
+      txt.setColor(this.isDevMode ? '#00ff00' : '#aaaaaa');
+      btn.setFillStyle(this.isDevMode ? 0x224422 : 0x444444);
+    });
+  }
+
   // ── Start / Demo buttons ───────────────────────────────────────────────────
 
   private buildStartButton(): void {
@@ -781,6 +814,7 @@ export class MenuScene extends Phaser.Scene {
         units:    this.units,
         trainer:  null,           // null → GameScene uses MockTrainerService
         hrm:      this.hrmService,
+        isDevMode: false,         // Force false for Quick Demo
       });
     });
 
@@ -794,9 +828,28 @@ export class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.startBtnContainer.add([runBtn, runTxt]);
 
-    runBtn.on('pointerover', () => runBtn.setFillStyle(0xcc8800));
-    runBtn.on('pointerout',  () => runBtn.setFillStyle(0x8b5a00));
+    runBtn.on('pointerover', () => {
+      if (runTxt.text !== 'TRAINER REQUIRED') runBtn.setFillStyle(0xcc8800);
+    });
+    runBtn.on('pointerout',  () => {
+      if (runTxt.text !== 'TRAINER REQUIRED') runBtn.setFillStyle(0x8b5a00);
+    });
     runBtn.on('pointerdown', () => {
+      if (!this.trainerService && !this.isDevMode) {
+        // Warn user
+        const originalText = '▶  START RUN';
+        const originalColor = 0x8b5a00;
+        
+        runTxt.setText('TRAINER REQUIRED');
+        runBtn.setFillStyle(0xa82222);
+        
+        this.time.delayedCall(1500, () => {
+          runTxt.setText(originalText);
+          runBtn.setFillStyle(originalColor);
+        });
+        return;
+      }
+
       RunStateManager.startNewRun(
         RUN_LENGTHS[this.runLength].floors,
         this.difficulty
@@ -806,6 +859,7 @@ export class MenuScene extends Phaser.Scene {
         units:    this.units,
         trainer:  this.trainerService,
         hrm:      this.hrmService,
+        isDevMode: this.isDevMode,
       });
     });
 
@@ -819,9 +873,28 @@ export class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.startBtnContainer.add([startBtn, startTxt]);
 
-    startBtn.on('pointerover', () => startBtn.setFillStyle(0x00d4b8));
-    startBtn.on('pointerout',  () => startBtn.setFillStyle(0x00a892));
+    startBtn.on('pointerover', () => {
+      if (startTxt.text !== 'TRAINER REQUIRED') startBtn.setFillStyle(0x00d4b8);
+    });
+    startBtn.on('pointerout',  () => {
+      if (startTxt.text !== 'TRAINER REQUIRED') startBtn.setFillStyle(0x00a892);
+    });
     startBtn.on('pointerdown', () => {
+      if (!this.trainerService && !this.isDevMode) {
+        // Warn user
+        const originalText = '▶  START RIDE';
+        const originalColor = 0x00a892;
+        
+        startTxt.setText('TRAINER REQUIRED');
+        startBtn.setFillStyle(0xa82222);
+        
+        this.time.delayedCall(1500, () => {
+          startTxt.setText(originalText);
+          startBtn.setFillStyle(originalColor);
+        });
+        return;
+      }
+
       const course = generateCourseProfile(
         this.distanceKm,
         DIFF[this.difficulty].maxGrade,
@@ -832,6 +905,7 @@ export class MenuScene extends Phaser.Scene {
         units:    this.units,
         trainer:  this.trainerService, // may be null → demo mode in GameScene
         hrm:      this.hrmService,
+        isDevMode: this.isDevMode,
       });
     });
   }

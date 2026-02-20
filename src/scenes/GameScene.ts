@@ -148,6 +148,7 @@ export class GameScene extends Phaser.Scene {
   private units: Units = 'imperial';
   private weightKg = 75;
   private isRoguelike = false;
+  private isDevMode = false;
 
   // Service reference – swapped when toggling demo mode
   private trainer!: ITrainerService;
@@ -416,8 +417,28 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
+    // If Roguelike mode, use the shared writer. Otherwise create a new one for this session.
+    if (this.isRoguelike) {
+      const run = RunStateManager.getRun();
+      if (run) {
+        if (!run.fitWriter) {
+          // Fallback if not initialized (e.g. legacy/error)
+          run.fitWriter = new FitWriter(Date.now());
+        }
+        this.fitWriter = run.fitWriter;
+      } else {
+        // Fallback safety
+        this.fitWriter = new FitWriter(Date.now());
+      }
+    } else {
+      this.rideStartTime = Date.now();
+      this.fitWriter     = new FitWriter(this.rideStartTime);
+    }
+    
+    // Ensure we track start time for this segment either way? 
+    // Actually if using shared writer, timestamps must be continuous.
+    // FitWriter expects unix timestamps. 
     this.rideStartTime = Date.now();
-    this.fitWriter     = new FitWriter(this.rideStartTime);
     this.lastRecordMs  = this.rideStartTime;
 
     // These arrays accumulate across restarts because the scene instance is
@@ -478,8 +499,19 @@ export class GameScene extends Phaser.Scene {
       this.trainer.onData((data) => this.handleData(data));
       this.isDemoMode = false;
       this.setStatus('ok', 'BT CONNECTED');
+    } else if (this.isDevMode) {
+      // Dev Mode: Mock trainer with fixed high power
+      const mock = new MockTrainerService({ power: 1000, speed: 45, cadence: 95 });
+      this.trainer = mock;
+      // Also explicitly set it to be sure
+      mock.setPower(1000);
+      this.trainer.onData((data) => this.handleData(data));
+      void this.trainer.connect();
+      // Important: isDemoMode = false ensures we don't randomise metrics in update()
+      this.isDemoMode = false;
+      this.setStatus('demo', 'DEV (1000W)');
     } else {
-      // No BT trainer → demo mode with mock data
+      // No BT trainer → demo mode with mock data (randomised)
       this.trainer = new MockTrainerService({ power: 200, speed: 30, cadence: 90 });
       this.trainer.onData((data) => this.handleData(data));
       void this.trainer.connect();
@@ -1203,6 +1235,8 @@ export class GameScene extends Phaser.Scene {
   // ── Data handling ─────────────────────────────────────────────────────────
 
   private handleData(data: Partial<TrainerData>): void {
+    if (!this.sys.isActive()) return;
+
     if (data.instantaneousPower !== undefined) {
       this.rawPower = data.instantaneousPower;
       this.updatePowerDisplay();
@@ -1219,6 +1253,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleHrmData(data: HeartRateData): void {
+    if (!this.sys.isActive()) return;
     this.currentHR = Math.round(data.bpm);
     if (this.hudHR) {
       this.hudHR.setText(String(this.currentHR));
@@ -1565,20 +1600,20 @@ export class GameScene extends Phaser.Scene {
       this.add.text(cx, py + 80, `+ ${totalGold} GOLD EARNED`, {
         fontFamily: mono, fontSize: '16px', fontStyle: 'bold', color: '#ffcc00',
       }).setOrigin(0.5, 0).setDepth(depth + 2);
+    } else {
+      // Divider only if not roguelike (or we want to show prompt for single rides)
+      const divGfx = this.add.graphics().setDepth(depth + 1);
+      divGfx.lineStyle(1, 0x333355, 1);
+      divGfx.beginPath();
+      divGfx.moveTo(px + 20, py + 84);
+      divGfx.lineTo(px + panW - 20, py + 84);
+      divGfx.strokePath();
+
+      // Prompt text
+      this.add.text(cx, py + 96, 'Save your ride data?', {
+        fontFamily: mono, fontSize: '11px', color: '#888899', letterSpacing: 2,
+      }).setOrigin(0.5, 0).setDepth(depth + 2);
     }
-
-    // Divider
-    const divGfx = this.add.graphics().setDepth(depth + 1);
-    divGfx.lineStyle(1, 0x333355, 1);
-    divGfx.beginPath();
-    divGfx.moveTo(px + 20, py + 84);
-    divGfx.lineTo(px + panW - 20, py + 84);
-    divGfx.strokePath();
-
-    // Prompt text
-    this.add.text(cx, py + 96, 'Save your ride data?', {
-      fontFamily: mono, fontSize: '11px', color: '#888899', letterSpacing: 2,
-    }).setOrigin(0.5, 0).setDepth(depth + 2);
 
     // ── Buttons ──────────────────────────────────────────────────────────
     const btnY    = py + panH - 38;
@@ -1605,6 +1640,7 @@ export class GameScene extends Phaser.Scene {
             units: this.units,
             trainer: this.trainer,
             hrm: this.preConnectedHrm,
+            isDevMode: this.isDevMode,
           });
         });
     } else {

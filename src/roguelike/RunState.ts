@@ -6,6 +6,7 @@
  */
 
 import type { CourseSegment } from '../course/CourseProfile';
+import { FitWriter } from '../fit/FitWriter';
 
 export type NodeType = 'start' | 'standard' | 'hard' | 'shop' | 'finish';
 
@@ -33,6 +34,7 @@ export interface RunData {
   edges: MapEdge[];
   runLength: number; // Total floors
   difficulty: 'easy' | 'medium' | 'hard';
+  fitWriter: FitWriter;
 }
 
 /** Global singleton or context-managed state for the current run */
@@ -48,6 +50,7 @@ export class RunStateManager {
       edges: [],
       runLength,
       difficulty,
+      fitWriter: new FitWriter(Date.now()),
     };
     return this.instance;
   }
