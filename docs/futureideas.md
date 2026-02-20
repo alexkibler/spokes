@@ -10,3 +10,6 @@ have it be like a roguelike with a branching map. So you are biking from point t
 bugs:
 coasting still not working at 0% grade. and riding still way too easy at 0% but maybe that's a me problem?
 coasting seems to work fine at -5% though. 
+
+
+boss battles? 

@@ -24,6 +24,7 @@ import type { ITrainerService, TrainerData } from '../services/ITrainerService';
 import { MockTrainerService } from '../services/MockTrainerService';
 import { HeartRateService } from '../services/HeartRateService';
 import type { HeartRateData } from '../services/HeartRateService';
+import { RunStateManager } from '../roguelike/RunState';
 import {
   calculateAcceleration,
   msToKmh,
@@ -145,6 +146,8 @@ interface LayerDef {
 export class GameScene extends Phaser.Scene {
   // Unit preference passed from MenuScene
   private units: Units = 'imperial';
+  private weightKg = 75;
+  private isRoguelike = false;
 
   // Service reference – swapped when toggling demo mode
   private trainer!: ITrainerService;
@@ -369,12 +372,15 @@ export class GameScene extends Phaser.Scene {
     trainer?: ITrainerService | null;
     /** Pre-connected heart rate monitor from MenuScene; null → no HR display. */
     hrm?: HeartRateService | null;
+    isRoguelike?: boolean;
   }): void {
     // Accept a generated course, rider weight, and unit preference from MenuScene
     this.course = data?.course ?? DEFAULT_COURSE;
     this.units  = data?.units  ?? 'imperial';
+    this.weightKg = data?.weightKg ?? 75;
     this.preConnectedTrainer = data?.trainer ?? null;
     this.preConnectedHrm     = data?.hrm     ?? null;
+    this.isRoguelike         = data?.isRoguelike ?? false;
 
     // Bike weight is fixed; rider weight comes from the menu (default 75 kg)
     const riderWeightKg = data?.weightKg ?? 75;
@@ -484,6 +490,14 @@ export class GameScene extends Phaser.Scene {
     // ── Heart rate monitor setup ──────────────────────────────────────────
     if (this.preConnectedHrm) {
       this.preConnectedHrm.onData((data) => this.handleHrmData(data));
+    }
+
+    // ── Roguelike Inventory Effects ───────────────────────────────────────
+    if (this.isRoguelike) {
+      const run = RunStateManager.getRun();
+      if (run && run.inventory.includes('tailwind')) {
+        this.triggerEffect('tailwind');
+      }
     }
   }
 
@@ -1535,6 +1549,24 @@ export class GameScene extends Phaser.Scene {
       fontFamily: mono, fontSize: '12px', color: '#cccccc', letterSpacing: 1,
     }).setOrigin(0.5, 0).setDepth(depth + 2);
 
+    // Roguelike Gold Reward
+    if (this.isRoguelike && completed) {
+      let gradeSum = 0;
+      let crrSum = 0;
+      this.course.segments.forEach(seg => {
+        gradeSum += Math.max(0, seg.grade);
+        crrSum += getCrrForSurface(seg.surface) / getCrrForSurface('asphalt');
+      });
+      const avgGrade = gradeSum / this.course.segments.length;
+      const avgCrrMult = crrSum / this.course.segments.length;
+      const totalGold = Math.round(50 + (avgGrade * 100 * 10) + (avgCrrMult - 1) * 50);
+      RunStateManager.addGold(totalGold);
+
+      this.add.text(cx, py + 80, `+ ${totalGold} GOLD EARNED`, {
+        fontFamily: mono, fontSize: '16px', fontStyle: 'bold', color: '#ffcc00',
+      }).setOrigin(0.5, 0).setDepth(depth + 2);
+    }
+
     // Divider
     const divGfx = this.add.graphics().setDepth(depth + 1);
     divGfx.lineStyle(1, 0x333355, 1);
@@ -1553,45 +1585,69 @@ export class GameScene extends Phaser.Scene {
     const btnW    = 150;
     const btnH    = 36;
     const gap     = 16;
-    const dlX     = cx - btnW - gap / 2;
-    const menuX   = cx + gap / 2;
+    
+    if (this.isRoguelike && completed) {
+      const contX = cx - btnW / 2;
+      const contBtn = this.add.rectangle(contX, btnY, btnW, btnH, 0x8b5a00)
+        .setOrigin(0, 0.5)
+        .setInteractive({ useHandCursor: true })
+        .setDepth(depth + 2);
+      this.add.text(contX + btnW / 2, btnY, 'CONTINUE RUN', {
+        fontFamily: mono, fontSize: '11px', fontStyle: 'bold', color: '#ffffff',
+      }).setOrigin(0.5, 0.5).setDepth(depth + 3);
 
-    // Download button
-    const dlBtn = this.add.rectangle(dlX, btnY, btnW, btnH, 0x006655)
-      .setOrigin(0, 0.5)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(depth + 2);
-    this.add.text(dlX + btnW / 2, btnY, 'DOWNLOAD .FIT', {
-      fontFamily: mono, fontSize: '11px', fontStyle: 'bold', color: '#00f5d4',
-    }).setOrigin(0.5, 0.5).setDepth(depth + 3);
+      contBtn
+        .on('pointerover', () => contBtn.setFillStyle(0xcc8800))
+        .on('pointerout',  () => contBtn.setFillStyle(0x8b5a00))
+        .on('pointerdown', () => {
+          this.scene.start('MapScene', {
+            weightKg: this.weightKg,
+            units: this.units,
+            trainer: this.trainer,
+            hrm: this.preConnectedHrm,
+          });
+        });
+    } else {
+      const dlX     = cx - btnW - gap / 2;
+      const menuX   = cx + gap / 2;
 
-    dlBtn
-      .on('pointerover', () => dlBtn.setFillStyle(0x009977))
-      .on('pointerout',  () => dlBtn.setFillStyle(0x006655))
-      .on('pointerdown', () => {
-        this.downloadFit();
-        this.trainer.disconnect();
-        this.preConnectedHrm?.disconnect();
-        this.scene.start('MenuScene');
-      });
+      // Download button
+      const dlBtn = this.add.rectangle(dlX, btnY, btnW, btnH, 0x006655)
+        .setOrigin(0, 0.5)
+        .setInteractive({ useHandCursor: true })
+        .setDepth(depth + 2);
+      this.add.text(dlX + btnW / 2, btnY, 'DOWNLOAD .FIT', {
+        fontFamily: mono, fontSize: '11px', fontStyle: 'bold', color: '#00f5d4',
+      }).setOrigin(0.5, 0.5).setDepth(depth + 3);
 
-    // Back to menu button
-    const menuBtn = this.add.rectangle(menuX, btnY, btnW, btnH, 0x2a2a44)
-      .setOrigin(0, 0.5)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(depth + 2);
-    this.add.text(menuX + btnW / 2, btnY, 'SKIP TO MENU', {
-      fontFamily: mono, fontSize: '11px', color: '#8888aa',
-    }).setOrigin(0.5, 0.5).setDepth(depth + 3);
+      dlBtn
+        .on('pointerover', () => dlBtn.setFillStyle(0x009977))
+        .on('pointerout',  () => dlBtn.setFillStyle(0x006655))
+        .on('pointerdown', () => {
+          this.downloadFit();
+          this.trainer.disconnect();
+          this.preConnectedHrm?.disconnect();
+          this.scene.start('MenuScene');
+        });
 
-    menuBtn
-      .on('pointerover', () => menuBtn.setFillStyle(0x4444aa))
-      .on('pointerout',  () => menuBtn.setFillStyle(0x2a2a44))
-      .on('pointerdown', () => {
-        this.trainer.disconnect();
-        this.preConnectedHrm?.disconnect();
-        this.scene.start('MenuScene');
-      });
+      // Back to menu button
+      const menuBtn = this.add.rectangle(menuX, btnY, btnW, btnH, 0x2a2a44)
+        .setOrigin(0, 0.5)
+        .setInteractive({ useHandCursor: true })
+        .setDepth(depth + 2);
+      this.add.text(menuX + btnW / 2, btnY, 'SKIP TO MENU', {
+        fontFamily: mono, fontSize: '11px', color: '#8888aa',
+      }).setOrigin(0.5, 0.5).setDepth(depth + 3);
+
+      menuBtn
+        .on('pointerover', () => menuBtn.setFillStyle(0x4444aa))
+        .on('pointerout',  () => menuBtn.setFillStyle(0x2a2a44))
+        .on('pointerdown', () => {
+          this.trainer.disconnect();
+          this.preConnectedHrm?.disconnect();
+          this.scene.start('MenuScene');
+        });
+    }
   }
 
   private downloadFit(): void {
