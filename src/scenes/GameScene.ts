@@ -19,8 +19,9 @@
 
 import Phaser from 'phaser';
 import type { ITrainerService, TrainerData } from '../services/ITrainerService';
-import { TrainerService } from '../services/TrainerService';
 import { MockTrainerService } from '../services/MockTrainerService';
+import { HeartRateService } from '../services/HeartRateService';
+import type { HeartRateData } from '../services/HeartRateService';
 import {
   powerToVelocityMs,
   msToKmh,
@@ -195,12 +196,17 @@ export class GameScene extends Phaser.Scene {
   private layerNearGround!: Phaser.GameObjects.TileSprite;
   private layerRoad!: Phaser.GameObjects.TileSprite;
 
+  // Pre-connected services passed in from MenuScene
+  private preConnectedTrainer: ITrainerService | null = null;
+  private preConnectedHrm: HeartRateService | null = null;
+
   // HUD display objects
   private hudSpeed!: Phaser.GameObjects.Text;
   private hudPower!: Phaser.GameObjects.Text;
   private hudCadence!: Phaser.GameObjects.Text;
   private hudGrade!: Phaser.GameObjects.Text;
   private hudDistance!: Phaser.GameObjects.Text;
+  private hudHR!: Phaser.GameObjects.Text;
 
   // Elevation graph
   private elevationGraphics!: Phaser.GameObjects.Graphics;
@@ -210,10 +216,6 @@ export class GameScene extends Phaser.Scene {
   // Status / button objects
   private statusDot!: Phaser.GameObjects.Arc;
   private statusLabel!: Phaser.GameObjects.Text;
-  private btnDemo!: Phaser.GameObjects.Rectangle;
-  private btnDemoLabel!: Phaser.GameObjects.Text;
-  private btnConnect!: Phaser.GameObjects.Rectangle;
-  private btnConnectLabel!: Phaser.GameObjects.Text;
   private btnMenu!: Phaser.GameObjects.Rectangle;
   private btnMenuLabel!: Phaser.GameObjects.Text;
 
@@ -257,35 +259,23 @@ export class GameScene extends Phaser.Scene {
       this.cycGroundY = height * (ROAD_TOP_FRAC - 0.5);
     }
 
-    // 2. Update HUD
+    // 2. Update HUD (6 columns)
     if (this.hudBackground) {
       this.hudBackground.clear();
       this.hudBackground.fillStyle(0x000000, 0.55);
       this.hudBackground.fillRect(0, 0, width, 70);
 
-      // Reposition separators
-      const sepWidth = width / 5;
+      const colW   = width / 6;
+      const getX   = (i: number) => i * colW + colW / 2;
+      const sepW   = colW;
+
       this.hudSeps.forEach((sep, i) => {
         sep.clear();
         sep.fillStyle(0x444455, 1);
-        sep.fillRect((i + 1) * sepWidth, 8, 1, 54);
+        sep.fillRect((i + 1) * sepW, 8, 1, 54);
       });
 
-      // Update positions for each metric (5 columns)
-      const colW = width / 5;
-      const getX = (colIdx: number) => colIdx * colW + colW / 2;
-
-      // This is a bit manual but necessary for the 5-column layout
-      // Speed (col 0)
-      this.updateHUDColumn(0, getX(0));
-      // Grade (col 1)
-      this.updateHUDColumn(1, getX(1));
-      // Power (col 2 - center)
-      this.updateHUDColumn(2, getX(2));
-      // Distance (col 3)
-      this.updateHUDColumn(3, getX(3));
-      // Cadence (col 4)
-      this.updateHUDColumn(4, getX(4));
+      for (let i = 0; i < 6; i++) this.updateHUDColumn(i, getX(i));
     }
 
     // 3. Update Elevation Graph
@@ -312,24 +302,13 @@ export class GameScene extends Phaser.Scene {
       this.bottomStrip.fillStyle(0x000000, 0.50);
       this.bottomStrip.fillRect(0, height - 50, width, 50);
 
-      // Status indicator
       const stY = height - 25;
-      if (this.statusDot) this.statusDot.setPosition(56, stY);
+      if (this.statusDot)   this.statusDot.setPosition(56, stY);
       if (this.statusLabel) this.statusLabel.setPosition(68, stY);
 
-      // Buttons (Demo, Connect, Menu)
-      const btnY = height - 25;
-      if (this.btnDemo) {
-        this.btnDemo.setPosition(cx - 110, btnY);
-        this.btnDemoLabel.setPosition(cx - 110, btnY);
-      }
-      if (this.btnConnect) {
-        this.btnConnect.setPosition(cx + 80, btnY);
-        if (this.btnConnectLabel) this.btnConnectLabel.setPosition(cx + 80, btnY);
-      }
       if (this.btnMenu) {
-        this.btnMenu.setPosition(width - 90, btnY);
-        if (this.btnMenuLabel) this.btnMenuLabel.setPosition(width - 90, btnY);
+        this.btnMenu.setPosition(width - 90, stY);
+        if (this.btnMenuLabel) this.btnMenuLabel.setPosition(width - 90, stY);
       }
     }
 
@@ -355,10 +334,20 @@ export class GameScene extends Phaser.Scene {
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
 
-  init(data?: { course?: CourseProfile; weightKg?: number; units?: Units }): void {
+  init(data?: {
+    course?: CourseProfile;
+    weightKg?: number;
+    units?: Units;
+    /** Pre-connected FTMS trainer from MenuScene; null → use MockTrainerService. */
+    trainer?: ITrainerService | null;
+    /** Pre-connected heart rate monitor from MenuScene; null → no HR display. */
+    hrm?: HeartRateService | null;
+  }): void {
     // Accept a generated course, rider weight, and unit preference from MenuScene
     this.course = data?.course ?? DEFAULT_COURSE;
     this.units  = data?.units  ?? 'imperial';
+    this.preConnectedTrainer = data?.trainer ?? null;
+    this.preConnectedHrm     = data?.hrm     ?? null;
 
     // Bike weight is fixed; rider weight comes from the menu (default 75 kg)
     const massKg = (data?.weightKg ?? 75) + 8; // +8 kg for the bike
@@ -409,12 +398,31 @@ export class GameScene extends Phaser.Scene {
     // Initial layout pass
     this.onResize();
 
-    // Start in demo mode with 200 W so the world scrolls immediately
-    this.trainer = new MockTrainerService({ power: 200, speed: 30, cadence: 90 });
-    this.trainer.onData((data) => this.handleData(data));
-    void this.trainer.connect();
-    this.updateDemoButtonStyle();
-    this.setStatus('demo', 'DEMO');
+    // ── Trainer setup ─────────────────────────────────────────────────────
+    if (this.preConnectedTrainer) {
+      // Use the pre-connected BT trainer passed from MenuScene
+      this.trainer = this.preConnectedTrainer;
+      this.trainer.onData((data) => this.handleData(data));
+      this.isDemoMode = false;
+      this.setStatus('ok', 'BT CONNECTED');
+      // Sync grade immediately so the trainer receives the starting grade
+      if (this.trainer.setGrade) {
+        void this.trainer.setGrade(this.smoothGrade);
+        this.lastSentGrade = this.smoothGrade;
+      }
+    } else {
+      // No BT trainer → demo mode with mock data
+      this.trainer = new MockTrainerService({ power: 200, speed: 30, cadence: 90 });
+      this.trainer.onData((data) => this.handleData(data));
+      void this.trainer.connect();
+      this.isDemoMode = true;
+      this.setStatus('demo', 'DEMO');
+    }
+
+    // ── Heart rate monitor setup ──────────────────────────────────────────
+    if (this.preConnectedHrm) {
+      this.preConnectedHrm.onData((data) => this.handleHrmData(data));
+    }
   }
 
   update(_time: number, delta: number): void {
@@ -791,7 +799,8 @@ export class GameScene extends Phaser.Scene {
   private buildHUD(): void {
     this.hudBackground = this.add.graphics().setDepth(10);
 
-    for (let i = 0; i < 4; i++) {
+    // 6 columns → 5 separators
+    for (let i = 0; i < 5; i++) {
       this.hudSeps.push(this.add.graphics().setDepth(10));
     }
 
@@ -814,17 +823,24 @@ export class GameScene extends Phaser.Scene {
       letterSpacing: 3,
     };
 
-    // Columns: 0=Speed, 1=Grade, 2=Power, 3=Dist, 4=Cadence
-    const labels = ['SPEED', 'GRADE', 'POWER', 'DIST', 'CADENCE'];
-    const units = [this.units === 'imperial' ? 'mph' : 'km/h', '', 'W', this.units === 'imperial' ? 'mi' : 'km', 'rpm'];
+    // Columns: 0=Speed, 1=Grade, 2=Power, 3=Dist, 4=Cadence, 5=HR
+    const labels = ['SPEED', 'GRADE', 'POWER', 'DIST', 'CADENCE', 'HR'];
+    const units  = [
+      this.units === 'imperial' ? 'mph' : 'km/h',
+      '',
+      'W',
+      this.units === 'imperial' ? 'mi' : 'km',
+      'rpm',
+      'bpm',
+    ];
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 6; i++) {
       const lbl = this.add.text(0, 7, labels[i], labelStyle).setOrigin(0.5, 0).setDepth(11);
       this.hudLabels.push(lbl);
 
       let val: Phaser.GameObjects.Text;
       if (i === 2) {
-        // Power column special styling
+        // Power column – teal accent + sub-labels
         val = this.add.text(0, 19, '---', {
           fontFamily: 'monospace',
           fontSize: '28px',
@@ -839,18 +855,26 @@ export class GameScene extends Phaser.Scene {
           fontSize: '9px',
           color: '#888888',
         }).setOrigin(0.5, 1).setDepth(11).setAlpha(0);
+      } else if (i === 5) {
+        // HR column – pink accent
+        val = this.add.text(0, 19, '---', valueBig('#ff88aa')).setOrigin(0.5, 0).setDepth(11);
+        this.hudHR = val;
       } else {
         val = this.add.text(0, 19, '--.-', valueBig()).setOrigin(0.5, 0).setDepth(11);
-        if (i === 0) this.hudSpeed = val;
-        else if (i === 1) this.hudGrade = val;
+        if (i === 0) this.hudSpeed    = val;
+        else if (i === 1) this.hudGrade    = val;
         else if (i === 3) this.hudDistance = val;
-        else if (i === 4) this.hudCadence = val;
+        else if (i === 4) this.hudCadence  = val;
       }
       this.hudValues.push(val);
 
       if (units[i]) {
-        const u = i === 2 ? this.hudPowerUnit : this.add.text(0, 64, units[i], unitStyle).setOrigin(0.5, 1).setDepth(11);
-        if (i !== 2) this.hudUnits.push(u);
+        if (i === 2) {
+          // Power unit managed separately above
+        } else {
+          const u = this.add.text(0, 64, units[i], unitStyle).setOrigin(0.5, 1).setDepth(11);
+          this.hudUnits.push(u);
+        }
       }
     }
   }
@@ -858,14 +882,17 @@ export class GameScene extends Phaser.Scene {
   private updateHUDColumn(colIdx: number, x: number): void {
     if (this.hudLabels[colIdx]) this.hudLabels[colIdx].setX(x);
     if (this.hudValues[colIdx]) this.hudValues[colIdx].setX(x);
-    
-    // Units are a bit tricky because colIdx 1 doesn't have one
-    if (colIdx === 0) this.hudUnits[0].setX(x);
-    else if (colIdx === 2) {
-      this.hudPowerUnit.setX(x);
-      this.hudRealPower.setX(x);
-    } else if (colIdx === 3) this.hudUnits[1].setX(x);
-    else if (colIdx === 4) this.hudUnits[2].setX(x);
+
+    // hudUnits array (excluding power which is handled separately):
+    //   [0] = speed unit (mph/kmh)  → col 0
+    //   [1] = dist unit  (mi/km)    → col 3
+    //   [2] = cadence    (rpm)      → col 4
+    //   [3] = heart rate (bpm)      → col 5
+    if (colIdx === 0) this.hudUnits[0]?.setX(x);
+    else if (colIdx === 2) { this.hudPowerUnit.setX(x); this.hudRealPower.setX(x); }
+    else if (colIdx === 3) this.hudUnits[1]?.setX(x);
+    else if (colIdx === 4) this.hudUnits[2]?.setX(x);
+    else if (colIdx === 5) this.hudUnits[3]?.setX(x);
   }
 
   // ── Elevation graph ───────────────────────────────────────────────────────
@@ -991,10 +1018,7 @@ export class GameScene extends Phaser.Scene {
 
   private buildBottomControls(): void {
     this.bottomStrip = this.add.graphics().setDepth(10);
-
     this.buildStatusIndicator();
-    this.buildDemoButton();
-    this.buildConnectButton();
     this.buildMenuButton();
   }
 
@@ -1023,52 +1047,6 @@ export class GameScene extends Phaser.Scene {
     this.statusLabel.setText(label).setColor(hex);
   }
 
-  private buildDemoButton(): void {
-    this.btnDemo = this.add
-      .rectangle(0, 0, 150, 34, 0x6b2a6b)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(11);
-
-    this.btnDemoLabel = this.add
-      .text(0, 0, 'DEMO MODE: ON', {
-        fontFamily: 'monospace',
-        fontSize: '12px',
-        color: '#ffffff',
-        letterSpacing: 1,
-      })
-      .setOrigin(0.5)
-      .setDepth(12);
-
-    this.btnDemo
-      .on('pointerover', () =>
-        this.btnDemo.setFillStyle(this.isDemoMode ? 0xaa3aaa : 0x3a3aaa),
-      )
-      .on('pointerout', () => this.updateDemoButtonStyle())
-      .on('pointerdown', () => this.toggleDemoMode());
-  }
-
-  private buildConnectButton(): void {
-    this.btnConnect = this.add
-      .rectangle(0, 0, 150, 34, 0x1a6b3a)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(11);
-
-    this.btnConnectLabel = this.add
-      .text(0, 0, 'BT CONNECT', {
-        fontFamily: 'monospace',
-        fontSize: '12px',
-        color: '#ffffff',
-        letterSpacing: 1,
-      })
-      .setOrigin(0.5)
-      .setDepth(12);
-
-    this.btnConnect
-      .on('pointerover', () => this.btnConnect.setFillStyle(0x25a558))
-      .on('pointerout', () => this.btnConnect.setFillStyle(0x1a6b3a))
-      .on('pointerdown', () => this.connectReal());
-  }
-
   private buildMenuButton(): void {
     this.btnMenu = this.add
       .rectangle(0, 0, 120, 34, 0x3a3a5a)
@@ -1094,60 +1072,6 @@ export class GameScene extends Phaser.Scene {
       });
   }
 
-  private updateDemoButtonStyle(): void {
-    this.btnDemo.setFillStyle(this.isDemoMode ? 0x6b2a6b : 0x2a2a6b);
-    this.btnDemoLabel.setText(this.isDemoMode ? 'DEMO MODE: ON' : 'DEMO MODE: OFF');
-  }
-
-  // ── Mode switching ────────────────────────────────────────────────────────
-
-  private toggleDemoMode(): void {
-    this.isDemoMode = !this.isDemoMode;
-
-    this.trainer.disconnect();
-
-    if (this.isDemoMode) {
-      this.trainer = new MockTrainerService({ power: 200, speed: 30, cadence: 90 });
-      this.trainer.onData((data) => this.handleData(data));
-      void this.trainer.connect();
-      this.setStatus('demo', 'DEMO');
-    } else {
-      this.trainer = new TrainerService();
-      this.trainer.onData((data) => this.handleData(data));
-      this.setStatus('off', 'DISCONNECTED');
-      this.resetReadouts();
-    }
-
-    this.updateDemoButtonStyle();
-  }
-
-  private connectReal(): void {
-    if (this.isDemoMode) {
-      this.isDemoMode = false;
-      this.trainer.disconnect();
-      this.trainer = new TrainerService();
-      this.trainer.onData((data) => this.handleData(data));
-      this.updateDemoButtonStyle();
-    }
-
-    this.setStatus('off', 'CONNECTING…');
-
-    this.trainer
-      .connect()
-      .then(() => {
-        this.setStatus('ok', 'BT CONNECTED');
-        // Sync smooth grade to the trainer immediately on connect
-        if (this.trainer.setGrade) {
-          void this.trainer.setGrade(this.smoothGrade);
-          this.lastSentGrade = this.smoothGrade;
-        }
-      })
-      .catch((err: unknown) => {
-        console.error('[GameScene] Bluetooth connect failed:', err);
-        this.setStatus('err', 'CONNECT FAILED');
-      });
-  }
-
   // ── Data handling ─────────────────────────────────────────────────────────
 
   private handleData(data: Partial<TrainerData>): void {
@@ -1166,18 +1090,12 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private resetReadouts(): void {
-    this.hudPower.setText('---').setColor('#00f5d4');
-    this.hudRealPower.setAlpha(0);
-    this.hudPowerUnit.setAlpha(1);
-    this.hudSpeed.setText('--.-');
-    this.hudCadence.setText('---');
-    this.hudGrade.setText('0.0%');
-    this.hudDistance.setText('0.00');
-    this.rawPower        = 0;
-    this.latestPower     = 0;
-    this.targetVelocityMs = 0;
+  private handleHrmData(data: HeartRateData): void {
+    if (this.hudHR) {
+      this.hudHR.setText(String(Math.round(data.bpm)));
+    }
   }
+
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -1372,5 +1290,6 @@ export class GameScene extends Phaser.Scene {
 
   shutdown(): void {
     this.trainer?.disconnect();
+    this.preConnectedHrm?.disconnect();
   }
 }
