@@ -16,13 +16,17 @@ import { generateCourseProfile, DEFAULT_COURSE } from '../course/CourseProfile';
 import type { ITrainerService } from '../services/ITrainerService';
 import { TrainerService } from '../services/TrainerService';
 import { HeartRateService } from '../services/HeartRateService';
+import { 
+  KM_TO_MI, 
+  MI_TO_KM, 
+  KG_TO_LB, 
+  LB_TO_KG, 
+  formatFixed 
+} from '../utils/UnitConversions';
 
 // ─── Units ────────────────────────────────────────────────────────────────────
 
 export type Units = 'imperial' | 'metric';
-
-const KG_TO_LB  = 2.20462;
-const KM_TO_MI  = 0.621371;
 
 // ─── Difficulty config ────────────────────────────────────────────────────────
 
@@ -47,9 +51,8 @@ const DIFF_ORDER: Difficulty[] = ['easy', 'medium', 'hard'];
 
 // ─── Distance config ──────────────────────────────────────────────────────────
 
-const MIN_KM  =   5;
+const MIN_KM  =   1;
 const MAX_KM  = 200;
-const STEP_KM =   5;
 const PRESETS = [10, 25, 50, 100, 150, 200];
 
 // ─── Weight config ────────────────────────────────────────────────────────────
@@ -67,6 +70,12 @@ export class MenuScene extends Phaser.Scene {
   private units: Units = 'imperial';
 
   private distText!: Phaser.GameObjects.Text;
+  private distInputField!: Phaser.GameObjects.Rectangle;
+  private distInputActive = false;
+  private distInputStr    = '';
+  private distCursorMs    = 0;
+  private distCursorOn    = true;
+
   private weightText!: Phaser.GameObjects.Text;
   private weightInputField!: Phaser.GameObjects.Rectangle;
   private weightInputActive  = false;
@@ -156,12 +165,21 @@ export class MenuScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    if (!this.weightInputActive) return;
-    this.weightCursorMs += delta;
-    if (this.weightCursorMs >= 530) {
-      this.weightCursorMs = 0;
-      this.weightCursorOn = !this.weightCursorOn;
-      this.showWeightInputDisplay();
+    if (this.weightInputActive) {
+      this.weightCursorMs += delta;
+      if (this.weightCursorMs >= 530) {
+        this.weightCursorMs = 0;
+        this.weightCursorOn = !this.weightCursorOn;
+        this.showWeightInputDisplay();
+      }
+    }
+    if (this.distInputActive) {
+      this.distCursorMs += delta;
+      if (this.distCursorMs >= 530) {
+        this.distCursorMs = 0;
+        this.distCursorOn = !this.distCursorOn;
+        this.showDistInputDisplay();
+      }
     }
   }
 
@@ -239,7 +257,6 @@ export class MenuScene extends Phaser.Scene {
   private buildDistanceSection(): void {
     const PW = 385; const PH = 132;
     const CX = PW / 2;
-    const CY = PH / 2;
 
     this.distSection = this.add.container(0, 150);
 
@@ -256,24 +273,42 @@ export class MenuScene extends Phaser.Scene {
     });
     this.distSection.add(label);
 
-    // Step buttons – addIconBtn now adds both the rect AND the text to the container
-    this.addIconBtn(this.distSection, 58, CY - 12, 48, 38, '−', 0x2a2a6b, 0x4444aa, () => {
-      this.distanceKm = Math.max(MIN_KM, this.distanceKm - STEP_KM);
-      this.distText.setText(this.fmtDist(this.distanceKm));
-    });
-    this.addIconBtn(this.distSection, PW - 58, CY - 12, 48, 38, '+', 0x2a2a6b, 0x4444aa, () => {
-      this.distanceKm = Math.min(MAX_KM, this.distanceKm + STEP_KM);
-      this.distText.setText(this.fmtDist(this.distanceKm));
-    });
+    const FIELD_W = 180;
+    const FIELD_H = 46;
+    const fieldCY = 54;
+
+    this.distInputField = this.add
+      .rectangle(CX, fieldCY, FIELD_W, FIELD_H, 0x1a1a3a)
+      .setStrokeStyle(2, 0x3a3a8b, 0.8)
+      .setInteractive({ useHandCursor: true });
+    this.distSection.add(this.distInputField);
 
     // Value display
-    this.distText = this.add.text(CX, CY - 12, this.fmtDist(this.distanceKm), {
+    this.distText = this.add.text(CX, fieldCY, this.fmtDist(this.distanceKm), {
       fontFamily: 'monospace',
-      fontSize:   '32px',
+      fontSize:   '26px',
       color:      '#ffffff',
       fontStyle:  'bold',
     }).setOrigin(0.5);
     this.distSection.add(this.distText);
+
+    const hint = this.add.text(CX, fieldCY + 34, 'click to edit · enter to confirm', {
+      fontFamily: 'monospace',
+      fontSize:   '8px',
+      color:      '#666677',
+    }).setOrigin(0.5);
+    this.distSection.add(hint);
+
+    this.distInputField.on('pointerover', () => {
+      if (!this.distInputActive) this.distInputField.setStrokeStyle(2, 0x5555cc, 1);
+    });
+    this.distInputField.on('pointerout', () => {
+      if (!this.distInputActive) this.distInputField.setStrokeStyle(2, 0x3a3a8b, 0.8);
+    });
+    this.distInputField.on('pointerdown', () => {
+      this.ignoreNextGlobalClick = true;
+      this.startDistEdit();
+    });
 
     // Preset quick-select row
     const presetY = PH - 20;
@@ -358,37 +393,96 @@ export class MenuScene extends Phaser.Scene {
     this.input.on('pointerdown', () => {
       if (this.ignoreNextGlobalClick) { this.ignoreNextGlobalClick = false; return; }
       if (this.weightInputActive) this.commitWeightEdit();
+      if (this.distInputActive)   this.commitDistEdit();
     });
 
     this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
-      if (!this.weightInputActive) return;
-      if (event.key >= '0' && event.key <= '9') {
-        if (this.weightInputStr.length < 4) {
+      const active = this.weightInputActive || this.distInputActive;
+      if (!active) return;
+
+      if ((event.key >= '0' && event.key <= '9') || event.key === '.') {
+        if (this.weightInputActive && this.weightInputStr.length < 5) {
+          // Prevent multiple decimal points
+          if (event.key === '.' && this.weightInputStr.includes('.')) return;
           this.weightInputStr += event.key;
           this.weightCursorOn = true;
           this.weightCursorMs = 0;
           this.showWeightInputDisplay();
+        } else if (this.distInputActive && this.distInputStr.length < 5) {
+          if (event.key === '.' && this.distInputStr.includes('.')) return;
+          this.distInputStr += event.key;
+          this.distCursorOn = true;
+          this.distCursorMs = 0;
+          this.showDistInputDisplay();
         }
       } else if (event.key === 'Backspace') {
-        this.weightInputStr = this.weightInputStr.slice(0, -1);
-        this.weightCursorOn = true;
-        this.weightCursorMs = 0;
-        this.showWeightInputDisplay();
+        if (this.weightInputActive) {
+          this.weightInputStr = this.weightInputStr.slice(0, -1);
+          this.weightCursorOn = true;
+          this.weightCursorMs = 0;
+          this.showWeightInputDisplay();
+        } else if (this.distInputActive) {
+          this.distInputStr = this.distInputStr.slice(0, -1);
+          this.distCursorOn = true;
+          this.distCursorMs = 0;
+          this.showDistInputDisplay();
+        }
       } else if (event.key === 'Enter' || event.key === 'Escape') {
-        this.commitWeightEdit();
+        if (this.weightInputActive) this.commitWeightEdit();
+        if (this.distInputActive)   this.commitDistEdit();
       }
     });
   }
 
+  private startDistEdit(): void {
+    if (this.distInputActive) return;
+    if (this.weightInputActive) this.commitWeightEdit();
+    
+    this.distInputActive = true;
+    this.distCursorMs    = 0;
+    this.distCursorOn    = true;
+    
+    const displayVal = this.units === 'imperial'
+      ? (this.distanceKm * KM_TO_MI)
+      : this.distanceKm;
+    
+    this.distInputStr = formatFixed(displayVal);
+    this.distInputField.setStrokeStyle(2, 0x5588ff, 1);
+    this.showDistInputDisplay();
+  }
+
+  private commitDistEdit(): void {
+    if (!this.distInputActive) return;
+    this.distInputActive = false;
+    this.distInputField.setStrokeStyle(2, 0x3a3a8b, 0.8);
+    
+    const parsed = parseFloat(this.distInputStr);
+    if (!isNaN(parsed) && parsed > 0) {
+      const asKm = this.units === 'imperial'
+        ? (parsed * MI_TO_KM)
+        : parsed;
+      this.distanceKm = Math.max(MIN_KM, Math.min(MAX_KM, asKm));
+    }
+    this.distText.setText(this.fmtDist(this.distanceKm));
+  }
+
+  private showDistInputDisplay(): void {
+    const cursor = this.distCursorOn ? '|' : ' ';
+    const unit = this.units === 'imperial' ? ' mi' : ' km';
+    this.distText.setText((this.distInputStr || '0') + cursor + unit);
+  }
+
   private startWeightEdit(): void {
     if (this.weightInputActive) return;
+    if (this.distInputActive) this.commitDistEdit();
+
     this.weightInputActive = true;
     this.weightCursorMs    = 0;
     this.weightCursorOn    = true;
     const displayVal = this.units === 'imperial'
-      ? Math.round(this.weightKg * KG_TO_LB)
+      ? (this.weightKg * KG_TO_LB)
       : this.weightKg;
-    this.weightInputStr = String(displayVal);
+    this.weightInputStr = formatFixed(displayVal);
     this.weightInputField.setStrokeStyle(2, 0x5588ff, 1);
     this.showWeightInputDisplay();
   }
@@ -397,10 +491,10 @@ export class MenuScene extends Phaser.Scene {
     if (!this.weightInputActive) return;
     this.weightInputActive = false;
     this.weightInputField.setStrokeStyle(2, 0x3a3a8b, 0.8);
-    const parsed = parseInt(this.weightInputStr, 10);
+    const parsed = parseFloat(this.weightInputStr);
     if (!isNaN(parsed) && parsed > 0) {
       const asKg = this.units === 'imperial'
-        ? Math.round(parsed / KG_TO_LB)
+        ? (parsed * LB_TO_KG)
         : parsed;
       this.weightKg = Math.max(MIN_KG, Math.min(MAX_KG, asKg));
     }
@@ -704,15 +798,20 @@ export class MenuScene extends Phaser.Scene {
   // ── Format helpers ─────────────────────────────────────────────────────────
 
   private fmtDist(km: number): string {
-    return this.units === 'imperial' ? `${(km * KM_TO_MI).toFixed(1)} mi` : `${km} km`;
+    const val = this.units === 'imperial' ? (km * KM_TO_MI) : km;
+    const str = formatFixed(val);
+    return this.units === 'imperial' ? `${str} mi` : `${str} km`;
   }
 
   private fmtPreset(km: number): string {
-    return this.units === 'imperial' ? `${Math.round(km * KM_TO_MI)}` : `${km}`;
+    const val = this.units === 'imperial' ? (km * KM_TO_MI) : km;
+    return formatFixed(val);
   }
 
   private fmtWeight(kg: number): string {
-    return this.units === 'imperial' ? `${Math.round(kg * KG_TO_LB)} lb` : `${kg} kg`;
+    const val = this.units === 'imperial' ? (kg * KG_TO_LB) : kg;
+    const str = formatFixed(val);
+    return this.units === 'imperial' ? `${str} lb` : `${str} kg`;
   }
 
   // ── Button helper ──────────────────────────────────────────────────────────
