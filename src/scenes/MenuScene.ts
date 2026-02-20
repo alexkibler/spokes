@@ -853,6 +853,7 @@ export class MenuScene extends Phaser.Scene {
 
       RunStateManager.startNewRun(
         RUN_LENGTHS[this.runLength].floors,
+        this.distanceKm,
         this.difficulty
       );
       this.scene.start('MapScene', {

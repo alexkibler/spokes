@@ -5,7 +5,7 @@
  * Tracks player progress, currency, and the procedurally generated map.
  */
 
-import type { CourseSegment } from '../course/CourseProfile';
+import type { CourseProfile } from '../course/CourseProfile';
 import { FitWriter } from '../fit/FitWriter';
 
 export type NodeType = 'start' | 'standard' | 'hard' | 'shop' | 'finish';
@@ -23,7 +23,7 @@ export interface MapNode {
 export interface MapEdge {
   from: string;
   to: string;
-  segment: CourseSegment;
+  profile: CourseProfile;
 }
 
 export interface RunData {
@@ -33,6 +33,7 @@ export interface RunData {
   nodes: MapNode[];
   edges: MapEdge[];
   runLength: number; // Total floors
+  totalDistanceKm: number; // Target total run distance
   difficulty: 'easy' | 'medium' | 'hard';
   fitWriter: FitWriter;
 }
@@ -41,7 +42,7 @@ export interface RunData {
 export class RunStateManager {
   private static instance: RunData | null = null;
 
-  static startNewRun(runLength: number, difficulty: 'easy' | 'medium' | 'hard'): RunData {
+  static startNewRun(runLength: number, totalDistanceKm: number, difficulty: 'easy' | 'medium' | 'hard'): RunData {
     this.instance = {
       gold: 0,
       inventory: [],
@@ -49,6 +50,7 @@ export class RunStateManager {
       nodes: [],
       edges: [],
       runLength,
+      totalDistanceKm,
       difficulty,
       fitWriter: new FitWriter(Date.now()),
     };

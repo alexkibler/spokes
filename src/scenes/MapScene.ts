@@ -7,7 +7,7 @@
 
 import Phaser from 'phaser';
 import { RunStateManager, type MapNode, type MapEdge, type NodeType } from '../roguelike/RunState';
-import { generateCourseProfile, type CourseProfile, type SurfaceType } from '../course/CourseProfile';
+import { generateCourseProfile, type SurfaceType } from '../course/CourseProfile';
 import type { Units } from './MenuScene';
 import type { ITrainerService } from '../services/ITrainerService';
 import { HeartRateService } from '../services/HeartRateService';
@@ -117,6 +117,11 @@ export class MapScene extends Phaser.Scene {
     const run = RunStateManager.getRun();
     if (!run || !this.sys.isActive()) return;
 
+    if (this.goldText && (!this.goldText.active || !this.goldText.scene)) {
+      // It exists but is stale/destroyed
+      this.goldText = null as any; 
+    }
+
     if (!this.goldText) {
       this.goldText = this.add.text(this.scale.width - 20, 20, `GOLD: ${run.gold}`, {
         fontFamily: 'monospace',
@@ -141,6 +146,7 @@ export class MapScene extends Phaser.Scene {
 
   private generateMap(run: any): void {
     const totalFloors = run.runLength;
+    const segmentKm = Math.max(1, run.totalDistanceKm / totalFloors); // Minimum 1km per segment
     const numCols = 7;
     const nodes: MapNode[] = [];
     const edges: MapEdge[] = [];
@@ -209,7 +215,7 @@ export class MapScene extends Phaser.Scene {
         edges.push({
           from: fromNode.id,
           to: toNode.id,
-          segment: generateCourseProfile(5, this.getMaxGrade(run.difficulty, toNode.type)).segments[0]
+          profile: generateCourseProfile(segmentKm, this.getMaxGrade(run.difficulty, toNode.type))
         });
       });
     });
@@ -259,7 +265,8 @@ export class MapScene extends Phaser.Scene {
       const tx = toNode.x * w;
       const ty = toNode.y * h;
 
-      const color = SURFACE_FILL_COLORS[edge.segment.surface ?? 'asphalt'];
+      const surface = edge.profile.segments[0]?.surface ?? 'asphalt';
+      const color = SURFACE_FILL_COLORS[surface];
       
       // Highlight paths connected to the current node
       const isFromCurrent = run.currentNodeId === fromNode.id;
@@ -504,12 +511,8 @@ export class MapScene extends Phaser.Scene {
       const edge = run.edges.find(e => e.from === run.currentNodeId && e.to === node.id);
       if (!edge && node.floor !== 0) return; // Should not happen if reachable
 
-      // Create course from edge segment
-      const segment = edge ? edge.segment : generateCourseProfile(5, 0.05).segments[0];
-      const course: CourseProfile = {
-        segments: [segment],
-        totalDistanceM: segment.distanceM
-      };
+      // Create course from edge profile
+      const course = edge ? edge.profile : generateCourseProfile(5, 0.05);
 
       RunStateManager.setCurrentNode(node.id);
 
@@ -616,5 +619,9 @@ export class MapScene extends Phaser.Scene {
 
   shutdown(): void {
     this.scale.off('resize', this.onResize, this);
+    this.goldText = null as any;
+    this.nodeObjects.clear();
+    if (this.legendContainer) this.legendContainer.destroy();
+    if (this.tooltipContainer) this.tooltipContainer.destroy();
   }
 }

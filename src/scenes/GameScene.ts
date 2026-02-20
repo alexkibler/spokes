@@ -508,17 +508,17 @@ export class GameScene extends Phaser.Scene {
       this.isDemoMode = false;
       this.setStatus('ok', 'BT CONNECTED');
     } else if (this.isDevMode) {
-      console.log('[GameScene] Starting DEV MODE (1000W)');
+      console.log('[GameScene] Starting DEV MODE (10000W)');
       // Dev Mode: Mock trainer with fixed high power
-      const mock = new MockTrainerService({ power: 1000, speed: 45, cadence: 95 });
+      const mock = new MockTrainerService({ power: 10000, speed: 45, cadence: 95 });
       this.trainer = mock;
       // Also explicitly set it to be sure
-      mock.setPower(1000);
+      mock.setPower(10000);
       this.trainer.onData((data) => this.handleData(data));
       void this.trainer.connect();
       // Important: isDemoMode = false ensures we don't randomise metrics in update()
       this.isDemoMode = false;
-      this.setStatus('demo', 'DEV (1000W)');
+      this.setStatus('demo', 'DEV (10000W)');
     } else {
       console.log('[GameScene] Starting STANDARD DEMO MODE (200W)');
       // No BT trainer → demo mode with mock data (randomised)
@@ -1632,26 +1632,39 @@ export class GameScene extends Phaser.Scene {
     const gap     = 16;
     
     if (this.isRoguelike && completed) {
+      // Check if this was the Finish node
+      const run = RunStateManager.getRun();
+      const currentNode = run?.nodes.find(n => n.id === run.currentNodeId);
+      const isFinish = currentNode?.type === 'finish';
+
       const contX = cx - btnW / 2;
-      const contBtn = this.add.rectangle(contX, btnY, btnW, btnH, 0x8b5a00)
+      const btnColor = isFinish ? 0xffcc00 : 0x8b5a00;
+      const btnText = isFinish ? 'VICTORY!' : 'CONTINUE RUN';
+      const textColor = isFinish ? '#000000' : '#ffffff';
+
+      const contBtn = this.add.rectangle(contX, btnY, btnW, btnH, btnColor)
         .setOrigin(0, 0.5)
         .setInteractive({ useHandCursor: true })
         .setDepth(depth + 2);
-      this.add.text(contX + btnW / 2, btnY, 'CONTINUE RUN', {
-        fontFamily: mono, fontSize: '11px', fontStyle: 'bold', color: '#ffffff',
+      this.add.text(contX + btnW / 2, btnY, btnText, {
+        fontFamily: mono, fontSize: '11px', fontStyle: 'bold', color: textColor,
       }).setOrigin(0.5, 0.5).setDepth(depth + 3);
 
       contBtn
-        .on('pointerover', () => contBtn.setFillStyle(0xcc8800))
-        .on('pointerout',  () => contBtn.setFillStyle(0x8b5a00))
+        .on('pointerover', () => contBtn.setFillStyle(isFinish ? 0xffdd44 : 0xcc8800))
+        .on('pointerout',  () => contBtn.setFillStyle(btnColor))
         .on('pointerdown', () => {
-          this.scene.start('MapScene', {
-            weightKg: this.weightKg,
-            units: this.units,
-            trainer: this.trainer,
-            hrm: this.preConnectedHrm,
-            isDevMode: this.isDevMode,
-          });
+          if (isFinish) {
+            this.scene.start('VictoryScene');
+          } else {
+            this.scene.start('MapScene', {
+              weightKg: this.weightKg,
+              units: this.units,
+              trainer: this.trainer,
+              hrm: this.preConnectedHrm,
+              isDevMode: this.isDevMode,
+            });
+          }
         });
     } else {
       const dlX     = cx - btnW - gap / 2;

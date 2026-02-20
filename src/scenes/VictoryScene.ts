@@ -1,0 +1,100 @@
+/**
+ * VictoryScene.ts
+ *
+ * A simple celebratory screen shown after completing a Roguelike run.
+ * Displays final stats and allows returning to the main menu.
+ */
+
+import Phaser from 'phaser';
+import { RunStateManager } from '../roguelike/RunState';
+
+export class VictoryScene extends Phaser.Scene {
+  constructor() {
+    super({ key: 'VictoryScene' });
+  }
+
+  create(): void {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const cx = w / 2;
+    const cy = h / 2;
+
+    this.cameras.main.setBackgroundColor('#1a1a2a');
+
+    // Confetti / Particles (simple colored rects for now)
+    // We don't have a 'particle' texture, so let's make a tiny graphics texture
+    if (!this.textures.exists('particle')) {
+        const g = this.make.graphics({ x: 0, y: 0 });
+        g.fillStyle(0xffffff);
+        g.fillRect(0, 0, 8, 8);
+        g.generateTexture('particle', 8, 8);
+        g.destroy();
+    }
+
+    this.add.particles(0, 0, 'particle', {
+      x: { min: 0, max: w },
+      y: -50,
+      lifespan: 4000,
+      speedY: { min: 100, max: 300 },
+      speedX: { min: -50, max: 50 },
+      scale: { start: 0.4, end: 0 },
+      quantity: 2,
+      frequency: 100,
+      blendMode: 'ADD',
+      emitting: true
+    });
+
+    // Title
+    this.add.text(cx, cy - 100, 'CONGRATULATIONS!', {
+      fontFamily: 'monospace',
+      fontSize: '42px',
+      fontStyle: 'bold',
+      color: '#ffcc00',
+    }).setOrigin(0.5);
+
+    this.add.text(cx, cy - 40, 'RUN COMPLETED', {
+      fontFamily: 'monospace',
+      fontSize: '24px',
+      color: '#ffffff',
+      letterSpacing: 4,
+    }).setOrigin(0.5);
+
+    // Stats
+    const run = RunStateManager.getRun();
+    const gold = run ? run.gold : 0;
+    const floors = run ? run.runLength : 0;
+
+    this.add.text(cx, cy + 40, `TOTAL GOLD EARNED: ${gold}`, {
+      fontFamily: 'monospace',
+      fontSize: '18px',
+      color: '#00f5d4',
+    }).setOrigin(0.5);
+
+    this.add.text(cx, cy + 70, `FLOORS CLEARED: ${floors}/${floors}`, {
+      fontFamily: 'monospace',
+      fontSize: '18px',
+      color: '#aaaaaa',
+    }).setOrigin(0.5);
+
+    // Return Button
+    const btnY = cy + 150;
+    const btnW = 200;
+    const btnH = 50;
+
+    const btn = this.add.rectangle(cx, btnY, btnW, btnH, 0x8b5a00)
+      .setInteractive({ useHandCursor: true });
+    
+    this.add.text(cx, btnY, 'MAIN MENU', {
+      fontFamily: 'monospace',
+      fontSize: '18px',
+      fontStyle: 'bold',
+      color: '#ffffff'
+    }).setOrigin(0.5);
+
+    btn.on('pointerover', () => btn.setFillStyle(0xcc8800));
+    btn.on('pointerout', () => btn.setFillStyle(0x8b5a00));
+    btn.on('pointerdown', () => {
+      this.scene.start('MenuScene');
+    });
+  }
+}
