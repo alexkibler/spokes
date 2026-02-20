@@ -22,7 +22,6 @@ import type { ITrainerService, TrainerData } from '../services/ITrainerService';
 import { TrainerService } from '../services/TrainerService';
 import { MockTrainerService } from '../services/MockTrainerService';
 import {
-  calculateAcceleration,
   powerToVelocityMs,
   msToKmh,
   msToMph,
@@ -165,9 +164,7 @@ export class GameScene extends Phaser.Scene {
 
   // Effect indicator UI (unused or repurposed for status)
   private effectContainer!:   Phaser.GameObjects.Container;
-  private effectArcGraphics!: Phaser.GameObjects.Graphics;
   private effectNameText!:    Phaser.GameObjects.Text;
-  private effectSecsText!:    Phaser.GameObjects.Text;
 
   // Manual effect buttons
   private btnHeadwind!: Phaser.GameObjects.Rectangle;
@@ -1236,14 +1233,6 @@ export class GameScene extends Phaser.Scene {
     this.activeEffect = null;
     this.effectContainer.setAlpha(0);
     this.updatePowerDisplay();
-  }
-
-  private updateEffectTick(_delta: number): void {
-    // No-op for manual mode
-  }
-
-  private drawEffectArc(): void {
-    // No-op for manual mode
   }
 
   private updatePowerDisplay(): void {
