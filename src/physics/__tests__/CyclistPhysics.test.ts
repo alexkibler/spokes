@@ -1,18 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import {
   powerToVelocityMs,
+  calculateAcceleration,
   msToKmh,
   DEFAULT_PHYSICS,
 } from '../CyclistPhysics';
 
 describe('powerToVelocityMs', () => {
-  it('returns 0 m/s for 0 W', () => {
-    expect(powerToVelocityMs(0)).toBe(0);
+  it('returns near 0 m/s for 0 W on flat', () => {
+    expect(powerToVelocityMs(0)).toBeCloseTo(0, 3);
   });
 
-  it('returns 0 m/s for negative watts', () => {
-    expect(powerToVelocityMs(-50)).toBe(0);
-    expect(powerToVelocityMs(-0.001)).toBe(0);
+  it('returns near 0 m/s for negative watts on flat', () => {
+    expect(powerToVelocityMs(-50)).toBeCloseTo(0, 3);
+    expect(powerToVelocityMs(-0.001)).toBeCloseTo(0, 3);
   });
 
   it('returns between 10.0 and 10.4 m/s at 250 W (default config)', () => {
@@ -39,6 +40,30 @@ describe('powerToVelocityMs', () => {
     const vFlat = powerToVelocityMs(250, DEFAULT_PHYSICS);
     const vClimb = powerToVelocityMs(250, { ...DEFAULT_PHYSICS, grade: 0.05 });
     expect(vClimb).toBeLessThan(vFlat);
+  });
+});
+
+describe('calculateAcceleration', () => {
+  it('gives negative acceleration (deceleration) when coasting at 10 m/s on flat', () => {
+    const acc = calculateAcceleration(0, 10, { ...DEFAULT_PHYSICS, grade: 0 });
+    expect(acc).toBeLessThan(0);
+  });
+
+  it('gives positive acceleration when pedaling hard (400W) at low speed (5 m/s) on flat', () => {
+    const acc = calculateAcceleration(400, 5, { ...DEFAULT_PHYSICS, grade: 0 });
+    expect(acc).toBeGreaterThan(0);
+  });
+
+  it('gives positive acceleration when coasting downhill at low speed', () => {
+    const acc = calculateAcceleration(0, 2, { ...DEFAULT_PHYSICS, grade: -0.05 });
+    expect(acc).toBeGreaterThan(0);
+  });
+
+  it('gives near-zero acceleration at terminal velocity', () => {
+    const config = { ...DEFAULT_PHYSICS, grade: -0.05 };
+    const vTerminal = powerToVelocityMs(0, config);
+    const acc = calculateAcceleration(0, vTerminal, config);
+    expect(acc).toBeCloseTo(0, 2);
   });
 });
 

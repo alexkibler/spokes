@@ -22,6 +22,7 @@ import type { ITrainerService, TrainerData } from '../services/ITrainerService';
 import { TrainerService } from '../services/TrainerService';
 import { MockTrainerService } from '../services/MockTrainerService';
 import {
+  calculateAcceleration,
   powerToVelocityMs,
   msToKmh,
   msToMph,
