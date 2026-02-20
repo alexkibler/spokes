@@ -52,14 +52,6 @@ interface ActiveEffect {
   type: EffectType;
 }
 
-/** Fill colours for each surface type on the elevation graph. */
-const SURFACE_FILL_COLORS: Record<SurfaceType, number> = {
-  asphalt: 0x7799bb,  // steel blue-grey
-  gravel:  0xddaa22,  // golden amber
-  dirt:    0xcc5522,  // terracotta
-  mud:     0x449933,  // forest green
-};
-
 const EFFECT_META: Record<EffectType, {
   label: string;
   multiplier: number;
@@ -135,7 +127,7 @@ const ELEV_PAD_Y = 8;
 
 // ─── Gameplay constants ───────────────────────────────────────────────────────
 
-const DEV_POWER_WATTS = 10000;
+const DEV_POWER_WATTS = 100000;
 const DEMO_POWER_WATTS = 200;
 
 // ─── Parallax layer definitions ────────────────────────────────────────────────
@@ -155,6 +147,7 @@ export class GameScene extends Phaser.Scene {
   private isRoguelike = false;
   private isDevMode = false;
   private isQuickDemo = false;
+  private isBackwards = false; // New flag for R->L traversal
 
   // Service reference – swapped when toggling demo mode
   private trainer!: ITrainerService;
@@ -213,6 +206,7 @@ export class GameScene extends Phaser.Scene {
   private segmentBoundaries: Array<{
     startM: number; endM: number;
     startElevM: number; endElevM: number;
+    grade: number;
     surface: SurfaceType;
   }> = [];
 
@@ -381,6 +375,7 @@ export class GameScene extends Phaser.Scene {
     isRoguelike?: boolean;
     isDevMode?: boolean;
     isQuickDemo?: boolean;
+    isBackwards?: boolean;
   }): void {
     if (import.meta.env.DEV) console.log('[GameScene] init data:', data);
     // Accept a generated course, rider weight, and unit preference from MenuScene
@@ -392,6 +387,7 @@ export class GameScene extends Phaser.Scene {
     this.isRoguelike         = data?.isRoguelike ?? false;
     this.isDevMode           = data?.isDevMode ?? false;
     this.isQuickDemo         = data?.isQuickDemo ?? false;
+    this.isBackwards         = data?.isBackwards ?? false;
 
     if (import.meta.env.DEV) console.log('[GameScene] isDevMode set to:', this.isDevMode);
 
@@ -467,7 +463,7 @@ export class GameScene extends Phaser.Scene {
     this.minElevM = Math.min(...this.elevationSamples.map((s) => s.elevationM));
     this.maxElevM = Math.max(...this.elevationSamples.map((s) => s.elevationM));
 
-    // Precompute segment boundaries for surface-coloured elevation graph
+    // Precompute segment boundaries for grade-coloured elevation graph
     let _cumDist = 0;
     let _cumElev = 0;
     this.segmentBoundaries = this.course.segments.map(seg => {
@@ -475,7 +471,7 @@ export class GameScene extends Phaser.Scene {
       const startElevM = _cumElev;
       _cumDist += seg.distanceM;
       _cumElev += seg.distanceM * seg.grade;
-      return { startM, endM: _cumDist, startElevM, endElevM: _cumElev, surface: seg.surface ?? 'asphalt' };
+      return { startM, endM: _cumDist, startElevM, endElevM: _cumElev, grade: seg.grade, surface: seg.surface ?? 'asphalt' };
     });
 
     this.buildParallaxLayers();
@@ -620,7 +616,10 @@ export class GameScene extends Phaser.Scene {
     this.smoothGrade += (this.currentGrade - this.smoothGrade) * dt * GRADE_LERP_RATE;
 
     // Apply rotation + scale compensation to world container
-    this.worldContainer.rotation = -Math.atan(this.smoothGrade);
+    // If Backwards: Invert rotation angle (Left side up for +Grade)
+    const rotationAngle = this.isBackwards ? Math.atan(this.smoothGrade) : -Math.atan(this.smoothGrade);
+    this.worldContainer.rotation = rotationAngle;
+    
     const scale = Math.sqrt(1 + this.smoothGrade * this.smoothGrade) * 1.02;
     this.worldContainer.setScale(scale);
 
@@ -656,10 +655,13 @@ export class GameScene extends Phaser.Scene {
 
     // ── Parallax scroll ──────────────────────────────────────────────────────
     const baseScroll = this.smoothVelocityMs * WORLD_SCALE * dt;
-    this.layerMountains.tilePositionX += baseScroll * 0.10;
-    this.layerMidHills.tilePositionX  += baseScroll * 0.30;
-    this.layerNearGround.tilePositionX += baseScroll * 0.65;
-    this.layerRoad.tilePositionX      += baseScroll * 1.00;
+    // If Backwards: Scroll values decrease (move background Right to simulate Rider moving Left)
+    const dir = this.isBackwards ? -1 : 1;
+    
+    this.layerMountains.tilePositionX += baseScroll * 0.10 * dir;
+    this.layerMidHills.tilePositionX  += baseScroll * 0.30 * dir;
+    this.layerNearGround.tilePositionX += baseScroll * 0.65 * dir;
+    this.layerRoad.tilePositionX      += baseScroll * 1.00 * dir;
 
     // ── HUD updates ──────────────────────────────────────────────────────────
     if (this.units === 'imperial') {
@@ -833,6 +835,11 @@ export class GameScene extends Phaser.Scene {
     // Add AFTER all parallax layers so the cyclist renders on top
     this.cyclistGraphics = this.add.graphics();
     this.worldContainer.add(this.cyclistGraphics);
+    
+    // Flip cyclist if traveling backwards
+    if (this.isBackwards) {
+      this.cyclistGraphics.setScale(-1, 1);
+    }
   }
 
   private drawCyclist(): void {
@@ -1139,7 +1146,11 @@ export class GameScene extends Phaser.Scene {
     const ox = ELEV_PAD_X;
     const oy = (height - 125) + ELEV_PAD_Y;
 
-    const toX = (d: number) => ox + (d / totalDist) * drawW;
+    // If backtracking, draw from Right to Left (Start at Right, Finish at Left)
+    const toX = (d: number) => this.isBackwards 
+      ? ox + drawW - (d / totalDist) * drawW 
+      : ox + (d / totalDist) * drawW;
+      
     const toY = (e: number) => oy + drawH - ((e - this.minElevM) / elevRange) * drawH;
 
     // Surface-coloured elevation segments
@@ -1152,7 +1163,7 @@ export class GameScene extends Phaser.Scene {
         { x: toX(seg.endM),   y: toY(seg.endElevM) },
         { x: toX(seg.endM),   y: oy + drawH },
       ];
-      g.fillStyle(SURFACE_FILL_COLORS[seg.surface], 1.0);
+      g.fillStyle(this.getGradeColorHex(seg.grade), 1.0);
       g.fillPoints(poly, true);
     }
 
@@ -1311,6 +1322,15 @@ export class GameScene extends Phaser.Scene {
     if (grade > 0.005) return '#ffffff'; // gentle       → white
     if (grade > -0.005) return '#aaaaaa'; // flat        → grey
     return '#55aaff';                      // descent     → blue
+  }
+
+  /** Returns a hex number for graphics fill based on road grade. */
+  private getGradeColorHex(grade: number): number {
+    if (grade > 0.08) return 0xff5555; // steep climb  → red
+    if (grade > 0.04) return 0xffaa00; // moderate     → orange
+    if (grade > 0.005) return 0xffffff; // gentle       → white
+    if (grade > -0.005) return 0xaaaaaa; // flat        → grey
+    return 0x55aaff;                      // descent     → blue
   }
 
   /**
@@ -1620,20 +1640,29 @@ export class GameScene extends Phaser.Scene {
 
     // Roguelike Gold Reward
     if (this.isRoguelike && completed) {
-      let gradeSum = 0;
-      let crrSum = 0;
-      this.course.segments.forEach(seg => {
-        gradeSum += Math.max(0, seg.grade);
-        crrSum += getCrrForSurface(seg.surface) / getCrrForSurface('asphalt');
-      });
-      const avgGrade = gradeSum / this.course.segments.length;
-      const avgCrrMult = crrSum / this.course.segments.length;
-      const totalGold = Math.round(50 + (avgGrade * 100 * 10) + (avgCrrMult - 1) * 50);
-      RunStateManager.addGold(totalGold);
+      // Mark the edge as cleared. Returns true if this is the first time.
+      const isFirstClear = RunStateManager.completeActiveEdge();
+      
+      if (isFirstClear) {
+        let gradeSum = 0;
+        let crrSum = 0;
+        this.course.segments.forEach(seg => {
+          gradeSum += Math.max(0, seg.grade);
+          crrSum += getCrrForSurface(seg.surface) / getCrrForSurface('asphalt');
+        });
+        const avgGrade = gradeSum / this.course.segments.length;
+        const avgCrrMult = crrSum / this.course.segments.length;
+        const totalGold = Math.round(50 + (avgGrade * 100 * 10) + (avgCrrMult - 1) * 50);
+        RunStateManager.addGold(totalGold);
 
-      this.add.text(cx, py + 80, `+ ${totalGold} GOLD EARNED`, {
-        fontFamily: mono, fontSize: '16px', fontStyle: 'bold', color: '#ffcc00',
-      }).setOrigin(0.5, 0).setDepth(depth + 2);
+        this.add.text(cx, py + 80, `+ ${totalGold} GOLD EARNED`, {
+          fontFamily: mono, fontSize: '16px', fontStyle: 'bold', color: '#ffcc00',
+        }).setOrigin(0.5, 0).setDepth(depth + 2);
+      } else {
+        this.add.text(cx, py + 80, `(ALREADY CLEARED)`, {
+          fontFamily: mono, fontSize: '14px', color: '#aaaaaa',
+        }).setOrigin(0.5, 0).setDepth(depth + 2);
+      }
     } else {
       // Divider only if not roguelike (or we want to show prompt for single rides)
       const divGfx = this.add.graphics().setDepth(depth + 1);

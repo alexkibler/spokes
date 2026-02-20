@@ -24,12 +24,14 @@ export interface MapEdge {
   from: string;
   to: string;
   profile: CourseProfile;
+  isCleared?: boolean; // True if the player has successfully traversed this edge at least once
 }
 
 export interface RunData {
   gold: number;
   inventory: string[];
   currentNodeId: string;
+  activeEdge: MapEdge | null; // The edge currently being traversed (or just finished)
   nodes: MapNode[];
   edges: MapEdge[];
   runLength: number; // Total floors
@@ -47,6 +49,7 @@ export class RunStateManager {
       gold: 0,
       inventory: [],
       currentNodeId: '', // Set by map generator
+      activeEdge: null,
       nodes: [],
       edges: [],
       runLength,
@@ -65,6 +68,33 @@ export class RunStateManager {
     if (this.instance) {
       this.instance.currentNodeId = nodeId;
     }
+  }
+
+  static setActiveEdge(edge: MapEdge | null): void {
+    if (this.instance) {
+      this.instance.activeEdge = edge;
+    }
+  }
+
+  /** Marks the currently active edge as cleared. Returns true if it was newly cleared. */
+  static completeActiveEdge(): boolean {
+    if (this.instance && this.instance.activeEdge) {
+      // Find the edge in the main list to update it persistently
+      const edge = this.instance.edges.find(e => 
+        e.from === this.instance!.activeEdge!.from && 
+        e.to === this.instance!.activeEdge!.to
+      );
+      
+      if (edge) {
+        if (!edge.isCleared) {
+          edge.isCleared = true;
+          // Also update the active reference
+          this.instance.activeEdge.isCleared = true;
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   static addGold(amount: number): void {

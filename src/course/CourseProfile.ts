@@ -151,17 +151,19 @@ export function buildElevationSamples(
  *
  * @param distanceKm  Total course length in kilometres (5–200)
  * @param maxGrade    Maximum road grade as a decimal fraction (0.05 = 5 %)
+ * @param surface     Surface type for the entire course (defaults to 'asphalt')
  */
 export function generateCourseProfile(
   distanceKm: number,
   maxGrade: number,
+  surface: SurfaceType = 'asphalt',
 ): CourseProfile {
   const totalM = distanceKm * 1000;
 
   // Flat bookends: 5 % of total length, clamped 500–1 500 m
   const flatEndM = Math.max(500, Math.min(1500, totalM * 0.05));
 
-  const segments: CourseSegment[] = [{ distanceM: flatEndM, grade: 0 }];
+  const segments: CourseSegment[] = [{ distanceM: flatEndM, grade: 0, surface }];
   let budgetM  = totalM - 2 * flatEndM;
   let netElevM = 0; // running Σ(grade × length) to track elevation balance
 
@@ -198,7 +200,7 @@ export function generateCourseProfile(
       ? 0
       : sign * mags[Math.floor(Math.random() * mags.length)];
 
-    segments.push({ distanceM: len, grade });
+    segments.push({ distanceM: len, grade, surface });
     netElevM += len * grade;
     budgetM  -= len;
   }
@@ -207,7 +209,7 @@ export function generateCourseProfile(
   if (budgetM > 0 && segments.length > 1) {
     segments[segments.length - 1].distanceM += budgetM;
   }
-  segments.push({ distanceM: flatEndM, grade: 0 });
+  segments.push({ distanceM: flatEndM, grade: 0, surface });
 
   // Balance correction: distribute residual elevation across terrain segments
   const terrain  = segments.slice(1, -1);
@@ -223,26 +225,27 @@ export function generateCourseProfile(
     }
   }
 
-  // Assign surface types in runs of 1–3 segments, biased by grade steepness
-  let runLeft = 0;
-  let curSurface: SurfaceType = 'asphalt';
-  for (const seg of terrain) {
-    if (runLeft <= 0) {
-      const a = Math.abs(seg.grade);
-      const r = Math.random();
-      if      (a >= maxGrade * 0.75 && r < 0.65) curSurface = r < 0.20 ? 'mud'    : r < 0.40 ? 'dirt' : 'gravel';
-      else if (a >= maxGrade * 0.40 && r < 0.45) curSurface = r < 0.12 ? 'dirt'   : 'gravel';
-      else if (r < 0.20)                          curSurface = 'gravel';
-      else                                        curSurface = 'asphalt';
-      runLeft = 1 + Math.floor(Math.random() * 2);
-    }
-    if (curSurface !== 'asphalt') seg.surface = curSurface;
-    runLeft--;
-  }
-
   return {
     segments,
     totalDistanceM: segments.reduce((s, seg) => s + seg.distanceM, 0),
+  };
+}
+
+/**
+ * Creates a new course profile that is the reverse of the given profile.
+ * - Reverses the order of segments.
+ * - Inverts the grade of each segment (positive becomes negative).
+ * - Preserves distance and surface type.
+ */
+export function invertCourseProfile(profile: CourseProfile): CourseProfile {
+  const reversedSegments = [...profile.segments].reverse().map(seg => ({
+    ...seg,
+    grade: -seg.grade
+  }));
+
+  return {
+    segments: reversedSegments,
+    totalDistanceM: profile.totalDistanceM
   };
 }
 

@@ -7,7 +7,7 @@
 
 import Phaser from 'phaser';
 import { RunStateManager, type MapNode, type MapEdge, type NodeType } from '../roguelike/RunState';
-import { generateCourseProfile, type SurfaceType } from '../course/CourseProfile';
+import { generateCourseProfile, invertCourseProfile, type SurfaceType } from '../course/CourseProfile';
 import type { Units } from './MenuScene';
 import type { ITrainerService } from '../services/ITrainerService';
 import { HeartRateService } from '../services/HeartRateService';
@@ -268,16 +268,16 @@ export class MapScene extends Phaser.Scene {
       const surface = edge.profile.segments[0]?.surface ?? 'asphalt';
       const color = SURFACE_FILL_COLORS[surface];
       
-      // Highlight paths connected to the current node
-      const isFromCurrent = run.currentNodeId === fromNode.id;
+      // Highlight paths connected to the current node (bidirectional)
+      const isConnected = run.currentNodeId === fromNode.id || run.currentNodeId === toNode.id;
       // High contrast: 1.0 alpha for active, 0.4 for inactive (was 0.25)
-      const alpha = isFromCurrent ? 1.0 : 0.4;
-      const dotSize = isFromCurrent ? 8 : 5;
+      const alpha = isConnected ? 1.0 : 0.4;
+      const dotSize = isConnected ? 8 : 5;
       const gap = dotSize * 1.8;
       
       this.graphics.fillStyle(color, alpha);
       // Add a slight stroke/glow if active?
-      if (isFromCurrent) {
+      if (isConnected) {
         this.graphics.lineStyle(2, 0xffffff, 0.5);
       }
       
@@ -487,8 +487,13 @@ export class MapScene extends Phaser.Scene {
     const currentNode = run.nodes.find(n => n.id === run.currentNodeId);
     if (!currentNode) return false;
 
-    // 2. Strict Forward Movement
-    return targetNode.floor > currentNode.floor && currentNode.connectedTo.includes(nodeId);
+    // 2. Bidirectional Movement: Check for ANY edge connecting current <-> target
+    const edge = run.edges.find(e => 
+      (e.from === currentNode.id && e.to === targetNode.id) || 
+      (e.from === targetNode.id && e.to === currentNode.id)
+    );
+
+    return !!edge;
   }
 
   private onNodeClick(node: MapNode): void {
@@ -503,22 +508,49 @@ export class MapScene extends Phaser.Scene {
     }
 
     if (node.type === 'shop') {
+      // Find edge if we traveled to it
+      const edge = run.edges.find(e => 
+        (e.from === run.currentNodeId && e.to === node.id) || 
+        (e.from === node.id && e.to === run.currentNodeId)
+      );
+      if (edge) RunStateManager.setActiveEdge(edge);
+      
       RunStateManager.setCurrentNode(node.id);
       this.openShop();
       this.drawMap();
       this.updateGoldUI();
     } else {
-      const edge = run.edges.find(e => e.from === run.currentNodeId && e.to === node.id);
+      // Find edge connecting current <-> target
+      const edge = run.edges.find(e => 
+        (e.from === run.currentNodeId && e.to === node.id) || 
+        (e.from === node.id && e.to === run.currentNodeId)
+      );
+
       if (!edge && node.floor !== 0) return; // Should not happen if reachable
 
       // Create course from edge profile
-      const course = edge ? edge.profile : generateCourseProfile(5, 0.05);
+      let course: any = generateCourseProfile(5, 0.05, 'asphalt'); // Default fallback
+      let isBackwards = false;
+      
+      if (edge) {
+        // Check direction
+        if (edge.to === run.currentNodeId) {
+          // Backward travel: Invert profile
+          course = invertCourseProfile(edge.profile);
+          isBackwards = true;
+        } else {
+          // Forward travel
+          course = edge.profile;
+        }
+        RunStateManager.setActiveEdge(edge);
+      }
 
       RunStateManager.setCurrentNode(node.id);
 
       console.log('[MapScene] Starting GameScene. isDevMode:', this.isDevMode);
       this.scene.start('GameScene', {
         course,
+        isBackwards,
         weightKg: this.weightKg,
         units: this.units,
         trainer: this.trainer,
