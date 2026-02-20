@@ -85,3 +85,8 @@ export function powerToVelocityMs(
 export function msToKmh(ms: number): number {
   return ms * 3.6;
 }
+
+/** Convert m/s to mph */
+export function msToMph(ms: number): number {
+  return ms * 2.23694;
+}

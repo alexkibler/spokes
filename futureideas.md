@@ -1,0 +1,2 @@
+different terrain (snow, rocks, desert etc) with different wheel like tracks or skis that help you go faster in those terrains - zak
+teleport item + trap (teleport to end of segment/teleport to beginning)

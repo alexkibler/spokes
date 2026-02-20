@@ -24,9 +24,11 @@ import { MockTrainerService } from '../services/MockTrainerService';
 import {
   powerToVelocityMs,
   msToKmh,
+  msToMph,
   DEFAULT_PHYSICS,
   type PhysicsConfig,
 } from '../physics/CyclistPhysics';
+import type { Units } from './MenuScene';
 import {
   DEFAULT_COURSE,
   getGradeAtDistance,
@@ -130,6 +132,9 @@ interface LayerDef {
 // ─── Scene ────────────────────────────────────────────────────────────────────
 
 export class GameScene extends Phaser.Scene {
+  // Unit preference passed from MenuScene
+  private units: Units = 'imperial';
+
   // Service reference – swapped when toggling demo mode
   private trainer!: ITrainerService;
   private isDemoMode = true;
@@ -214,9 +219,10 @@ export class GameScene extends Phaser.Scene {
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
 
-  init(data?: { course?: CourseProfile; weightKg?: number }): void {
-    // Accept a generated course and rider weight from MenuScene
+  init(data?: { course?: CourseProfile; weightKg?: number; units?: Units }): void {
+    // Accept a generated course, rider weight, and unit preference from MenuScene
     this.course = data?.course ?? DEFAULT_COURSE;
+    this.units  = data?.units  ?? 'imperial';
 
     // Bike weight is fixed; rider weight comes from the menu (default 75 kg)
     const massKg = (data?.weightKg ?? 75) + 8; // +8 kg for the bike
@@ -324,9 +330,14 @@ export class GameScene extends Phaser.Scene {
     this.layerRoad.tilePositionX      += baseScroll * 1.00;
 
     // ── HUD updates ──────────────────────────────────────────────────────────
-    this.hudSpeed.setText(msToKmh(this.smoothVelocityMs).toFixed(1));
+    if (this.units === 'imperial') {
+      this.hudSpeed.setText(msToMph(this.smoothVelocityMs).toFixed(1));
+      this.hudDistance.setText((this.distanceM / 1609.344).toFixed(2));
+    } else {
+      this.hudSpeed.setText(msToKmh(this.smoothVelocityMs).toFixed(1));
+      this.hudDistance.setText((this.distanceM / 1000).toFixed(2));
+    }
     this.updateGradeDisplay(this.currentGrade);
-    this.hudDistance.setText((this.distanceM / 1000).toFixed(2));
 
     // ── Cyclist animation ────────────────────────────────────────────────────
     // Average cadence over rolling 3-second window
@@ -671,17 +682,20 @@ export class GameScene extends Phaser.Scene {
     };
 
     // ── Speed  x=96 ─────────────────────────────────────────────────────────
-    this.add.text(96,  14, 'SPEED',   label).setOrigin(0.5, 0).setDepth(11);
+    this.add.text(96,   7, 'SPEED',   label).setOrigin(0.5, 0).setDepth(11);
     this.hudSpeed = this.add
-      .text(96, 28, '--.-', valueBig())
+      .text(96, 19, '--.-', valueBig())
       .setOrigin(0.5, 0)
       .setDepth(11);
-    this.add.text(96,  58, 'km/h',    unit).setOrigin(0.5, 1).setDepth(11);
+    this.add
+      .text(96, 64, this.units === 'imperial' ? 'mph' : 'km/h', unit)
+      .setOrigin(0.5, 1)
+      .setDepth(11);
 
     // ── Grade  x=288 ────────────────────────────────────────────────────────
-    this.add.text(288, 14, 'GRADE',   label).setOrigin(0.5, 0).setDepth(11);
+    this.add.text(288,  7, 'GRADE',   label).setOrigin(0.5, 0).setDepth(11);
     this.hudGrade = this.add
-      .text(288, 28, '0.0%', valueBig())
+      .text(288, 19, '0.0%', valueBig())
       .setOrigin(0.5, 0)
       .setDepth(11);
     // (unit label intentionally omitted – % is in the value)
@@ -714,20 +728,23 @@ export class GameScene extends Phaser.Scene {
       .setAlpha(0);
 
     // ── Distance  x=672 ─────────────────────────────────────────────────────
-    this.add.text(672, 14, 'DIST',    label).setOrigin(0.5, 0).setDepth(11);
+    this.add.text(672,  7, 'DIST',    label).setOrigin(0.5, 0).setDepth(11);
     this.hudDistance = this.add
-      .text(672, 28, '0.00', valueBig())
+      .text(672, 19, '0.00', valueBig())
       .setOrigin(0.5, 0)
       .setDepth(11);
-    this.add.text(672, 58, 'km',      unit).setOrigin(0.5, 1).setDepth(11);
+    this.add
+      .text(672, 64, this.units === 'imperial' ? 'mi' : 'km', unit)
+      .setOrigin(0.5, 1)
+      .setDepth(11);
 
     // ── Cadence  x=864 ──────────────────────────────────────────────────────
-    this.add.text(864, 14, 'CADENCE', label).setOrigin(0.5, 0).setDepth(11);
+    this.add.text(864,  7, 'CADENCE', label).setOrigin(0.5, 0).setDepth(11);
     this.hudCadence = this.add
-      .text(864, 28, '---', valueBig())
+      .text(864, 19, '---', valueBig())
       .setOrigin(0.5, 0)
       .setDepth(11);
-    this.add.text(864, 58, 'rpm',     unit).setOrigin(0.5, 1).setDepth(11);
+    this.add.text(864, 64, 'rpm',     unit).setOrigin(0.5, 1).setDepth(11);
   }
 
   // ── Elevation graph ───────────────────────────────────────────────────────
@@ -838,9 +855,16 @@ export class GameScene extends Phaser.Scene {
     this.elevGradeLabel.setText(`${gradeSign}${(this.currentGrade * 100).toFixed(1)}%`);
     this.elevGradeLabel.setColor(this.gradeColour(this.currentGrade));
 
-    const lapKm = (currentDistM / 1000).toFixed(1);
-    const totalKm = (totalDist / 1000).toFixed(1);
-    this.elevDistLabel.setText(`${lapKm} / ${totalKm} km`);
+    let lapLabel: string;
+    let totalLabel: string;
+    if (this.units === 'imperial') {
+      lapLabel   = `${(currentDistM / 1609.344).toFixed(1)} mi`;
+      totalLabel = `${(totalDist    / 1609.344).toFixed(1)} mi`;
+    } else {
+      lapLabel   = `${(currentDistM / 1000).toFixed(1)} km`;
+      totalLabel = `${(totalDist    / 1000).toFixed(1)} km`;
+    }
+    this.elevDistLabel.setText(`${lapLabel} / ${totalLabel}`);
   }
 
   // ── Bottom controls ───────────────────────────────────────────────────────
@@ -1043,8 +1067,8 @@ export class GameScene extends Phaser.Scene {
     this.hudCadence.setText('---');
     this.hudGrade.setText('0.0%');
     this.hudDistance.setText('0.00');
-    this.rawPower = 0;
-    this.latestPower = 0;
+    this.rawPower        = 0;
+    this.latestPower     = 0;
     this.targetVelocityMs = 0;
   }
 

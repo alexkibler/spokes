@@ -7,6 +7,7 @@
  *   • Distance    – 5–200 km in 5 km steps (quick-select presets available)
  *   • Rider weight – 40–130 kg in 1 kg steps
  *   • Difficulty  – Easy (max 5 %), Medium (max 10 %), Hard (max 15 %)
+ *   • Units       – Imperial (mph / lb) or Metric (km/h / kg)
  *
  * On START, a course profile is procedurally generated and all selections
  * are passed to GameScene.
@@ -14,6 +15,13 @@
 
 import Phaser from 'phaser';
 import { generateCourseProfile } from '../course/CourseProfile';
+
+// ─── Units ────────────────────────────────────────────────────────────────────
+
+export type Units = 'imperial' | 'metric';
+
+const KG_TO_LB  = 2.20462;
+const KM_TO_MI  = 0.621371;
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
 
@@ -50,10 +58,9 @@ const PRESETS = [10, 25, 50, 100, 150, 200];
 
 // ─── Weight config ────────────────────────────────────────────────────────────
 
-const MIN_KG   =  40;
-const MAX_KG   = 130;
-const STEP_KG  =   1;
-const DEFAULT_WEIGHT_KG = 75;
+const MIN_KG            =  40;
+const MAX_KG            = 130;
+const DEFAULT_WEIGHT_KG =  75;
 
 // ─── Scene ────────────────────────────────────────────────────────────────────
 
@@ -61,10 +68,19 @@ export class MenuScene extends Phaser.Scene {
   private difficulty: Difficulty = 'easy';
   private distanceKm = 50;
   private weightKg   = DEFAULT_WEIGHT_KG;
+  private units: Units = 'imperial';
 
   private distText!: Phaser.GameObjects.Text;
   private weightText!: Phaser.GameObjects.Text;
-  private diffBtns = new Map<Difficulty, Phaser.GameObjects.Rectangle>();
+  private weightInputField!: Phaser.GameObjects.Rectangle;
+  private weightInputActive  = false;
+  private weightInputStr     = '';
+  private weightCursorMs     = 0;
+  private weightCursorOn     = true;
+  private ignoreNextGlobalClick = false;
+  private diffBtns   = new Map<Difficulty, Phaser.GameObjects.Rectangle>();
+  private unitsBtns  = new Map<Units, Phaser.GameObjects.Rectangle>();
+  private presetLabels: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super({ key: 'MenuScene' });
@@ -76,8 +92,19 @@ export class MenuScene extends Phaser.Scene {
     this.buildTitle();
     this.buildDistanceSection();
     this.buildWeightSection();
+    this.buildUnitsSection();
     this.buildDifficultySection();
     this.buildStartButton();
+  }
+
+  update(_time: number, delta: number): void {
+    if (!this.weightInputActive) return;
+    this.weightCursorMs += delta;
+    if (this.weightCursorMs >= 530) {
+      this.weightCursorMs = 0;
+      this.weightCursorOn = !this.weightCursorOn;
+      this.showWeightInputDisplay();
+    }
   }
 
   // ── Decorative background ──────────────────────────────────────────────────
@@ -159,15 +186,15 @@ export class MenuScene extends Phaser.Scene {
     // Step buttons
     this.addIconBtn(PX + 58, CY - 12, 48, 38, '−', 0x2a2a6b, 0x4444aa, () => {
       this.distanceKm = Math.max(MIN_KM, this.distanceKm - STEP_KM);
-      this.distText.setText(`${this.distanceKm} km`);
+      this.distText.setText(this.fmtDist(this.distanceKm));
     });
     this.addIconBtn(PX + PW - 58, CY - 12, 48, 38, '+', 0x2a2a6b, 0x4444aa, () => {
       this.distanceKm = Math.min(MAX_KM, this.distanceKm + STEP_KM);
-      this.distText.setText(`${this.distanceKm} km`);
+      this.distText.setText(this.fmtDist(this.distanceKm));
     });
 
     // Value display
-    this.distText = this.add.text(CX, CY - 12, `${this.distanceKm} km`, {
+    this.distText = this.add.text(CX, CY - 12, this.fmtDist(this.distanceKm), {
       fontFamily: 'monospace',
       fontSize:   '32px',
       color:      '#ffffff',
@@ -181,12 +208,14 @@ export class MenuScene extends Phaser.Scene {
     const totalW  = PRESETS.length * btnW + (PRESETS.length - 1) * gap;
     const startX  = Math.round(CX - totalW / 2);
 
+    this.presetLabels = [];
     PRESETS.forEach((km, i) => {
       const bx = startX + i * (btnW + gap) + btnW / 2;
-      this.addIconBtn(bx, presetY, btnW, 22, `${km}`, 0x3a3a8b, 0x5555bb, () => {
+      const lbl = this.addIconBtn(bx, presetY, btnW, 22, this.fmtPreset(km), 0x3a3a8b, 0x5555bb, () => {
         this.distanceKm = km;
-        this.distText.setText(`${km} km`);
+        this.distText.setText(this.fmtDist(km));
       }, { fontSize: '11px', color: '#ccccff' });
+      this.presetLabels.push(lbl);
     });
   }
 
@@ -197,7 +226,6 @@ export class MenuScene extends Phaser.Scene {
     const PX = 575; const PY = 150;
     const PW = 215; const PH = 132;
     const CX = PX + PW / 2;   // 682.5 → ~683
-    const CY = PY + PH / 2;   // 216
 
     const bg = this.add.graphics();
     bg.fillStyle(0x000000, 0.40);
@@ -205,31 +233,110 @@ export class MenuScene extends Phaser.Scene {
 
     this.addSectionLabel(PX + 18, PY + 10, 'RIDER WEIGHT');
 
-    // Step buttons (1 kg per click)
-    this.addIconBtn(PX + 48, CY - 12, 44, 38, '−', 0x2a2a6b, 0x4444aa, () => {
-      this.weightKg = Math.max(MIN_KG, this.weightKg - STEP_KG);
-      this.weightText.setText(`${this.weightKg} kg`);
-    });
-    this.addIconBtn(PX + PW - 48, CY - 12, 44, 38, '+', 0x2a2a6b, 0x4444aa, () => {
-      this.weightKg = Math.min(MAX_KG, this.weightKg + STEP_KG);
-      this.weightText.setText(`${this.weightKg} kg`);
-    });
+    // Editable input field
+    const FIELD_W = 180;
+    const FIELD_H = 46;
+    const fieldCY = PY + 72;
 
-    // Value display
-    this.weightText = this.add.text(CX, CY - 12, `${this.weightKg} kg`, {
+    this.weightInputField = this.add
+      .rectangle(CX, fieldCY, FIELD_W, FIELD_H, 0x1a1a3a)
+      .setStrokeStyle(2, 0x3a3a8b, 0.8)
+      .setInteractive({ useHandCursor: true });
+
+    // Value text centered in the field
+    this.weightText = this.add.text(CX, fieldCY, this.fmtWeight(this.weightKg), {
       fontFamily: 'monospace',
-      fontSize:   '32px',
+      fontSize:   '26px',
       color:      '#ffffff',
       fontStyle:  'bold',
     }).setOrigin(0.5);
 
-    // Hint label at bottom
-    this.add.text(CX, PY + PH - 20, 'rider only', {
+    // Hint
+    this.add.text(CX, PY + PH - 14, 'click to edit · enter to confirm', {
       fontFamily: 'monospace',
-      fontSize:   '9px',
-      color:      '#888899',
-      letterSpacing: 1,
+      fontSize:   '8px',
+      color:      '#666677',
+      letterSpacing: 0,
     }).setOrigin(0.5);
+
+    // ── Interaction ──────────────────────────────────────────────────────────
+
+    this.weightInputField.on('pointerover', () => {
+      if (!this.weightInputActive) {
+        this.weightInputField.setStrokeStyle(2, 0x5555cc, 1);
+      }
+    });
+    this.weightInputField.on('pointerout', () => {
+      if (!this.weightInputActive) {
+        this.weightInputField.setStrokeStyle(2, 0x3a3a8b, 0.8);
+      }
+    });
+
+    this.weightInputField.on('pointerdown', () => {
+      this.ignoreNextGlobalClick = true;
+      this.startWeightEdit();
+    });
+
+    // Click anywhere else commits the edit
+    this.input.on('pointerdown', () => {
+      if (this.ignoreNextGlobalClick) {
+        this.ignoreNextGlobalClick = false;
+        return;
+      }
+      if (this.weightInputActive) this.commitWeightEdit();
+    });
+
+    // Keyboard capture (digits / backspace / enter / escape)
+    this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
+      if (!this.weightInputActive) return;
+      if (event.key >= '0' && event.key <= '9') {
+        if (this.weightInputStr.length < 4) {
+          this.weightInputStr += event.key;
+          this.weightCursorOn = true;
+          this.weightCursorMs = 0;
+          this.showWeightInputDisplay();
+        }
+      } else if (event.key === 'Backspace') {
+        this.weightInputStr = this.weightInputStr.slice(0, -1);
+        this.weightCursorOn = true;
+        this.weightCursorMs = 0;
+        this.showWeightInputDisplay();
+      } else if (event.key === 'Enter' || event.key === 'Escape') {
+        this.commitWeightEdit();
+      }
+    });
+  }
+
+  private startWeightEdit(): void {
+    if (this.weightInputActive) return;
+    this.weightInputActive = true;
+    this.weightCursorMs    = 0;
+    this.weightCursorOn    = true;
+    const displayVal = this.units === 'imperial'
+      ? Math.round(this.weightKg * KG_TO_LB)
+      : this.weightKg;
+    this.weightInputStr = String(displayVal);
+    this.weightInputField.setStrokeStyle(2, 0x5588ff, 1);
+    this.showWeightInputDisplay();
+  }
+
+  private commitWeightEdit(): void {
+    if (!this.weightInputActive) return;
+    this.weightInputActive = false;
+    this.weightInputField.setStrokeStyle(2, 0x3a3a8b, 0.8);
+    const parsed = parseInt(this.weightInputStr, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      const asKg = this.units === 'imperial'
+        ? Math.round(parsed / KG_TO_LB)
+        : parsed;
+      this.weightKg = Math.max(MIN_KG, Math.min(MAX_KG, asKg));
+    }
+    this.weightText.setText(this.fmtWeight(this.weightKg));
+  }
+
+  private showWeightInputDisplay(): void {
+    const cursor = this.weightCursorOn ? '|' : ' ';
+    this.weightText.setText((this.weightInputStr || '0') + cursor);
   }
 
   // ── Difficulty selector ────────────────────────────────────────────────────
@@ -321,8 +428,102 @@ export class MenuScene extends Phaser.Scene {
         this.distanceKm,
         DIFF[this.difficulty].maxGrade,
       );
-      this.scene.start('GameScene', { course, weightKg: this.weightKg });
+      this.scene.start('GameScene', { course, weightKg: this.weightKg, units: this.units });
     });
+  }
+
+  // ── Units selector (right panel, same row as distance/weight) ─────────────
+  //   Occupies x = 800–945 (width 145)
+
+  private buildUnitsSection(): void {
+    const PX = 800; const PY = 150;
+    const PW = 145; const PH = 132;
+    const CX = PX + PW / 2;   // 872.5
+
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.40);
+    bg.fillRoundedRect(PX, PY, PW, PH, 6);
+
+    this.addSectionLabel(PX + 14, PY + 10, 'UNITS');
+
+    const BTN_W = 110;
+    const BTN_H = 32;
+
+    const unitOrder: Units[] = ['imperial', 'metric'];
+    const labels: Record<Units, string> = {
+      imperial: 'IMPERIAL',
+      metric:   'METRIC',
+    };
+    const ys = [PY + 52, PY + 96];
+
+    unitOrder.forEach((u, i) => {
+      const btn = this.add
+        .rectangle(CX, ys[i], BTN_W, BTN_H, 0x1a1a3a)
+        .setInteractive({ useHandCursor: true });
+
+      this.add.text(CX, ys[i], labels[u], {
+        fontFamily:    'monospace',
+        fontSize:      '11px',
+        color:         '#ffffff',
+        fontStyle:     'bold',
+        letterSpacing: 1,
+      }).setOrigin(0.5);
+
+      this.unitsBtns.set(u, btn);
+
+      btn.on('pointerdown', () => {
+        this.units = u;
+        this.refreshUnitsStyles();
+        this.refreshUnitDisplays();
+      });
+      btn.on('pointerover', () => {
+        if (this.units !== u) btn.setFillStyle(0x3a3a6b);
+      });
+      btn.on('pointerout', () => this.refreshUnitsStyles());
+    });
+
+    this.refreshUnitsStyles();
+  }
+
+  private refreshUnitsStyles(): void {
+    for (const [u, btn] of this.unitsBtns) {
+      const selected = u === this.units;
+      btn.setFillStyle(selected ? 0x2a5a8b : 0x1a1a3a);
+      btn.setStrokeStyle(selected ? 2 : 0, 0xffffff, selected ? 0.85 : 0);
+    }
+  }
+
+  /** Refresh all unit-sensitive text objects when the units toggle changes. */
+  private refreshUnitDisplays(): void {
+    if (this.weightInputActive) this.commitWeightEdit();
+    this.distText.setText(this.fmtDist(this.distanceKm));
+    this.weightText.setText(this.fmtWeight(this.weightKg));
+    PRESETS.forEach((km, i) => {
+      this.presetLabels[i]?.setText(this.fmtPreset(km));
+    });
+  }
+
+  // ── Format helpers ─────────────────────────────────────────────────────────
+
+  private fmtDist(km: number): string {
+    if (this.units === 'imperial') {
+      return `${(km * KM_TO_MI).toFixed(1)} mi`;
+    }
+    return `${km} km`;
+  }
+
+  private fmtPreset(km: number): string {
+    if (this.units === 'imperial') {
+      return `${Math.round(km * KM_TO_MI)}`;
+    }
+    return `${km}`;
+  }
+
+  private fmtWeight(kg: number): string {
+    if (this.units === 'imperial') {
+      return `${Math.round(kg * KG_TO_LB)} lb`;
+    }
+    return `${kg} kg`;
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -342,12 +543,12 @@ export class MenuScene extends Phaser.Scene {
     colorNormal: number, colorHover: number,
     onClick: () => void,
     textStyle?: object,
-  ): void {
+  ): Phaser.GameObjects.Text {
     const btn = this.add
       .rectangle(x, y, w, h, colorNormal)
       .setInteractive({ useHandCursor: true });
 
-    this.add.text(x, y, label, {
+    const txt = this.add.text(x, y, label, {
       fontFamily: 'monospace',
       fontSize:   '16px',
       color:      '#ffffff',
@@ -357,5 +558,7 @@ export class MenuScene extends Phaser.Scene {
     btn.on('pointerdown', onClick);
     btn.on('pointerover', () => btn.setFillStyle(colorHover));
     btn.on('pointerout',  () => btn.setFillStyle(colorNormal));
+
+    return txt;
   }
 }
