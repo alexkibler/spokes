@@ -1,4 +1,4 @@
-different terrain (snow, rocks, desert etc) with different wheel like tracks or skis that help you go faster in those terrains - zak
+different terrain (snow, rocks, desert etc) with different wheel like tracks or skis that help you go faster in those terrains - zak.  Could we increase resistance to artificially slow you down so it feels more natural? - alex
 teleport item + trap (teleport to end of segment/teleport to beginning)
 gates that require checks to unlock (in archipelago terms)
 
