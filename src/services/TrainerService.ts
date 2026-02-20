@@ -298,9 +298,11 @@ export class TrainerService implements ITrainerService {
         this.controlGranted = true;
         // Automatically start/resume session once control is granted.
         // This ensures the trainer exits any default pause/erg modes.
-        void this.controlPoint.writeValueWithResponse(
-          new Uint8Array([OP_START_RESUME]).buffer,
-        );
+        if (this.controlPoint) {
+          void this.controlPoint.writeValueWithResponse(
+            new Uint8Array([OP_START_RESUME]).buffer,
+          );
+        }
       } else if (opCode === OP_START_RESUME && result === 0x01) {
         console.log('[TrainerService] Workout session started.');
         // Once the session is active, sync the initial simulation state
