@@ -18,6 +18,8 @@
  */
 
 import Phaser from 'phaser';
+import { FitWriter } from '../fit/FitWriter';
+import type { RideRecord } from '../fit/FitWriter';
 import type { ITrainerService, TrainerData } from '../services/ITrainerService';
 import { MockTrainerService } from '../services/MockTrainerService';
 import { HeartRateService } from '../services/HeartRateService';
@@ -213,6 +215,17 @@ export class GameScene extends Phaser.Scene {
   private elevGradeLabel!: Phaser.GameObjects.Text;
   private elevDistLabel!: Phaser.GameObjects.Text;
 
+  // FIT ride tracking
+  private fitWriter!: FitWriter;
+  private rideStartTime = 0;
+  private currentHR = 0;
+  private lastRecordMs = 0;
+  private rideComplete = false;
+  private overlayVisible = false;
+  // Running sums for overlay stats (updated each recorded sample)
+  private recordedPowerSum = 0;
+  private recordedSpeedSum = 0;
+
   // Status / button objects
   private statusDot!: Phaser.GameObjects.Arc;
   private statusLabel!: Phaser.GameObjects.Text;
@@ -367,9 +380,26 @@ export class GameScene extends Phaser.Scene {
     this.rawPower         = 200;
     this.activeEffect     = null;
     this.physicsConfig    = { ...this.basePhysics };
+    this.rideComplete       = false;
+    this.overlayVisible     = false;
+    this.currentHR          = 0;
+    this.lastRecordMs       = 0;
+    this.recordedPowerSum   = 0;
+    this.recordedSpeedSum   = 0;
   }
 
   create(): void {
+    this.rideStartTime = Date.now();
+    this.fitWriter     = new FitWriter(this.rideStartTime);
+    this.lastRecordMs  = this.rideStartTime;
+
+    // These arrays accumulate across restarts because the scene instance is
+    // reused. Clear them so buildHUD() starts from a clean slate each run.
+    this.hudLabels = [];
+    this.hudValues = [];
+    this.hudUnits  = [];
+    this.hudSeps   = [];
+
     this.cameras.main.setBackgroundColor('#e8dcc8');
 
     // Pre-compute elevation samples and range for the graph
@@ -426,11 +456,29 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
+    if (this.overlayVisible) return;
+
     const dt = delta / 1000; // seconds
 
     // ── Grade from course ────────────────────────────────────────────────────
     this.distanceM += this.smoothVelocityMs * dt;
     const wrappedDist = this.distanceM % this.course.totalDistanceM;
+
+    // ── FIT recording (once per second) ─────────────────────────────────────
+    const nowMs = Date.now();
+    if (nowMs - this.lastRecordMs >= 1000) {
+      this.lastRecordMs = nowMs;
+      this.recordFitData(nowMs);
+    }
+
+    // ── Course completion ────────────────────────────────────────────────────
+    if (!this.rideComplete && this.distanceM >= this.course.totalDistanceM) {
+      this.rideComplete = true;
+      this.recordFitData(Date.now());
+      this.showRideEndOverlay(true);
+      return;
+    }
+
     const newGrade = getGradeAtDistance(this.course, wrappedDist);
 
     if (newGrade !== this.currentGrade) {
@@ -1067,8 +1115,7 @@ export class GameScene extends Phaser.Scene {
       .on('pointerover', () => this.btnMenu.setFillStyle(0x5555aa))
       .on('pointerout',  () => this.btnMenu.setFillStyle(0x3a3a5a))
       .on('pointerdown', () => {
-        this.trainer.disconnect();
-        this.scene.start('MenuScene');
+        this.showRideEndOverlay(false);
       });
   }
 
@@ -1091,8 +1138,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleHrmData(data: HeartRateData): void {
+    this.currentHR = Math.round(data.bpm);
     if (this.hudHR) {
-      this.hudHR.setText(String(Math.round(data.bpm)));
+      this.hudHR.setText(String(this.currentHR));
     }
   }
 
@@ -1288,7 +1336,182 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // ── FIT ride tracking ─────────────────────────────────────────────────────
+
+  private recordFitData(nowMs: number): void {
+    const rec: RideRecord = {
+      timestampMs:  nowMs,
+      powerW:       Math.round(this.rawPower),
+      cadenceRpm:   Math.round(this.avgCadence),
+      speedMs:      this.smoothVelocityMs,
+      distanceM:    this.distanceM,
+      heartRateBpm: this.currentHR,
+      altitudeM:    this.getCurrentAltitude(),
+    };
+    this.fitWriter.addRecord(rec);
+    this.recordedPowerSum += rec.powerW;
+    this.recordedSpeedSum += rec.speedMs;
+  }
+
+  /** Linear interpolation of elevation at the current (wrapped) course distance. */
+  private getCurrentAltitude(): number {
+    const samples = this.elevationSamples;
+    if (samples.length === 0) return 0;
+    const d = this.distanceM % this.course.totalDistanceM;
+    let lo = 0;
+    let hi = samples.length - 1;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (samples[mid].distanceM <= d) lo = mid; else hi = mid;
+    }
+    if (lo >= samples.length - 1) return samples[samples.length - 1].elevationM;
+    const s0 = samples[lo], s1 = samples[lo + 1];
+    const t  = (d - s0.distanceM) / (s1.distanceM - s0.distanceM);
+    return s0.elevationM + (s1.elevationM - s0.elevationM) * t;
+  }
+
+  // ── Ride-end overlay ──────────────────────────────────────────────────────
+
+  private showRideEndOverlay(completed: boolean): void {
+    this.overlayVisible = true;
+
+    const w  = this.scale.width;
+    const h  = this.scale.height;
+    const cx = w / 2;
+    const cy = h / 2;
+
+    // ── Compute display stats ─────────────────────────────────────────────
+    const elapsedMs = Date.now() - this.rideStartTime;
+    const elapsedS  = Math.floor(elapsedMs / 1000);
+    const hh = Math.floor(elapsedS / 3600);
+    const mm = Math.floor((elapsedS % 3600) / 60);
+    const ss = elapsedS % 60;
+    const timeStr = hh > 0
+      ? `${hh}:${mm.toString().padStart(2, '0')}:${ss.toString().padStart(2, '0')}`
+      : `${mm}:${ss.toString().padStart(2, '0')}`;
+
+    const distStr = this.units === 'imperial'
+      ? `${(this.distanceM / 1609.344).toFixed(2)} mi`
+      : `${(this.distanceM / 1000).toFixed(2)} km`;
+
+    // Average power / speed from running sums
+    const recs    = this.fitWriter.recordCount;
+    const avgPow  = recs > 0 ? Math.round(this.recordedPowerSum / recs) : Math.round(this.rawPower);
+    const avgSpdMs = recs > 0 ? this.recordedSpeedSum / recs : this.smoothVelocityMs;
+    const avgSpdStr = this.units === 'imperial'
+      ? `${msToMph(avgSpdMs).toFixed(1)} mph`
+      : `${msToKmh(avgSpdMs).toFixed(1)} km/h`;
+
+    // ── UI dimensions ────────────────────────────────────────────────────
+    const panW = Math.min(480, w - 40);
+    const panH = 200;
+    const px   = cx - panW / 2;
+    const py   = cy - panH / 2;
+
+    const depth = 50;
+
+    // Dim overlay
+    const dim = this.add.graphics().setDepth(depth);
+    dim.fillStyle(0x000000, 0.75);
+    dim.fillRect(0, 0, w, h);
+
+    // Panel background
+    const panel = this.add.graphics().setDepth(depth + 1);
+    panel.fillStyle(0x111122, 0.97);
+    panel.fillRect(px, py, panW, panH);
+    panel.lineStyle(1, 0x3344aa, 1);
+    panel.strokeRect(px, py, panW, panH);
+
+    const mono = 'monospace';
+
+    // Title
+    const titleText = completed ? 'RIDE COMPLETE' : 'RIDE ENDED';
+    const titleColor = completed ? '#00f5d4' : '#aaaacc';
+    this.add.text(cx, py + 26, titleText, {
+      fontFamily: mono, fontSize: '22px', fontStyle: 'bold', color: titleColor,
+    }).setOrigin(0.5, 0).setDepth(depth + 2);
+
+    // Stats row
+    const statsStr = `${distStr}   ·   ${timeStr}   ·   ${avgPow}W   ·   ${avgSpdStr}`;
+    this.add.text(cx, py + 60, statsStr, {
+      fontFamily: mono, fontSize: '12px', color: '#cccccc', letterSpacing: 1,
+    }).setOrigin(0.5, 0).setDepth(depth + 2);
+
+    // Divider
+    const divGfx = this.add.graphics().setDepth(depth + 1);
+    divGfx.lineStyle(1, 0x333355, 1);
+    divGfx.beginPath();
+    divGfx.moveTo(px + 20, py + 84);
+    divGfx.lineTo(px + panW - 20, py + 84);
+    divGfx.strokePath();
+
+    // Prompt text
+    this.add.text(cx, py + 96, 'Save your ride data?', {
+      fontFamily: mono, fontSize: '11px', color: '#888899', letterSpacing: 2,
+    }).setOrigin(0.5, 0).setDepth(depth + 2);
+
+    // ── Buttons ──────────────────────────────────────────────────────────
+    const btnY    = py + panH - 38;
+    const btnW    = 150;
+    const btnH    = 36;
+    const gap     = 16;
+    const dlX     = cx - btnW - gap / 2;
+    const menuX   = cx + gap / 2;
+
+    // Download button
+    const dlBtn = this.add.rectangle(dlX, btnY, btnW, btnH, 0x006655)
+      .setOrigin(0, 0.5)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(depth + 2);
+    this.add.text(dlX + btnW / 2, btnY, 'DOWNLOAD .FIT', {
+      fontFamily: mono, fontSize: '11px', fontStyle: 'bold', color: '#00f5d4',
+    }).setOrigin(0.5, 0.5).setDepth(depth + 3);
+
+    dlBtn
+      .on('pointerover', () => dlBtn.setFillStyle(0x009977))
+      .on('pointerout',  () => dlBtn.setFillStyle(0x006655))
+      .on('pointerdown', () => {
+        this.downloadFit();
+        this.trainer.disconnect();
+        this.preConnectedHrm?.disconnect();
+        this.scene.start('MenuScene');
+      });
+
+    // Back to menu button
+    const menuBtn = this.add.rectangle(menuX, btnY, btnW, btnH, 0x2a2a44)
+      .setOrigin(0, 0.5)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(depth + 2);
+    this.add.text(menuX + btnW / 2, btnY, 'SKIP TO MENU', {
+      fontFamily: mono, fontSize: '11px', color: '#8888aa',
+    }).setOrigin(0.5, 0.5).setDepth(depth + 3);
+
+    menuBtn
+      .on('pointerover', () => menuBtn.setFillStyle(0x4444aa))
+      .on('pointerout',  () => menuBtn.setFillStyle(0x2a2a44))
+      .on('pointerdown', () => {
+        this.trainer.disconnect();
+        this.preConnectedHrm?.disconnect();
+        this.scene.start('MenuScene');
+      });
+  }
+
+  private downloadFit(): void {
+    const bytes = this.fitWriter.export();
+    const blob  = new Blob([bytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+    const url   = URL.createObjectURL(blob);
+    const a     = document.createElement('a');
+    const date  = new Date(this.rideStartTime).toISOString().slice(0, 10);
+    a.href     = url;
+    a.download = `paper-peloton-${date}.fit`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   shutdown(): void {
+    this.scale.off('resize', this.onResize, this);
     this.trainer?.disconnect();
     this.preConnectedHrm?.disconnect();
   }
