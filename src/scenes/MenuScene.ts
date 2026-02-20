@@ -835,6 +835,7 @@ export class MenuScene extends Phaser.Scene {
       if (runTxt.text !== 'TRAINER REQUIRED') runBtn.setFillStyle(0x8b5a00);
     });
     runBtn.on('pointerdown', () => {
+      console.log('[MenuScene] START RUN. isDevMode:', this.isDevMode);
       if (!this.trainerService && !this.isDevMode) {
         // Warn user
         const originalText = '▶  START RUN';
@@ -880,6 +881,7 @@ export class MenuScene extends Phaser.Scene {
       if (startTxt.text !== 'TRAINER REQUIRED') startBtn.setFillStyle(0x00a892);
     });
     startBtn.on('pointerdown', () => {
+      console.log('[MenuScene] START RIDE. isDevMode:', this.isDevMode);
       if (!this.trainerService && !this.isDevMode) {
         // Warn user
         const originalText = '▶  START RIDE';

@@ -374,7 +374,9 @@ export class GameScene extends Phaser.Scene {
     /** Pre-connected heart rate monitor from MenuScene; null → no HR display. */
     hrm?: HeartRateService | null;
     isRoguelike?: boolean;
+    isDevMode?: boolean;
   }): void {
+    console.log('[GameScene] init data:', data);
     // Accept a generated course, rider weight, and unit preference from MenuScene
     this.course = data?.course ?? DEFAULT_COURSE;
     this.units  = data?.units  ?? 'imperial';
@@ -382,6 +384,9 @@ export class GameScene extends Phaser.Scene {
     this.preConnectedTrainer = data?.trainer ?? null;
     this.preConnectedHrm     = data?.hrm     ?? null;
     this.isRoguelike         = data?.isRoguelike ?? false;
+    this.isDevMode           = data?.isDevMode ?? false;
+
+    console.log('[GameScene] isDevMode set to:', this.isDevMode);
 
     // Bike weight is fixed; rider weight comes from the menu (default 75 kg)
     const riderWeightKg = data?.weightKg ?? 75;
@@ -493,13 +498,17 @@ export class GameScene extends Phaser.Scene {
     this.onResize();
 
     // ── Trainer setup ─────────────────────────────────────────────────────
+    console.log(`[GameScene] create checks - preConnectedTrainer: ${!!this.preConnectedTrainer}, isDevMode: ${this.isDevMode}`);
+    
     if (this.preConnectedTrainer) {
+      console.log('[GameScene] Using pre-connected trainer');
       // Use the pre-connected BT trainer passed from MenuScene
       this.trainer = this.preConnectedTrainer;
       this.trainer.onData((data) => this.handleData(data));
       this.isDemoMode = false;
       this.setStatus('ok', 'BT CONNECTED');
     } else if (this.isDevMode) {
+      console.log('[GameScene] Starting DEV MODE (1000W)');
       // Dev Mode: Mock trainer with fixed high power
       const mock = new MockTrainerService({ power: 1000, speed: 45, cadence: 95 });
       this.trainer = mock;
@@ -511,6 +520,7 @@ export class GameScene extends Phaser.Scene {
       this.isDemoMode = false;
       this.setStatus('demo', 'DEV (1000W)');
     } else {
+      console.log('[GameScene] Starting STANDARD DEMO MODE (200W)');
       // No BT trainer → demo mode with mock data (randomised)
       this.trainer = new MockTrainerService({ power: 200, speed: 30, cadence: 90 });
       this.trainer.onData((data) => this.handleData(data));

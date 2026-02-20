@@ -71,6 +71,7 @@ export class MapScene extends Phaser.Scene {
     hrm: HeartRateService | null;
     isDevMode?: boolean;
   }): void {
+    console.log('[MapScene] init data:', data);
     this.weightKg = data.weightKg;
     this.units = data.units;
     this.trainer = data.trainer;
@@ -512,6 +513,7 @@ export class MapScene extends Phaser.Scene {
 
       RunStateManager.setCurrentNode(node.id);
 
+      console.log('[MapScene] Starting GameScene. isDevMode:', this.isDevMode);
       this.scene.start('GameScene', {
         course,
         weightKg: this.weightKg,
