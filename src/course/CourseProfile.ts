@@ -98,6 +98,95 @@ export function buildElevationSamples(
   return samples;
 }
 
+// ─── Procedural generator ─────────────────────────────────────────────────────
+
+/**
+ * Procedurally generates a rolling course profile for the given distance and
+ * maximum road grade.
+ *
+ * The algorithm creates alternating climb / descent segments whose cumulative
+ * elevation is balanced back to ~zero at the end.
+ *
+ * @param distanceKm  Total course length in kilometres (5–200)
+ * @param maxGrade    Maximum road grade as a decimal fraction (0.05 = 5 %)
+ */
+export function generateCourseProfile(
+  distanceKm: number,
+  maxGrade: number,
+): CourseProfile {
+  const totalM = distanceKm * 1000;
+
+  // Flat bookends: 5 % of total length, clamped 500–1 500 m
+  const flatEndM = Math.max(500, Math.min(1500, totalM * 0.05));
+
+  const segments: CourseSegment[] = [{ distanceM: flatEndM, grade: 0 }];
+  let budgetM  = totalM - 2 * flatEndM;
+  let netElevM = 0; // running Σ(grade × length) to track elevation balance
+
+  // Segment length: 4 % of course length, clamped 400–2 500 m
+  const segMax = Math.min(2500, Math.max(600, totalM * 0.04));
+  const segMin = Math.max(400, segMax * 0.35);
+
+  // Grade magnitudes available (25 / 50 / 75 / 100 % of maxGrade)
+  const mags = [
+    maxGrade * 0.25,
+    maxGrade * 0.50,
+    maxGrade * 0.75,
+    maxGrade,
+  ];
+
+  while (budgetM >= segMin * 2) {
+    // Pick a random segment length within budget
+    const hi  = Math.min(segMax, budgetM - segMin);
+    const lo  = Math.min(segMin, hi);
+    const len = lo + Math.random() * Math.max(0, hi - lo);
+
+    // Elevation-balance pressure: −1 (too low) … +1 (too high)
+    const pressure = Math.max(-1, Math.min(1,
+      netElevM / (totalM * maxGrade * 0.25)));
+
+    const r = Math.random();
+    let sign: number;
+    if      (pressure >  0.7)                sign = -1; // must descend
+    else if (pressure < -0.7)                sign =  1; // must climb
+    else if (r < 0.08)                       sign =  0; // flat recovery
+    else sign = (r < 0.52 - pressure * 0.2) ? 1 : -1;
+
+    const grade = sign === 0
+      ? 0
+      : sign * mags[Math.floor(Math.random() * mags.length)];
+
+    segments.push({ distanceM: len, grade });
+    netElevM += len * grade;
+    budgetM  -= len;
+  }
+
+  // Absorb any leftover budget into the last terrain segment
+  if (budgetM > 0 && segments.length > 1) {
+    segments[segments.length - 1].distanceM += budgetM;
+  }
+  segments.push({ distanceM: flatEndM, grade: 0 });
+
+  // Balance correction: distribute residual elevation across terrain segments
+  const terrain  = segments.slice(1, -1);
+  const terrainM = terrain.reduce((s, seg) => s + seg.distanceM, 0);
+  const residual = terrain.reduce((s, seg) => s + seg.distanceM * seg.grade, 0);
+  if (Math.abs(residual) > 1 && terrainM > 0) {
+    const corrPerM = -residual / terrainM;
+    for (const seg of terrain) {
+      seg.grade = Math.max(
+        -maxGrade * 1.1,
+        Math.min(maxGrade * 1.1, seg.grade + corrPerM),
+      );
+    }
+  }
+
+  return {
+    segments,
+    totalDistanceM: segments.reduce((s, seg) => s + seg.distanceM, 0),
+  };
+}
+
 // ─── Default course ───────────────────────────────────────────────────────────
 
 /**

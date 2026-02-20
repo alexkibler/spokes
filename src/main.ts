@@ -6,15 +6,16 @@
  */
 
 import Phaser from 'phaser';
+import { MenuScene } from './scenes/MenuScene';
 import { GameScene } from './scenes/GameScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: 960,
   height: 540,
-  backgroundColor: '#0d0d0d',
+  backgroundColor: '#e8dcc8',
   parent: 'game-container',
-  scene: [GameScene],
+  scene: [MenuScene, GameScene],  // MenuScene starts first
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,

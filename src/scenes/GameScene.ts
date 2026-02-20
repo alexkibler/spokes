@@ -39,7 +39,8 @@ import {
 
 /**
  * Computes the knee joint position for a two-bone leg chain.
- * @param kneeSide  -1 → knee bends "forward" (right leg); +1 → "backward" (left leg)
+ * kneeSide = -1 bends the knee forward (toward the front wheel), which is
+ * correct for both legs on a forward-facing cyclist.
  */
 function computeKnee(
   hipX: number, hipY: number,
@@ -106,14 +107,16 @@ interface LayerDef {
 // ─── Scene ────────────────────────────────────────────────────────────────────
 
 export class GameScene extends Phaser.Scene {
-  // Service reference – swapped when toggling mock mode
+  // Service reference – swapped when toggling demo mode
   private trainer!: ITrainerService;
-  private isMockMode = true;
+  private isDemoMode = true;
 
   // Physics state
   private latestPower = 200;
   private targetVelocityMs = 0;
   private smoothVelocityMs = 0;
+  /** Base config (mass + aero constants) – grade is layered on top each frame. */
+  private basePhysics: PhysicsConfig = { ...DEFAULT_PHYSICS };
   private physicsConfig: PhysicsConfig = { ...DEFAULT_PHYSICS };
 
   // Course / elevation state
@@ -157,8 +160,8 @@ export class GameScene extends Phaser.Scene {
   // Status / button objects
   private statusDot!: Phaser.GameObjects.Arc;
   private statusLabel!: Phaser.GameObjects.Text;
-  private btnMock!: Phaser.GameObjects.Rectangle;
-  private btnMockLabel!: Phaser.GameObjects.Text;
+  private btnDemo!: Phaser.GameObjects.Rectangle;
+  private btnDemoLabel!: Phaser.GameObjects.Text;
   private btnConnect!: Phaser.GameObjects.Rectangle;
 
   constructor() {
@@ -166,6 +169,28 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
+
+  init(data?: { course?: CourseProfile; weightKg?: number }): void {
+    // Accept a generated course and rider weight from MenuScene
+    this.course = data?.course ?? DEFAULT_COURSE;
+
+    // Bike weight is fixed; rider weight comes from the menu (default 75 kg)
+    const massKg = (data?.weightKg ?? 75) + 8; // +8 kg for the bike
+    this.basePhysics = { ...DEFAULT_PHYSICS, massKg };
+
+    // Reset per-ride state so restarts start fresh
+    this.distanceM        = 0;
+    this.smoothVelocityMs = 0;
+    this.targetVelocityMs = 0;
+    this.currentGrade     = 0;
+    this.smoothGrade      = 0;
+    this.lastSentGrade    = 0;
+    this.latestPower      = 200;
+    this.crankAngle       = 0;
+    this.cadenceHistory   = [];
+    this.avgCadence       = 0;
+    this.physicsConfig    = { ...this.basePhysics };
+  }
 
   create(): void {
     this.cameras.main.setBackgroundColor('#e8dcc8');
@@ -181,7 +206,7 @@ export class GameScene extends Phaser.Scene {
     // Pre-seed grade so the world starts already tilted at the correct angle
     this.currentGrade = getGradeAtDistance(this.course, 0);
     this.smoothGrade = this.currentGrade;
-    this.physicsConfig = { ...DEFAULT_PHYSICS, grade: this.currentGrade };
+    this.physicsConfig = { ...this.basePhysics, grade: this.currentGrade };
     this.worldContainer.rotation = -Math.atan(this.smoothGrade);
     this.worldContainer.setScale(Math.sqrt(1 + this.smoothGrade * this.smoothGrade) * 1.02);
 
@@ -189,12 +214,12 @@ export class GameScene extends Phaser.Scene {
     this.buildElevationGraph();
     this.buildBottomControls();
 
-    // Start in mock mode with 200 W so the world scrolls immediately
+    // Start in demo mode with 200 W so the world scrolls immediately
     this.trainer = new MockTrainerService({ power: 200, speed: 30, cadence: 90 });
     this.trainer.onData((data) => this.handleData(data));
     void this.trainer.connect();
-    this.updateMockButtonStyle();
-    this.setStatus('mock', 'MOCK');
+    this.updateDemoButtonStyle();
+    this.setStatus('demo', 'DEMO');
   }
 
   update(_time: number, delta: number): void {
@@ -207,7 +232,9 @@ export class GameScene extends Phaser.Scene {
 
     if (newGrade !== this.currentGrade) {
       this.currentGrade = newGrade;
-      this.physicsConfig = { ...DEFAULT_PHYSICS, grade: newGrade };
+      this.physicsConfig = { ...this.basePhysics, grade: newGrade };
+      // In demo mode, randomise power & cadence each time a new segment begins
+      if (this.isDemoMode) this.randomizeDemoMetrics();
     }
 
     // Smooth grade: exponential lerp toward current segment grade
@@ -448,10 +475,10 @@ export class GameScene extends Phaser.Scene {
     const lFY = crankY + Math.sin(lA) * crankLen;
 
     // ── Knee positions via two-bone IK ───────────────────────────────────────
-    // kneeSide -1 → knee bends forward (right/near leg)
-    // kneeSide +1 → knee bends backward (left/far leg)
+    // Both knees always bend forward (toward the front wheel) — legs are
+    // 180° out of phase but the hinge direction is the same for both.
     const [rKX, rKY] = computeKnee(hipX, hipY, rFX, rFY, upperLen, lowerLen, -1);
-    const [lKX, lKY] = computeKnee(hipX, hipY, lFX, lFY, upperLen, lowerLen,  1);
+    const [lKX, lKY] = computeKnee(hipX, hipY, lFX, lFY, upperLen, lowerLen, -1);
 
     // ── Palette (paper-cutout aesthetic matching the game) ───────────────────
     const BIKE   = 0x2a2018;   // charcoal for frame & wheels
@@ -756,15 +783,16 @@ export class GameScene extends Phaser.Scene {
     strip.setDepth(10);
 
     this.buildStatusIndicator();
-    this.buildMockButton();
+    this.buildDemoButton();
     this.buildConnectButton();
+    this.buildMenuButton();
   }
 
   private buildStatusIndicator(): void {
     const y = 515;
-    this.statusDot = this.add.arc(90, y, 5, 0, 360, false, 0x555566).setDepth(11);
+    this.statusDot = this.add.arc(56, y, 5, 0, 360, false, 0x555566).setDepth(11);
     this.statusLabel = this.add
-      .text(102, y, 'DISCONNECTED', {
+      .text(68, y, 'DISCONNECTED', {
         fontFamily: 'monospace',
         fontSize: '11px',
         color: '#8888aa',
@@ -773,10 +801,10 @@ export class GameScene extends Phaser.Scene {
       .setDepth(11);
   }
 
-  private setStatus(state: 'ok' | 'mock' | 'off' | 'err', label: string): void {
+  private setStatus(state: 'ok' | 'demo' | 'off' | 'err', label: string): void {
     const colors: Record<string, number> = {
       ok:   0x00ff88,
-      mock: 0xffcc00,
+      demo: 0xffcc00,
       off:  0x555566,
       err:  0xff4444,
     };
@@ -786,17 +814,17 @@ export class GameScene extends Phaser.Scene {
     this.statusLabel.setText(label).setColor(hex);
   }
 
-  private buildMockButton(): void {
-    const x = 390;
+  private buildDemoButton(): void {
+    const x = 370;
     const y = 515;
 
-    this.btnMock = this.add
-      .rectangle(x, y, 160, 34, 0x6b2a6b)
+    this.btnDemo = this.add
+      .rectangle(x, y, 150, 34, 0x6b2a6b)
       .setInteractive({ useHandCursor: true })
       .setDepth(11);
 
-    this.btnMockLabel = this.add
-      .text(x, y, 'MOCK MODE: ON', {
+    this.btnDemoLabel = this.add
+      .text(x, y, 'DEMO MODE: ON', {
         fontFamily: 'monospace',
         fontSize: '12px',
         color: '#ffffff',
@@ -805,20 +833,20 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(12);
 
-    this.btnMock
+    this.btnDemo
       .on('pointerover', () =>
-        this.btnMock.setFillStyle(this.isMockMode ? 0xaa3aaa : 0x3a3aaa),
+        this.btnDemo.setFillStyle(this.isDemoMode ? 0xaa3aaa : 0x3a3aaa),
       )
-      .on('pointerout', () => this.updateMockButtonStyle())
-      .on('pointerdown', () => this.toggleMockMode());
+      .on('pointerout', () => this.updateDemoButtonStyle())
+      .on('pointerdown', () => this.toggleDemoMode());
   }
 
   private buildConnectButton(): void {
-    const x = 590;
+    const x = 560;
     const y = 515;
 
     this.btnConnect = this.add
-      .rectangle(x, y, 160, 34, 0x1a6b3a)
+      .rectangle(x, y, 150, 34, 0x1a6b3a)
       .setInteractive({ useHandCursor: true })
       .setDepth(11);
 
@@ -838,23 +866,51 @@ export class GameScene extends Phaser.Scene {
       .on('pointerdown', () => this.connectReal());
   }
 
-  private updateMockButtonStyle(): void {
-    this.btnMock.setFillStyle(this.isMockMode ? 0x6b2a6b : 0x2a2a6b);
-    this.btnMockLabel.setText(this.isMockMode ? 'MOCK MODE: ON' : 'MOCK MODE: OFF');
+  private buildMenuButton(): void {
+    const x = 750;
+    const y = 515;
+
+    const btn = this.add
+      .rectangle(x, y, 120, 34, 0x3a3a5a)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(11);
+
+    this.add
+      .text(x, y, '← MENU', {
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        color: '#aaaacc',
+        letterSpacing: 1,
+      })
+      .setOrigin(0.5)
+      .setDepth(12);
+
+    btn
+      .on('pointerover', () => btn.setFillStyle(0x5555aa))
+      .on('pointerout',  () => btn.setFillStyle(0x3a3a5a))
+      .on('pointerdown', () => {
+        this.trainer.disconnect();
+        this.scene.start('MenuScene');
+      });
+  }
+
+  private updateDemoButtonStyle(): void {
+    this.btnDemo.setFillStyle(this.isDemoMode ? 0x6b2a6b : 0x2a2a6b);
+    this.btnDemoLabel.setText(this.isDemoMode ? 'DEMO MODE: ON' : 'DEMO MODE: OFF');
   }
 
   // ── Mode switching ────────────────────────────────────────────────────────
 
-  private toggleMockMode(): void {
-    this.isMockMode = !this.isMockMode;
+  private toggleDemoMode(): void {
+    this.isDemoMode = !this.isDemoMode;
 
     this.trainer.disconnect();
 
-    if (this.isMockMode) {
+    if (this.isDemoMode) {
       this.trainer = new MockTrainerService({ power: 200, speed: 30, cadence: 90 });
       this.trainer.onData((data) => this.handleData(data));
       void this.trainer.connect();
-      this.setStatus('mock', 'MOCK');
+      this.setStatus('demo', 'DEMO');
     } else {
       this.trainer = new TrainerService();
       this.trainer.onData((data) => this.handleData(data));
@@ -862,16 +918,16 @@ export class GameScene extends Phaser.Scene {
       this.resetReadouts();
     }
 
-    this.updateMockButtonStyle();
+    this.updateDemoButtonStyle();
   }
 
   private connectReal(): void {
-    if (this.isMockMode) {
-      this.isMockMode = false;
+    if (this.isDemoMode) {
+      this.isDemoMode = false;
       this.trainer.disconnect();
       this.trainer = new TrainerService();
       this.trainer.onData((data) => this.handleData(data));
-      this.updateMockButtonStyle();
+      this.updateDemoButtonStyle();
     }
 
     this.setStatus('off', 'CONNECTING…');
@@ -936,5 +992,22 @@ export class GameScene extends Phaser.Scene {
     if (grade > 0.005) return '#ffffff'; // gentle       → white
     if (grade > -0.005) return '#aaaaaa'; // flat        → grey
     return '#55aaff';                      // descent     → blue
+  }
+
+  /**
+   * In demo mode, assign fresh random power (150–350 W) and cadence (70–110 rpm)
+   * at the start of each new course segment so the metrics feel dynamic.
+   */
+  private randomizeDemoMetrics(): void {
+    if (this.trainer instanceof MockTrainerService) {
+      const power   = Math.round(150 + Math.random() * 200); // 150–350 W
+      const cadence = Math.round(70  + Math.random() * 40);  // 70–110 rpm
+      this.trainer.setPower(power);
+      this.trainer.setCadence(cadence);
+    }
+  }
+
+  shutdown(): void {
+    this.trainer?.disconnect();
   }
 }
