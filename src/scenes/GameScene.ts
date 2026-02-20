@@ -50,6 +50,9 @@ const LERP_FACTOR = 1.5;
 /** Minimum grade delta before broadcasting to the trainer (avoids BT spam) */
 const GRADE_SEND_THRESHOLD = 0.001; // 0.1%
 
+/** Exponential lerp rate for visual grade smoothing (~63% convergence per second) */
+const GRADE_LERP_RATE = 1.0;
+
 // ─── Elevation graph layout ───────────────────────────────────────────────────
 
 const ELEV_Y = 415;
@@ -62,7 +65,6 @@ const ELEV_PAD_Y = 8;
 interface LayerDef {
   key: string;
   parallax: number;
-  depth: number;
   draw: (g: Phaser.GameObjects.Graphics) => void;
 }
 
@@ -84,6 +86,11 @@ export class GameScene extends Phaser.Scene {
   private distanceM = 0;                // total cumulative distance
   private currentGrade = 0;
   private lastSentGrade = 0;
+  private smoothGrade = 0;
+
+  // World container (holds all parallax layers; rotated for grade tilt)
+  private worldContainer!: Phaser.GameObjects.Container;
+
   private elevationSamples: ElevationSample[] = [];
   private minElevM = 0;
   private maxElevM = 0;
@@ -151,14 +158,23 @@ export class GameScene extends Phaser.Scene {
     if (newGrade !== this.currentGrade) {
       this.currentGrade = newGrade;
       this.physicsConfig = { ...DEFAULT_PHYSICS, grade: newGrade };
-      // Send to trainer hardware only when grade change is significant
-      if (
-        this.trainer.setGrade &&
-        Math.abs(newGrade - this.lastSentGrade) >= GRADE_SEND_THRESHOLD
-      ) {
-        this.lastSentGrade = newGrade;
-        void this.trainer.setGrade(newGrade);
-      }
+    }
+
+    // Smooth grade: exponential lerp toward current segment grade
+    this.smoothGrade += (this.currentGrade - this.smoothGrade) * dt * GRADE_LERP_RATE;
+
+    // Apply rotation + scale compensation to world container
+    this.worldContainer.rotation = -Math.atan(this.smoothGrade);
+    const scale = Math.sqrt(1 + this.smoothGrade * this.smoothGrade) * 1.02;
+    this.worldContainer.setScale(scale);
+
+    // Send smoothGrade to trainer hardware (gated by threshold to avoid BT spam)
+    if (
+      this.trainer.setGrade &&
+      Math.abs(this.smoothGrade - this.lastSentGrade) >= GRADE_SEND_THRESHOLD
+    ) {
+      this.lastSentGrade = this.smoothGrade;
+      void this.trainer.setGrade(this.smoothGrade);
     }
 
     // ── Physics ─────────────────────────────────────────────────────────────
@@ -187,29 +203,28 @@ export class GameScene extends Phaser.Scene {
   // ── Parallax layers ──────────────────────────────────────────────────────────
 
   private buildParallaxLayers(): void {
+    // Container centred at screen midpoint so rotation tilts the world naturally
+    this.worldContainer = this.add.container(W / 2, H / 2).setDepth(0);
+
     const layers: LayerDef[] = [
       {
         key: 'mountains',
         parallax: 0.10,
-        depth: 0,
         draw: (g) => this.drawMountains(g),
       },
       {
         key: 'midHills',
         parallax: 0.30,
-        depth: 1,
         draw: (g) => this.drawMidHills(g),
       },
       {
         key: 'nearGround',
         parallax: 0.65,
-        depth: 2,
         draw: (g) => this.drawNearGround(g),
       },
       {
         key: 'road',
         parallax: 1.00,
-        depth: 3,
         draw: (g) => this.drawRoad(g),
       },
     ];
@@ -220,10 +235,12 @@ export class GameScene extends Phaser.Scene {
       g.generateTexture(layer.key, W, H);
       g.destroy();
 
+      // Position at (-W/2, -H/2) so the top-left corner aligns with the world origin
       const sprite = this.add
-        .tileSprite(0, 0, W, H, layer.key)
-        .setOrigin(0, 0)
-        .setDepth(layer.depth);
+        .tileSprite(-W / 2, -H / 2, W, H, layer.key)
+        .setOrigin(0, 0);
+
+      this.worldContainer.add(sprite);
 
       if (layer.key === 'mountains') this.layerMountains = sprite;
       else if (layer.key === 'midHills') this.layerMidHills = sprite;
@@ -641,10 +658,10 @@ export class GameScene extends Phaser.Scene {
       .connect()
       .then(() => {
         this.setStatus('ok', 'BT CONNECTED');
-        // Sync current grade to the trainer immediately on connect
+        // Sync smooth grade to the trainer immediately on connect
         if (this.trainer.setGrade) {
-          void this.trainer.setGrade(this.currentGrade);
-          this.lastSentGrade = this.currentGrade;
+          void this.trainer.setGrade(this.smoothGrade);
+          this.lastSentGrade = this.smoothGrade;
         }
       })
       .catch((err: unknown) => {

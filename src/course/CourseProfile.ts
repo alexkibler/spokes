@@ -118,7 +118,7 @@ export function buildElevationSamples(
  *   9–9.5 km   Flat finish
  */
 export const DEFAULT_COURSE: CourseProfile = buildCourseProfile([
-  { distanceM: 1000, grade:  0.03 },
+  { distanceM: 1000, grade:  0.23 },
   { distanceM:  800, grade:  0.03 },
   { distanceM:  200, grade:  0.00 },
   { distanceM: 1200, grade:  0.06 },
