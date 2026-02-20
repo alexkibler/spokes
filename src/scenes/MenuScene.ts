@@ -815,6 +815,7 @@ export class MenuScene extends Phaser.Scene {
         trainer:  null,           // null → GameScene uses MockTrainerService
         hrm:      this.hrmService,
         isDevMode: false,         // Force false for Quick Demo
+        isQuickDemo: true,        // Explicit flag for Mock Mode
       });
     });
 

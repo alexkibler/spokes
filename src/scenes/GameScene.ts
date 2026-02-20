@@ -149,6 +149,7 @@ export class GameScene extends Phaser.Scene {
   private weightKg = 75;
   private isRoguelike = false;
   private isDevMode = false;
+  private isQuickDemo = false;
 
   // Service reference – swapped when toggling demo mode
   private trainer!: ITrainerService;
@@ -375,6 +376,7 @@ export class GameScene extends Phaser.Scene {
     hrm?: HeartRateService | null;
     isRoguelike?: boolean;
     isDevMode?: boolean;
+    isQuickDemo?: boolean;
   }): void {
     console.log('[GameScene] init data:', data);
     // Accept a generated course, rider weight, and unit preference from MenuScene
@@ -385,6 +387,7 @@ export class GameScene extends Phaser.Scene {
     this.preConnectedHrm     = data?.hrm     ?? null;
     this.isRoguelike         = data?.isRoguelike ?? false;
     this.isDevMode           = data?.isDevMode ?? false;
+    this.isQuickDemo         = data?.isQuickDemo ?? false;
 
     console.log('[GameScene] isDevMode set to:', this.isDevMode);
 
@@ -498,7 +501,7 @@ export class GameScene extends Phaser.Scene {
     this.onResize();
 
     // ── Trainer setup ─────────────────────────────────────────────────────
-    console.log(`[GameScene] create checks - preConnectedTrainer: ${!!this.preConnectedTrainer}, isDevMode: ${this.isDevMode}`);
+    console.log(`[GameScene] create checks - preConnectedTrainer: ${!!this.preConnectedTrainer}, isDevMode: ${this.isDevMode}, isQuickDemo: ${this.isQuickDemo}`);
     
     if (this.preConnectedTrainer) {
       console.log('[GameScene] Using pre-connected trainer');
@@ -519,7 +522,7 @@ export class GameScene extends Phaser.Scene {
       // Important: isDemoMode = false ensures we don't randomise metrics in update()
       this.isDemoMode = false;
       this.setStatus('demo', 'DEV (10000W)');
-    } else {
+    } else if (this.isQuickDemo) {
       console.log('[GameScene] Starting STANDARD DEMO MODE (200W)');
       // No BT trainer → demo mode with mock data (randomised)
       this.trainer = new MockTrainerService({ power: 200, speed: 30, cadence: 90 });
@@ -527,6 +530,21 @@ export class GameScene extends Phaser.Scene {
       void this.trainer.connect();
       this.isDemoMode = true;
       this.setStatus('demo', 'DEMO');
+    } else {
+      console.warn('[GameScene] No trainer connected and not in Demo/Dev mode. Defaulting to 0W idle.');
+      // Fallback: Idle "mock" that produces no power, effectively waiting for input that will never come
+      // (Unless we add re-connection logic later)
+      this.trainer = new MockTrainerService({ power: 0, speed: 0, cadence: 0 });
+      this.trainer.onData((data) => this.handleData(data));
+      void this.trainer.connect();
+      this.isDemoMode = false;
+      this.setStatus('err', 'NO TRAINER');
+      
+      // Show blocking alert?
+      this.add.rectangle(W/2, H/2, 400, 100, 0x000000, 0.8).setDepth(100);
+      this.add.text(W/2, H/2, 'TRAINER DISCONNECTED', {
+        fontFamily: 'monospace', fontSize: '24px', color: '#ff4444', fontStyle: 'bold'
+      }).setOrigin(0.5).setDepth(101);
     }
 
     // ── Heart rate monitor setup ──────────────────────────────────────────
