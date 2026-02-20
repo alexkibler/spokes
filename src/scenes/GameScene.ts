@@ -133,6 +133,11 @@ const ELEV_H = 75;
 const ELEV_PAD_X = 32;
 const ELEV_PAD_Y = 8;
 
+// ─── Gameplay constants ───────────────────────────────────────────────────────
+
+const DEV_POWER_WATTS = 10000;
+const DEMO_POWER_WATTS = 200;
+
 // ─── Parallax layer definitions ────────────────────────────────────────────────
 
 interface LayerDef {
@@ -156,7 +161,7 @@ export class GameScene extends Phaser.Scene {
   private isDemoMode = true;
 
   // Physics state
-  private latestPower = 200;
+  private latestPower = DEMO_POWER_WATTS;
   private smoothVelocityMs = 0;
   /** Base config (mass + aero constants) – grade is layered on top each frame. */
   private basePhysics: PhysicsConfig = { ...DEFAULT_PHYSICS };
@@ -168,7 +173,7 @@ export class GameScene extends Phaser.Scene {
   private currentGrade = 0;
   private currentSurface: SurfaceType = 'asphalt';
   private lastSentGrade = -999;
-  private lastSentSurface: SurfaceType = 'asphalt'; // will be overridden by first sync
+  private lastSentSurface: SurfaceType | null = null; // will be overridden by first sync
   private smoothGrade = 0;
 
   // World container (holds all parallax layers; rotated for grade tilt)
@@ -182,7 +187,7 @@ export class GameScene extends Phaser.Scene {
 
   // Effect / powerup state
   private activeEffect: ActiveEffect | null = null;
-  private rawPower     = 200; // unmodified power from trainer
+  private rawPower     = DEMO_POWER_WATTS; // unmodified power from trainer
 
   // Effect indicator UI (unused or repurposed for status)
   private effectContainer!:   Phaser.GameObjects.Container;
@@ -231,6 +236,7 @@ export class GameScene extends Phaser.Scene {
 
   // Elevation graph
   private elevationGraphics!: Phaser.GameObjects.Graphics;
+  private elevLabel!: Phaser.GameObjects.Text;
   private elevGradeLabel!: Phaser.GameObjects.Text;
   private elevDistLabel!: Phaser.GameObjects.Text;
 
@@ -321,11 +327,9 @@ export class GameScene extends Phaser.Scene {
       if (this.elevDistLabel) this.elevDistLabel.setPosition(width - ELEV_PAD_X, height - 125 + ELEV_H - 6);
       
       // Re-find the 'ELEV' label and reposition it
-      this.children.list.forEach(child => {
-        if (child instanceof Phaser.GameObjects.Text && child.text === 'ELEV') {
-          child.setPosition(ELEV_PAD_X, height - 120);
-        }
-      });
+      if (this.elevLabel) {
+        this.elevLabel.setPosition(ELEV_PAD_X, height - 120);
+      }
     }
 
     // 4. Update Bottom Controls
@@ -378,7 +382,7 @@ export class GameScene extends Phaser.Scene {
     isDevMode?: boolean;
     isQuickDemo?: boolean;
   }): void {
-    console.log('[GameScene] init data:', data);
+    if (import.meta.env.DEV) console.log('[GameScene] init data:', data);
     // Accept a generated course, rider weight, and unit preference from MenuScene
     this.course = data?.course ?? DEFAULT_COURSE;
     this.units  = data?.units  ?? 'imperial';
@@ -389,7 +393,7 @@ export class GameScene extends Phaser.Scene {
     this.isDevMode           = data?.isDevMode ?? false;
     this.isQuickDemo         = data?.isQuickDemo ?? false;
 
-    console.log('[GameScene] isDevMode set to:', this.isDevMode);
+    if (import.meta.env.DEV) console.log('[GameScene] isDevMode set to:', this.isDevMode);
 
     // Bike weight is fixed; rider weight comes from the menu (default 75 kg)
     const riderWeightKg = data?.weightKg ?? 75;
@@ -408,12 +412,12 @@ export class GameScene extends Phaser.Scene {
     this.currentSurface   = 'asphalt';
     this.smoothGrade      = 0;
     this.lastSentGrade    = -999;
-    this.lastSentSurface  = '' as any;
-    this.latestPower      = 200;
+    this.lastSentSurface  = null;
+    this.latestPower      = DEMO_POWER_WATTS;
     this.crankAngle       = 0;
     this.cadenceHistory   = [];
     this.avgCadence       = 0;
-    this.rawPower         = 200;
+    this.rawPower         = DEMO_POWER_WATTS;
     this.activeEffect     = null;
     this.physicsConfig    = { ...this.basePhysics };
     this.rideComplete       = false;
@@ -501,7 +505,9 @@ export class GameScene extends Phaser.Scene {
     this.onResize();
 
     // ── Trainer setup ─────────────────────────────────────────────────────
-    console.log(`[GameScene] create checks - preConnectedTrainer: ${!!this.preConnectedTrainer}, isDevMode: ${this.isDevMode}, isQuickDemo: ${this.isQuickDemo}`);
+    if (import.meta.env.DEV) {
+      console.log(`[GameScene] create checks - preConnectedTrainer: ${!!this.preConnectedTrainer}, isDevMode: ${this.isDevMode}, isQuickDemo: ${this.isQuickDemo}`);
+    }
     
     if (this.preConnectedTrainer) {
       console.log('[GameScene] Using pre-connected trainer');
@@ -513,19 +519,19 @@ export class GameScene extends Phaser.Scene {
     } else if (this.isDevMode) {
       console.log('[GameScene] Starting DEV MODE (10000W)');
       // Dev Mode: Mock trainer with fixed high power
-      const mock = new MockTrainerService({ power: 10000, speed: 45, cadence: 95 });
+      const mock = new MockTrainerService({ power: DEV_POWER_WATTS, speed: 45, cadence: 95 });
       this.trainer = mock;
       // Also explicitly set it to be sure
-      mock.setPower(10000);
+      mock.setPower(DEV_POWER_WATTS);
       this.trainer.onData((data) => this.handleData(data));
       void this.trainer.connect();
       // Important: isDemoMode = false ensures we don't randomise metrics in update()
       this.isDemoMode = false;
-      this.setStatus('demo', 'DEV (10000W)');
+      this.setStatus('demo', `DEV (${DEV_POWER_WATTS}W)`);
     } else if (this.isQuickDemo) {
-      console.log('[GameScene] Starting STANDARD DEMO MODE (200W)');
+      console.log(`[GameScene] Starting STANDARD DEMO MODE (${DEMO_POWER_WATTS}W)`);
       // No BT trainer → demo mode with mock data (randomised)
-      this.trainer = new MockTrainerService({ power: 200, speed: 30, cadence: 90 });
+      this.trainer = new MockTrainerService({ power: DEMO_POWER_WATTS, speed: 30, cadence: 90 });
       this.trainer.onData((data) => this.handleData(data));
       void this.trainer.connect();
       this.isDemoMode = true;
@@ -1086,7 +1092,7 @@ export class GameScene extends Phaser.Scene {
     this.elevBg = this.add.graphics().setDepth(10);
 
     // "ELEV" label (top-left of strip)
-    this.add
+    this.elevLabel = this.add
       .text(ELEV_PAD_X, 0, 'ELEV', {
         fontFamily: 'monospace',
         fontSize: '9px',
@@ -1274,8 +1280,8 @@ export class GameScene extends Phaser.Scene {
       // Track rolling cadence history for the pedaling animation
       const ts = Date.now();
       this.cadenceHistory.push({ rpm: data.instantaneousCadence, timeMs: ts });
-      // Trim entries older than 5 seconds (keeps the array small)
-      const cutoff = ts - 5000;
+      // Trim entries older than 3 seconds (keeps the array small)
+      const cutoff = ts - 3000;
       this.cadenceHistory = this.cadenceHistory.filter((h) => h.timeMs > cutoff);
     }
   }

@@ -79,6 +79,8 @@ const MIN_KG            =  40;
 const MAX_KG            = 130;
 const DEFAULT_WEIGHT_KG =  75;
 
+const CURSOR_BLINK_MS = 530;
+
 // ─── Scene ────────────────────────────────────────────────────────────────────
 
 export class MenuScene extends Phaser.Scene {
@@ -130,6 +132,7 @@ export class MenuScene extends Phaser.Scene {
 
   // ── Dev Mode ──────────────────────────────────────────────────────────────
   private isDevMode = false;
+  private isStartWarningActive = false;
   private devModeToggle!: Phaser.GameObjects.Container;
 
   constructor() {
@@ -153,6 +156,7 @@ export class MenuScene extends Phaser.Scene {
     this.buildRunLengthSection();
     this.buildDevicesSection();
     this.buildStartButton();
+    this.setupInputHandlers();
 
     if (import.meta.env.DEV) {
       this.buildDevToggle();
@@ -202,7 +206,7 @@ export class MenuScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     if (this.weightInputActive) {
       this.weightCursorMs += delta;
-      if (this.weightCursorMs >= 530) {
+      if (this.weightCursorMs >= CURSOR_BLINK_MS) {
         this.weightCursorMs = 0;
         this.weightCursorOn = !this.weightCursorOn;
         this.showWeightInputDisplay();
@@ -210,12 +214,59 @@ export class MenuScene extends Phaser.Scene {
     }
     if (this.distInputActive) {
       this.distCursorMs += delta;
-      if (this.distCursorMs >= 530) {
+      if (this.distCursorMs >= CURSOR_BLINK_MS) {
         this.distCursorMs = 0;
         this.distCursorOn = !this.distCursorOn;
         this.showDistInputDisplay();
       }
     }
+  }
+
+  // ── Input Handling ────────────────────────────────────────────────────────
+
+  private setupInputHandlers(): void {
+    this.input.on('pointerdown', () => {
+      if (this.ignoreNextGlobalClick) { this.ignoreNextGlobalClick = false; return; }
+      if (this.weightInputActive) this.commitWeightEdit();
+      if (this.distInputActive)   this.commitDistEdit();
+    });
+
+    this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
+      const active = this.weightInputActive || this.distInputActive;
+      if (!active) return;
+
+      if ((event.key >= '0' && event.key <= '9') || event.key === '.') {
+        if (this.weightInputActive && this.weightInputStr.length < 5) {
+          // Prevent multiple decimal points
+          if (event.key === '.' && this.weightInputStr.includes('.')) return;
+          this.weightInputStr += event.key;
+          this.weightCursorOn = true;
+          this.weightCursorMs = 0;
+          this.showWeightInputDisplay();
+        } else if (this.distInputActive && this.distInputStr.length < 5) {
+          if (event.key === '.' && this.distInputStr.includes('.')) return;
+          this.distInputStr += event.key;
+          this.distCursorOn = true;
+          this.distCursorMs = 0;
+          this.showDistInputDisplay();
+        }
+      } else if (event.key === 'Backspace') {
+        if (this.weightInputActive) {
+          this.weightInputStr = this.weightInputStr.slice(0, -1);
+          this.weightCursorOn = true;
+          this.weightCursorMs = 0;
+          this.showWeightInputDisplay();
+        } else if (this.distInputActive) {
+          this.distInputStr = this.distInputStr.slice(0, -1);
+          this.distCursorOn = true;
+          this.distCursorMs = 0;
+          this.showDistInputDisplay();
+        }
+      } else if (event.key === 'Enter' || event.key === 'Escape') {
+        if (this.weightInputActive) this.commitWeightEdit();
+        if (this.distInputActive)   this.commitDistEdit();
+      }
+    });
   }
 
   // ── Decorative background ──────────────────────────────────────────────────
@@ -423,49 +474,6 @@ export class MenuScene extends Phaser.Scene {
     this.weightInputField.on('pointerdown', () => {
       this.ignoreNextGlobalClick = true;
       this.startWeightEdit();
-    });
-
-    this.input.on('pointerdown', () => {
-      if (this.ignoreNextGlobalClick) { this.ignoreNextGlobalClick = false; return; }
-      if (this.weightInputActive) this.commitWeightEdit();
-      if (this.distInputActive)   this.commitDistEdit();
-    });
-
-    this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
-      const active = this.weightInputActive || this.distInputActive;
-      if (!active) return;
-
-      if ((event.key >= '0' && event.key <= '9') || event.key === '.') {
-        if (this.weightInputActive && this.weightInputStr.length < 5) {
-          // Prevent multiple decimal points
-          if (event.key === '.' && this.weightInputStr.includes('.')) return;
-          this.weightInputStr += event.key;
-          this.weightCursorOn = true;
-          this.weightCursorMs = 0;
-          this.showWeightInputDisplay();
-        } else if (this.distInputActive && this.distInputStr.length < 5) {
-          if (event.key === '.' && this.distInputStr.includes('.')) return;
-          this.distInputStr += event.key;
-          this.distCursorOn = true;
-          this.distCursorMs = 0;
-          this.showDistInputDisplay();
-        }
-      } else if (event.key === 'Backspace') {
-        if (this.weightInputActive) {
-          this.weightInputStr = this.weightInputStr.slice(0, -1);
-          this.weightCursorOn = true;
-          this.weightCursorMs = 0;
-          this.showWeightInputDisplay();
-        } else if (this.distInputActive) {
-          this.distInputStr = this.distInputStr.slice(0, -1);
-          this.distCursorOn = true;
-          this.distCursorMs = 0;
-          this.showDistInputDisplay();
-        }
-      } else if (event.key === 'Enter' || event.key === 'Escape') {
-        if (this.weightInputActive) this.commitWeightEdit();
-        if (this.distInputActive)   this.commitDistEdit();
-      }
     });
   }
 
@@ -830,15 +838,18 @@ export class MenuScene extends Phaser.Scene {
     this.startBtnContainer.add([runBtn, runTxt]);
 
     runBtn.on('pointerover', () => {
-      if (runTxt.text !== 'TRAINER REQUIRED') runBtn.setFillStyle(0xcc8800);
+      if (!this.isStartWarningActive) runBtn.setFillStyle(0xcc8800);
     });
     runBtn.on('pointerout',  () => {
-      if (runTxt.text !== 'TRAINER REQUIRED') runBtn.setFillStyle(0x8b5a00);
+      if (!this.isStartWarningActive) runBtn.setFillStyle(0x8b5a00);
     });
     runBtn.on('pointerdown', () => {
       console.log('[MenuScene] START RUN. isDevMode:', this.isDevMode);
       if (!this.trainerService && !this.isDevMode) {
         // Warn user
+        if (this.isStartWarningActive) return; // Already showing warning
+        this.isStartWarningActive = true;
+
         const originalText = '▶  START RUN';
         const originalColor = 0x8b5a00;
         
@@ -846,6 +857,7 @@ export class MenuScene extends Phaser.Scene {
         runBtn.setFillStyle(0xa82222);
         
         this.time.delayedCall(1500, () => {
+          this.isStartWarningActive = false;
           runTxt.setText(originalText);
           runBtn.setFillStyle(originalColor);
         });
@@ -877,15 +889,18 @@ export class MenuScene extends Phaser.Scene {
     this.startBtnContainer.add([startBtn, startTxt]);
 
     startBtn.on('pointerover', () => {
-      if (startTxt.text !== 'TRAINER REQUIRED') startBtn.setFillStyle(0x00d4b8);
+      if (!this.isStartWarningActive) startBtn.setFillStyle(0x00d4b8);
     });
     startBtn.on('pointerout',  () => {
-      if (startTxt.text !== 'TRAINER REQUIRED') startBtn.setFillStyle(0x00a892);
+      if (!this.isStartWarningActive) startBtn.setFillStyle(0x00a892);
     });
     startBtn.on('pointerdown', () => {
       console.log('[MenuScene] START RIDE. isDevMode:', this.isDevMode);
       if (!this.trainerService && !this.isDevMode) {
         // Warn user
+        if (this.isStartWarningActive) return; // Already showing warning
+        this.isStartWarningActive = true;
+
         const originalText = '▶  START RIDE';
         const originalColor = 0x00a892;
         
@@ -893,6 +908,7 @@ export class MenuScene extends Phaser.Scene {
         startBtn.setFillStyle(0xa82222);
         
         this.time.delayedCall(1500, () => {
+          this.isStartWarningActive = false;
           startTxt.setText(originalText);
           startBtn.setFillStyle(originalColor);
         });
@@ -1033,5 +1049,9 @@ export class MenuScene extends Phaser.Scene {
     btn.on('pointerout',  () => btn.setFillStyle(colorNormal));
 
     return txt;
+  }
+
+  shutdown(): void {
+    this.scale.off('resize', this.onResize, this);
   }
 }
