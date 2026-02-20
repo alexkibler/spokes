@@ -2,6 +2,9 @@ different terrain (snow, rocks, desert etc) with different wheel like tracks or 
 teleport item + trap (teleport to end of segment/teleport to beginning)
 gates that require checks to unlock (in archipelago terms)
 
+.fit file export
+hr monitor support
+
 
 far future ideas:
 currency and shops

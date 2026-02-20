@@ -11,14 +11,14 @@ import { GameScene } from './scenes/GameScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
-  width: 960,
-  height: 540,
   backgroundColor: '#e8dcc8',
   parent: 'game-container',
   scene: [MenuScene, GameScene],  // MenuScene starts first
   scale: {
-    mode: Phaser.Scale.FIT,
+    mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: 960,
+    height: 540,
   },
 };
 

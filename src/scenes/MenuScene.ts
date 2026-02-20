@@ -23,11 +23,6 @@ export type Units = 'imperial' | 'metric';
 const KG_TO_LB  = 2.20462;
 const KM_TO_MI  = 0.621371;
 
-// ─── Layout ───────────────────────────────────────────────────────────────────
-
-const W = 960;
-const H = 540;
-
 // ─── Difficulty config ────────────────────────────────────────────────────────
 
 type Difficulty = 'easy' | 'medium' | 'hard';
@@ -82,19 +77,70 @@ export class MenuScene extends Phaser.Scene {
   private unitsBtns  = new Map<Units, Phaser.GameObjects.Rectangle>();
   private presetLabels: Phaser.GameObjects.Text[] = [];
 
+  // UI Containers/Elements for resizing
+  private bgGraphics!: Phaser.GameObjects.Graphics;
+  private titleContainer!: Phaser.GameObjects.Container;
+  private distSection!: Phaser.GameObjects.Container;
+  private weightSection!: Phaser.GameObjects.Container;
+  private unitsSection!: Phaser.GameObjects.Container;
+  private diffSection!: Phaser.GameObjects.Container;
+  private startBtnContainer!: Phaser.GameObjects.Container;
+
   constructor() {
     super({ key: 'MenuScene' });
   }
 
   create(): void {
     this.cameras.main.setBackgroundColor('#e8dcc8');
-    this.drawBackground();
+
+    this.bgGraphics = this.add.graphics();
+
     this.buildTitle();
     this.buildDistanceSection();
     this.buildWeightSection();
     this.buildUnitsSection();
     this.buildDifficultySection();
     this.buildStartButton();
+
+    this.scale.on('resize', this.onResize, this);
+    this.onResize();
+  }
+
+  private onResize(): void {
+    const width = this.scale.width;
+    const height = this.scale.height;
+    const cx = width / 2;
+
+    // 1. Update Background
+    this.drawBackground();
+
+    // 2. Update Title (Top Center)
+    if (this.titleContainer) {
+      this.titleContainer.setPosition(cx, 50);
+    }
+
+    // 3. Middle Section Layout
+    const middleY = 150;
+    const distW = 385;
+    const weightW = 215;
+    const unitsW = 145;
+    const gap = 20;
+    const totalW = distW + weightW + unitsW + gap * 2;
+    const startX = cx - totalW / 2;
+
+    if (this.distSection) this.distSection.setPosition(startX, middleY);
+    if (this.weightSection) this.weightSection.setPosition(startX + distW + gap, middleY);
+    if (this.unitsSection) this.unitsSection.setPosition(startX + distW + weightW + gap * 2, middleY);
+
+    // 4. Difficulty Section (Below middle)
+    if (this.diffSection) {
+      this.diffSection.setPosition(cx - 310, 298);
+    }
+
+    // 5. Start Button (Bottom)
+    if (this.startBtnContainer) {
+      this.startBtnContainer.setPosition(cx, height - 80);
+    }
   }
 
   update(_time: number, delta: number): void {
@@ -110,88 +156,104 @@ export class MenuScene extends Phaser.Scene {
   // ── Decorative background ──────────────────────────────────────────────────
 
   private drawBackground(): void {
-    const g = this.add.graphics();
+    const g = this.bgGraphics;
+    const width = this.scale.width;
+    const height = this.scale.height;
+
+    g.clear();
 
     // Far mountain silhouette
     g.fillStyle(0xcec0a8, 0.7);
     g.fillPoints([
-      { x:   0, y: H },
-      { x:   0, y: 322 },
-      { x:  78, y: 250 },
-      { x: 198, y: 308 },
-      { x: 318, y: 255 },
-      { x: 440, y: 320 },
-      { x: 568, y: 248 },
-      { x: 685, y: 288 },
-      { x: 784, y: 244 },
-      { x: 884, y: 278 },
-      { x: 960, y: 262 },
-      { x: 960, y: H },
+      { x:   0, y: height },
+      { x:   0, y: height * 0.6 },
+      { x:  width * 0.08, y: height * 0.46 },
+      { x: width * 0.2, y: height * 0.57 },
+      { x: width * 0.33, y: height * 0.47 },
+      { x: width * 0.46, y: height * 0.59 },
+      { x: width * 0.59, y: height * 0.46 },
+      { x: width * 0.71, y: height * 0.53 },
+      { x: width * 0.82, y: height * 0.45 },
+      { x: width * 0.92, y: height * 0.51 },
+      { x: width, y: height * 0.48 },
+      { x: width, y: height },
     ], true);
 
     // Nearer hills
     g.fillStyle(0xb0a888, 0.45);
     g.fillPoints([
-      { x:   0, y: H },
-      { x:   0, y: 412 },
-      { x: 128, y: 384 },
-      { x: 258, y: 398 },
-      { x: 398, y: 374 },
-      { x: 518, y: 392 },
-      { x: 648, y: 378 },
-      { x: 790, y: 396 },
-      { x: 900, y: 382 },
-      { x: 960, y: 392 },
-      { x: 960, y: H },
+      { x:   0, y: height },
+      { x:   0, y: height * 0.76 },
+      { x: width * 0.13, y: height * 0.71 },
+      { x: width * 0.27, y: height * 0.74 },
+      { x: width * 0.41, y: height * 0.69 },
+      { x: width * 0.54, y: height * 0.73 },
+      { x: width * 0.68, y: height * 0.70 },
+      { x: width * 0.82, y: height * 0.73 },
+      { x: width * 0.94, y: height * 0.71 },
+      { x: width, y: height * 0.73 },
+      { x: width, y: height },
     ], true);
 
     // Road strip at bottom
     g.fillStyle(0x9a8870, 0.35);
-    g.fillRect(0, H - 44, W, 44);
+    g.fillRect(0, height - 44, width, 44);
   }
 
   // ── Title ──────────────────────────────────────────────────────────────────
 
   private buildTitle(): void {
-    this.add.text(W / 2, 50, 'PAPER PELOTON', {
+    this.titleContainer = this.add.container(0, 50);
+
+    const title = this.add.text(0, 0, 'PAPER PELOTON', {
       fontFamily: 'monospace',
       fontSize:   '52px',
       color:      '#2a2018',
       fontStyle:  'bold',
     }).setOrigin(0.5, 0);
 
-    this.add.text(W / 2, 116, 'CHOOSE YOUR RIDE', {
+    const subtitle = this.add.text(0, 66, 'CHOOSE YOUR RIDE', {
       fontFamily:    'monospace',
       fontSize:      '13px',
       color:         '#7a6850',
       letterSpacing: 5,
     }).setOrigin(0.5, 0);
+
+    this.titleContainer.add([title, subtitle]);
   }
 
   // ── Distance selector (left panel) ────────────────────────────────────────
   //   Occupies x = 170–555 (width 385)
 
   private buildDistanceSection(): void {
-    const PX = 170; const PY = 150;
     const PW = 385; const PH = 132;
-    const CX = PX + PW / 2;   // 362.5 → ~363
-    const CY = PY + PH / 2;   // 216
+    const CX = PW / 2;
+    const CY = PH / 2;
+
+    this.distSection = this.add.container(0, 150);
 
     const bg = this.add.graphics();
     bg.fillStyle(0x000000, 0.40);
-    bg.fillRoundedRect(PX, PY, PW, PH, 6);
+    bg.fillRoundedRect(0, 0, PW, PH, 6);
+    this.distSection.add(bg);
 
-    this.addSectionLabel(PX + 18, PY + 10, 'DISTANCE');
+    const label = this.add.text(18, 10, 'DISTANCE', {
+      fontFamily:    'monospace',
+      fontSize:      '10px',
+      color:         '#aaaaaa',
+      letterSpacing: 3,
+    });
+    this.distSection.add(label);
 
     // Step buttons
-    this.addIconBtn(PX + 58, CY - 12, 48, 38, '−', 0x2a2a6b, 0x4444aa, () => {
+    this.distSection.add(this.addIconBtn(58, CY - 12, 48, 38, '−', 0x2a2a6b, 0x4444aa, () => {
       this.distanceKm = Math.max(MIN_KM, this.distanceKm - STEP_KM);
       this.distText.setText(this.fmtDist(this.distanceKm));
-    });
-    this.addIconBtn(PX + PW - 58, CY - 12, 48, 38, '+', 0x2a2a6b, 0x4444aa, () => {
+    }));
+    this.distSection.add(this.addIconBtn(PW - 58, CY - 12, 48, 38, '+', 0x2a2a6b, 0x4444aa, () => {
       this.distanceKm = Math.min(MAX_KM, this.distanceKm + STEP_KM);
       this.distText.setText(this.fmtDist(this.distanceKm));
-    });
+    }));
 
     // Value display
     this.distText = this.add.text(CX, CY - 12, this.fmtDist(this.distanceKm), {
@@ -200,9 +262,10 @@ export class MenuScene extends Phaser.Scene {
       color:      '#ffffff',
       fontStyle:  'bold',
     }).setOrigin(0.5);
+    this.distSection.add(this.distText);
 
-    // Preset quick-select row (btnW=56, gap=7 → totalW=371, fits within panel)
-    const presetY = PY + PH - 20;
+    // Preset quick-select row
+    const presetY = PH - 20;
     const btnW    = 56;
     const gap     = 7;
     const totalW  = PRESETS.length * btnW + (PRESETS.length - 1) * gap;
@@ -216,6 +279,7 @@ export class MenuScene extends Phaser.Scene {
         this.distText.setText(this.fmtDist(km));
       }, { fontSize: '11px', color: '#ccccff' });
       this.presetLabels.push(lbl);
+      this.distSection.add(lbl);
     });
   }
 
@@ -223,25 +287,34 @@ export class MenuScene extends Phaser.Scene {
   //   Occupies x = 575–790 (width 215), same row as distance
 
   private buildWeightSection(): void {
-    const PX = 575; const PY = 150;
     const PW = 215; const PH = 132;
-    const CX = PX + PW / 2;   // 682.5 → ~683
+    const CX = PW / 2;
+
+    this.weightSection = this.add.container(0, 150);
 
     const bg = this.add.graphics();
     bg.fillStyle(0x000000, 0.40);
-    bg.fillRoundedRect(PX, PY, PW, PH, 6);
+    bg.fillRoundedRect(0, 0, PW, PH, 6);
+    this.weightSection.add(bg);
 
-    this.addSectionLabel(PX + 18, PY + 10, 'RIDER WEIGHT');
+    const label = this.add.text(18, 10, 'RIDER WEIGHT', {
+      fontFamily:    'monospace',
+      fontSize:      '10px',
+      color:         '#aaaaaa',
+      letterSpacing: 3,
+    });
+    this.weightSection.add(label);
 
     // Editable input field
     const FIELD_W = 180;
     const FIELD_H = 46;
-    const fieldCY = PY + 72;
+    const fieldCY = 72;
 
     this.weightInputField = this.add
       .rectangle(CX, fieldCY, FIELD_W, FIELD_H, 0x1a1a3a)
       .setStrokeStyle(2, 0x3a3a8b, 0.8)
       .setInteractive({ useHandCursor: true });
+    this.weightSection.add(this.weightInputField);
 
     // Value text centered in the field
     this.weightText = this.add.text(CX, fieldCY, this.fmtWeight(this.weightKg), {
@@ -250,14 +323,16 @@ export class MenuScene extends Phaser.Scene {
       color:      '#ffffff',
       fontStyle:  'bold',
     }).setOrigin(0.5);
+    this.weightSection.add(this.weightText);
 
     // Hint
-    this.add.text(CX, PY + PH - 14, 'click to edit · enter to confirm', {
+    const hint = this.add.text(CX, PH - 14, 'click to edit · enter to confirm', {
       fontFamily: 'monospace',
       fontSize:   '8px',
       color:      '#666677',
       letterSpacing: 0,
     }).setOrigin(0.5);
+    this.weightSection.add(hint);
 
     // ── Interaction ──────────────────────────────────────────────────────────
 
@@ -342,19 +417,28 @@ export class MenuScene extends Phaser.Scene {
   // ── Difficulty selector ────────────────────────────────────────────────────
 
   private buildDifficultySection(): void {
-    const PX = 170; const PY = 298;
     const PW = 620; const PH = 110;
+
+    this.diffSection = this.add.container(0, 298);
 
     const bg = this.add.graphics();
     bg.fillStyle(0x000000, 0.40);
-    bg.fillRoundedRect(PX, PY, PW, PH, 6);
+    bg.fillRoundedRect(0, 0, PW, PH, 6);
+    this.diffSection.add(bg);
 
-    this.addSectionLabel(PX + 18, PY + 10, 'DIFFICULTY');
+    const label = this.add.text(18, 10, 'DIFFICULTY', {
+      fontFamily:    'monospace',
+      fontSize:      '10px',
+      color:         '#aaaaaa',
+      letterSpacing: 3,
+    });
+    this.diffSection.add(label);
 
-    const BTN_Y = PY + 68;
+    const BTN_Y = 68;
     const BTN_W = 155;
     const BTN_H = 44;
-    const xs: Record<Difficulty, number> = { easy: 305, medium: W / 2, hard: 655 };
+    // relative to section container
+    const xs: Record<Difficulty, number> = { easy: 135, medium: 310, hard: 485 };
 
     DIFF_ORDER.forEach((diff) => {
       const { label, hint, colorOff } = DIFF[diff];
@@ -364,7 +448,7 @@ export class MenuScene extends Phaser.Scene {
         .rectangle(x, BTN_Y, BTN_W, BTN_H, colorOff)
         .setInteractive({ useHandCursor: true });
 
-      this.add.text(x, BTN_Y, label, {
+      const btnLabel = this.add.text(x, BTN_Y, label, {
         fontFamily:    'monospace',
         fontSize:      '14px',
         color:         '#ffffff',
@@ -372,13 +456,14 @@ export class MenuScene extends Phaser.Scene {
         letterSpacing: 2,
       }).setOrigin(0.5);
 
-      this.add.text(x, BTN_Y + 30, hint, {
+      const hintText = this.add.text(x, BTN_Y + 30, hint, {
         fontFamily:    'monospace',
         fontSize:      '9px',
         color:         '#888899',
         letterSpacing: 1,
       }).setOrigin(0.5);
 
+      this.diffSection.add([btn, btnLabel, hintText]);
       this.diffBtns.set(diff, btn);
 
       btn.on('pointerdown', () => {
@@ -406,20 +491,21 @@ export class MenuScene extends Phaser.Scene {
   // ── Start button ───────────────────────────────────────────────────────────
 
   private buildStartButton(): void {
-    const x = W / 2;
-    const y = 460;
+    this.startBtnContainer = this.add.container(0, 460);
 
     const btn = this.add
-      .rectangle(x, y, 250, 52, 0x00a892)
+      .rectangle(0, 0, 250, 52, 0x00a892)
       .setInteractive({ useHandCursor: true });
 
-    this.add.text(x, y, '▶  START RIDE', {
+    const txt = this.add.text(0, 0, '▶  START RIDE', {
       fontFamily:    'monospace',
       fontSize:      '18px',
       color:         '#ffffff',
       fontStyle:     'bold',
       letterSpacing: 2,
     }).setOrigin(0.5);
+
+    this.startBtnContainer.add([btn, txt]);
 
     btn.on('pointerover', () => btn.setFillStyle(0x00d4b8));
     btn.on('pointerout',  () => btn.setFillStyle(0x00a892));
@@ -436,15 +522,23 @@ export class MenuScene extends Phaser.Scene {
   //   Occupies x = 800–945 (width 145)
 
   private buildUnitsSection(): void {
-    const PX = 800; const PY = 150;
     const PW = 145; const PH = 132;
-    const CX = PX + PW / 2;   // 872.5
+    const CX = PW / 2;
+
+    this.unitsSection = this.add.container(0, 150);
 
     const bg = this.add.graphics();
     bg.fillStyle(0x000000, 0.40);
-    bg.fillRoundedRect(PX, PY, PW, PH, 6);
+    bg.fillRoundedRect(0, 0, PW, PH, 6);
+    this.unitsSection.add(bg);
 
-    this.addSectionLabel(PX + 14, PY + 10, 'UNITS');
+    const label = this.add.text(14, 10, 'UNITS', {
+      fontFamily:    'monospace',
+      fontSize:      '10px',
+      color:         '#aaaaaa',
+      letterSpacing: 3,
+    });
+    this.unitsSection.add(label);
 
     const BTN_W = 110;
     const BTN_H = 32;
@@ -454,14 +548,14 @@ export class MenuScene extends Phaser.Scene {
       imperial: 'IMPERIAL',
       metric:   'METRIC',
     };
-    const ys = [PY + 52, PY + 96];
+    const ys = [52, 96];
 
     unitOrder.forEach((u, i) => {
       const btn = this.add
         .rectangle(CX, ys[i], BTN_W, BTN_H, 0x1a1a3a)
         .setInteractive({ useHandCursor: true });
 
-      this.add.text(CX, ys[i], labels[u], {
+      const btnTxt = this.add.text(CX, ys[i], labels[u], {
         fontFamily:    'monospace',
         fontSize:      '11px',
         color:         '#ffffff',
@@ -469,6 +563,7 @@ export class MenuScene extends Phaser.Scene {
         letterSpacing: 1,
       }).setOrigin(0.5);
 
+      this.unitsSection.add([btn, btnTxt]);
       this.unitsBtns.set(u, btn);
 
       btn.on('pointerdown', () => {
@@ -527,15 +622,6 @@ export class MenuScene extends Phaser.Scene {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-
-  private addSectionLabel(x: number, y: number, text: string): void {
-    this.add.text(x, y, text, {
-      fontFamily:    'monospace',
-      fontSize:      '10px',
-      color:         '#aaaaaa',
-      letterSpacing: 3,
-    });
-  }
 
   private addIconBtn(
     x: number, y: number, w: number, h: number,

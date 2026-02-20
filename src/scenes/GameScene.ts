@@ -93,10 +93,6 @@ function computeKnee(
 
 // ─── Layout constants ──────────────────────────────────────────────────────────
 
-const W = 960;
-const H = 540;
-const CX = W / 2;
-
 /** Pixels scrolled per (m/s) of velocity — road layer multiplier */
 const WORLD_SCALE = 50; // px/(m/s)
 
@@ -109,9 +105,18 @@ const GRADE_SEND_THRESHOLD = 0.001; // 0.1%
 /** Exponential lerp rate for visual grade smoothing (~63% convergence per second) */
 const GRADE_LERP_RATE = 1.0;
 
+// ─── Reference canvas dimensions (used for texture generation) ────────────────
+
+/** Width of each parallax layer texture (tiles horizontally for scrolling). */
+const W = 960;
+/** Height of each parallax layer texture. Tile sprites are scaled to match the actual screen height. */
+const H = 540;
+
+/** Road top in the reference texture, as a fraction of H. */
+const ROAD_TOP_FRAC = 420 / H; // ≈ 0.778
+
 // ─── Elevation graph layout ───────────────────────────────────────────────────
 
-const ELEV_Y = 415;
 const ELEV_H = 75;
 const ELEV_PAD_X = 32;
 const ELEV_PAD_Y = 8;
@@ -208,9 +213,144 @@ export class GameScene extends Phaser.Scene {
   private btnDemo!: Phaser.GameObjects.Rectangle;
   private btnDemoLabel!: Phaser.GameObjects.Text;
   private btnConnect!: Phaser.GameObjects.Rectangle;
+  private btnConnectLabel!: Phaser.GameObjects.Text;
+  private btnMenu!: Phaser.GameObjects.Rectangle;
+  private btnMenuLabel!: Phaser.GameObjects.Text;
+
+  private btnHeadwindLabel!: Phaser.GameObjects.Text;
+  private btnTailwindLabel!: Phaser.GameObjects.Text;
+
+  // UI containers and backgrounds for resizing
+  private hudBackground!: Phaser.GameObjects.Graphics;
+  private hudSeps: Phaser.GameObjects.Graphics[] = [];
+  private bottomStrip!: Phaser.GameObjects.Graphics;
+  private elevBg!: Phaser.GameObjects.Graphics;
 
   constructor() {
     super({ key: 'GameScene' });
+  }
+
+  // ── Resize Handler ──────────────────────────────────────────────────────────
+
+  private onResize(): void {
+    const width = this.scale.width;
+    const height = this.scale.height;
+    const cx = width / 2;
+
+    // 1. Update World Container (Centered)
+    if (this.worldContainer) {
+      this.worldContainer.setPosition(cx, height / 2);
+      // Scale tile sprites to fill the screen. tileScaleY stretches the texture
+      // to cover the full height without vertical tiling; tileScaleX stays 1 so
+      // the texture tiles naturally for horizontal scrolling.
+      const tileScaleY = height / H;
+      [this.layerMountains, this.layerMidHills, this.layerNearGround, this.layerRoad].forEach(tile => {
+        if (tile) {
+          tile.setSize(width, height);
+          tile.setTileScale(1, tileScaleY);
+          tile.setPosition(-width / 2, -height / 2);
+        }
+      });
+
+      // Cyclist ground Y: road top is ROAD_TOP_FRAC of texture height; map to
+      // container local space (container origin is at screen centre).
+      this.cycGroundY = height * (ROAD_TOP_FRAC - 0.5);
+    }
+
+    // 2. Update HUD
+    if (this.hudBackground) {
+      this.hudBackground.clear();
+      this.hudBackground.fillStyle(0x000000, 0.55);
+      this.hudBackground.fillRect(0, 0, width, 70);
+
+      // Reposition separators
+      const sepWidth = width / 5;
+      this.hudSeps.forEach((sep, i) => {
+        sep.clear();
+        sep.fillStyle(0x444455, 1);
+        sep.fillRect((i + 1) * sepWidth, 8, 1, 54);
+      });
+
+      // Update positions for each metric (5 columns)
+      const colW = width / 5;
+      const getX = (colIdx: number) => colIdx * colW + colW / 2;
+
+      // This is a bit manual but necessary for the 5-column layout
+      // Speed (col 0)
+      this.updateHUDColumn(0, getX(0));
+      // Grade (col 1)
+      this.updateHUDColumn(1, getX(1));
+      // Power (col 2 - center)
+      this.updateHUDColumn(2, getX(2));
+      // Distance (col 3)
+      this.updateHUDColumn(3, getX(3));
+      // Cadence (col 4)
+      this.updateHUDColumn(4, getX(4));
+    }
+
+    // 3. Update Elevation Graph
+    if (this.elevBg) {
+      this.elevBg.clear();
+      this.elevBg.fillStyle(0x000000, 0.45);
+      this.elevBg.fillRect(0, height - 125, width, ELEV_H);
+      
+      // Update labels
+      if (this.elevGradeLabel) this.elevGradeLabel.setPosition(width - ELEV_PAD_X, height - 120);
+      if (this.elevDistLabel) this.elevDistLabel.setPosition(width - ELEV_PAD_X, height - 125 + ELEV_H - 6);
+      
+      // Re-find the 'ELEV' label and reposition it
+      this.children.list.forEach(child => {
+        if (child instanceof Phaser.GameObjects.Text && child.text === 'ELEV') {
+          child.setPosition(ELEV_PAD_X, height - 120);
+        }
+      });
+    }
+
+    // 4. Update Bottom Controls
+    if (this.bottomStrip) {
+      this.bottomStrip.clear();
+      this.bottomStrip.fillStyle(0x000000, 0.50);
+      this.bottomStrip.fillRect(0, height - 50, width, 50);
+
+      // Status indicator
+      const stY = height - 25;
+      if (this.statusDot) this.statusDot.setPosition(56, stY);
+      if (this.statusLabel) this.statusLabel.setPosition(68, stY);
+
+      // Buttons (Demo, Connect, Menu)
+      const btnY = height - 25;
+      if (this.btnDemo) {
+        this.btnDemo.setPosition(cx - 110, btnY);
+        this.btnDemoLabel.setPosition(cx - 110, btnY);
+      }
+      if (this.btnConnect) {
+        this.btnConnect.setPosition(cx + 80, btnY);
+        if (this.btnConnectLabel) this.btnConnectLabel.setPosition(cx + 80, btnY);
+      }
+      if (this.btnMenu) {
+        this.btnMenu.setPosition(width - 90, btnY);
+        if (this.btnMenuLabel) this.btnMenuLabel.setPosition(width - 90, btnY);
+      }
+    }
+
+    // 5. Manual Effect Buttons
+    const effectBtnX = width - 100;
+    if (this.btnHeadwind) {
+      this.btnHeadwind.setPosition(effectBtnX, 120);
+      if (this.btnHeadwindLabel) this.btnHeadwindLabel.setPosition(effectBtnX, 120);
+    }
+    if (this.btnTailwind) {
+      this.btnTailwind.setPosition(effectBtnX, 170);
+      if (this.btnTailwindLabel) this.btnTailwindLabel.setPosition(effectBtnX, 170);
+    }
+
+    // 6. Effect Notification
+    if (this.notifContainer) {
+      this.notifContainer.setPosition(cx, 200);
+    }
+    if (this.effectContainer) {
+      this.effectContainer.setPosition(width - 100, 230);
+    }
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -263,6 +403,11 @@ export class GameScene extends Phaser.Scene {
     this.buildBottomControls();
     this.buildEffectUI();
     this.buildManualEffectButtons();
+
+    // Handle resizing
+    this.scale.on('resize', this.onResize, this);
+    // Initial layout pass
+    this.onResize();
 
     // Start in demo mode with 200 W so the world scrolls immediately
     this.trainer = new MockTrainerService({ power: 200, speed: 30, cadence: 90 });
@@ -479,12 +624,12 @@ export class GameScene extends Phaser.Scene {
   // ── Cyclist ───────────────────────────────────────────────────────────────
 
   /**
-   * Road surface in worldContainer space:
-   *   worldContainer origin = screen (480, 270)
-   *   road top drawn at screen y=420 → container y = 420 − 270 = 150
+   * Road surface Y in worldContainer local space.
+   * Computed from screen height each resize: height * (ROAD_TOP_FRAC - 0.5).
+   * For reference 540px height: 540 * (420/540 - 0.5) = 150.
    */
-  private static readonly CYC_GROUND_Y = 150;
-  private static readonly WHEEL_R      = 18;
+  private cycGroundY = 150;
+  private static readonly WHEEL_R = 18;
 
   private buildCyclist(): void {
     // Add AFTER all parallax layers so the cyclist renders on top
@@ -496,7 +641,7 @@ export class GameScene extends Phaser.Scene {
     const g  = this.cyclistGraphics;
     g.clear();
 
-    const gY   = GameScene.CYC_GROUND_Y;
+    const gY   = this.cycGroundY;
     const wR   = GameScene.WHEEL_R;
     const axleY = gY - wR;  // = 132 in container space
 
@@ -639,115 +784,99 @@ export class GameScene extends Phaser.Scene {
 
   // ── HUD (top strip – 5 metrics) ───────────────────────────────────────────
 
-  private buildHUD(): void {
-    const overlay = this.add.graphics();
-    overlay.fillStyle(0x000000, 0.55);
-    overlay.fillRect(0, 0, W, 70);
-    overlay.setDepth(10);
+  private hudLabels: Phaser.GameObjects.Text[] = [];
+  private hudValues: Phaser.GameObjects.Text[] = [];
+  private hudUnits: Phaser.GameObjects.Text[] = [];
 
-    // Vertical separators between metrics
-    overlay.fillStyle(0x444455, 1);
-    for (const sepX of [192, 384, 576, 768]) {
-      overlay.fillRect(sepX, 8, 1, 54);
+  private buildHUD(): void {
+    this.hudBackground = this.add.graphics().setDepth(10);
+
+    for (let i = 0; i < 4; i++) {
+      this.hudSeps.push(this.add.graphics().setDepth(10));
     }
 
+    const labelStyle = {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: '#aaaaaa',
+      letterSpacing: 3,
+    };
     const valueBig = (colour = '#ffffff') => ({
       fontFamily: 'monospace',
       fontSize: '26px',
       color: colour,
       fontStyle: 'bold',
     });
-    const label = {
-      fontFamily: 'monospace',
-      fontSize: '10px',
-      color: '#aaaaaa',
-      letterSpacing: 3,
-    };
-    const unit = {
+    const unitStyle = {
       fontFamily: 'monospace',
       fontSize: '10px',
       color: '#aaaaaa',
       letterSpacing: 3,
     };
 
-    // ── Speed  x=96 ─────────────────────────────────────────────────────────
-    this.add.text(96,   7, 'SPEED',   label).setOrigin(0.5, 0).setDepth(11);
-    this.hudSpeed = this.add
-      .text(96, 19, '--.-', valueBig())
-      .setOrigin(0.5, 0)
-      .setDepth(11);
-    this.add
-      .text(96, 64, this.units === 'imperial' ? 'mph' : 'km/h', unit)
-      .setOrigin(0.5, 1)
-      .setDepth(11);
+    // Columns: 0=Speed, 1=Grade, 2=Power, 3=Dist, 4=Cadence
+    const labels = ['SPEED', 'GRADE', 'POWER', 'DIST', 'CADENCE'];
+    const units = [this.units === 'imperial' ? 'mph' : 'km/h', '', 'W', this.units === 'imperial' ? 'mi' : 'km', 'rpm'];
 
-    // ── Grade  x=288 ────────────────────────────────────────────────────────
-    this.add.text(288,  7, 'GRADE',   label).setOrigin(0.5, 0).setDepth(11);
-    this.hudGrade = this.add
-      .text(288, 19, '0.0%', valueBig())
-      .setOrigin(0.5, 0)
-      .setDepth(11);
-    // (unit label intentionally omitted – % is in the value)
+    for (let i = 0; i < 5; i++) {
+      const lbl = this.add.text(0, 7, labels[i], labelStyle).setOrigin(0.5, 0).setDepth(11);
+      this.hudLabels.push(lbl);
 
-    // ── Power  x=CX=480 (large, accent colour) ───────────────────────────────
-    this.add.text(CX,  7, 'POWER',   label).setOrigin(0.5, 0).setDepth(11);
-    this.hudPower = this.add
-      .text(CX, 19, '---', {
-        fontFamily: 'monospace',
-        fontSize: '28px',
-        color: '#00f5d4',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5, 0)
-      .setDepth(11);
-    // "W" unit — hidden when the raw-power label is shown
-    this.hudPowerUnit = this.add
-      .text(CX, 64, 'W', unit)
-      .setOrigin(0.5, 1)
-      .setDepth(11);
-    // Raw power label (visible only when an effect is active)
-    this.hudRealPower = this.add
-      .text(CX, 64, '', {
-        fontFamily: 'monospace',
-        fontSize: '9px',
-        color: '#888888',
-      })
-      .setOrigin(0.5, 1)
-      .setDepth(11)
-      .setAlpha(0);
+      let val: Phaser.GameObjects.Text;
+      if (i === 2) {
+        // Power column special styling
+        val = this.add.text(0, 19, '---', {
+          fontFamily: 'monospace',
+          fontSize: '28px',
+          color: '#00f5d4',
+          fontStyle: 'bold',
+        }).setOrigin(0.5, 0).setDepth(11);
+        this.hudPower = val;
 
-    // ── Distance  x=672 ─────────────────────────────────────────────────────
-    this.add.text(672,  7, 'DIST',    label).setOrigin(0.5, 0).setDepth(11);
-    this.hudDistance = this.add
-      .text(672, 19, '0.00', valueBig())
-      .setOrigin(0.5, 0)
-      .setDepth(11);
-    this.add
-      .text(672, 64, this.units === 'imperial' ? 'mi' : 'km', unit)
-      .setOrigin(0.5, 1)
-      .setDepth(11);
+        this.hudPowerUnit = this.add.text(0, 64, 'W', unitStyle).setOrigin(0.5, 1).setDepth(11);
+        this.hudRealPower = this.add.text(0, 64, '', {
+          fontFamily: 'monospace',
+          fontSize: '9px',
+          color: '#888888',
+        }).setOrigin(0.5, 1).setDepth(11).setAlpha(0);
+      } else {
+        val = this.add.text(0, 19, '--.-', valueBig()).setOrigin(0.5, 0).setDepth(11);
+        if (i === 0) this.hudSpeed = val;
+        else if (i === 1) this.hudGrade = val;
+        else if (i === 3) this.hudDistance = val;
+        else if (i === 4) this.hudCadence = val;
+      }
+      this.hudValues.push(val);
 
-    // ── Cadence  x=864 ──────────────────────────────────────────────────────
-    this.add.text(864,  7, 'CADENCE', label).setOrigin(0.5, 0).setDepth(11);
-    this.hudCadence = this.add
-      .text(864, 19, '---', valueBig())
-      .setOrigin(0.5, 0)
-      .setDepth(11);
-    this.add.text(864, 64, 'rpm',     unit).setOrigin(0.5, 1).setDepth(11);
+      if (units[i]) {
+        const u = i === 2 ? this.hudPowerUnit : this.add.text(0, 64, units[i], unitStyle).setOrigin(0.5, 1).setDepth(11);
+        if (i !== 2) this.hudUnits.push(u);
+      }
+    }
+  }
+
+  private updateHUDColumn(colIdx: number, x: number): void {
+    if (this.hudLabels[colIdx]) this.hudLabels[colIdx].setX(x);
+    if (this.hudValues[colIdx]) this.hudValues[colIdx].setX(x);
+    
+    // Units are a bit tricky because colIdx 1 doesn't have one
+    if (colIdx === 0) this.hudUnits[0].setX(x);
+    else if (colIdx === 2) {
+      this.hudPowerUnit.setX(x);
+      this.hudRealPower.setX(x);
+    } else if (colIdx === 3) this.hudUnits[1].setX(x);
+    else if (colIdx === 4) this.hudUnits[2].setX(x);
   }
 
   // ── Elevation graph ───────────────────────────────────────────────────────
 
   private buildElevationGraph(): void {
     // Static background strip
-    const bg = this.add.graphics();
-    bg.fillStyle(0x000000, 0.45);
-    bg.fillRect(0, ELEV_Y, W, ELEV_H);
-    bg.setDepth(10);
+    this.elevBg = this.add.graphics().setDepth(10);
 
     // "ELEV" label (top-left of strip)
     this.add
-      .text(ELEV_PAD_X, ELEV_Y + 5, 'ELEV', {
+      .text(ELEV_PAD_X, 0, 'ELEV', {
         fontFamily: 'monospace',
         fontSize: '9px',
         color: '#888899',
@@ -760,7 +889,7 @@ export class GameScene extends Phaser.Scene {
 
     // Grade and distance labels (updated in update())
     this.elevGradeLabel = this.add
-      .text(W - ELEV_PAD_X, ELEV_Y + 5, '', {
+      .text(0, 0, '', {
         fontFamily: 'monospace',
         fontSize: '10px',
         color: '#aaaaaa',
@@ -769,7 +898,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(12);
 
     this.elevDistLabel = this.add
-      .text(W - ELEV_PAD_X, ELEV_Y + ELEV_H - 6, '', {
+      .text(0, 0, '', {
         fontFamily: 'monospace',
         fontSize: '9px',
         color: '#888899',
@@ -782,14 +911,16 @@ export class GameScene extends Phaser.Scene {
     const g = this.elevationGraphics;
     g.clear();
 
+    const width = this.scale.width;
+    const height = this.scale.height;
     const samples = this.elevationSamples;
     const totalDist = this.course.totalDistanceM;
     const elevRange = (this.maxElevM - this.minElevM) || 1;
 
-    const drawW = W - 2 * ELEV_PAD_X;
+    const drawW = width - 2 * ELEV_PAD_X;
     const drawH = ELEV_H - 2 * ELEV_PAD_Y;
     const ox = ELEV_PAD_X;
-    const oy = ELEV_Y + ELEV_PAD_Y;
+    const oy = (height - 125) + ELEV_PAD_Y;
 
     const toX = (d: number) => ox + (d / totalDist) * drawW;
     const toY = (e: number) => oy + drawH - ((e - this.minElevM) / elevRange) * drawH;
@@ -859,10 +990,7 @@ export class GameScene extends Phaser.Scene {
   // ── Bottom controls ───────────────────────────────────────────────────────
 
   private buildBottomControls(): void {
-    const strip = this.add.graphics();
-    strip.fillStyle(0x000000, 0.50);
-    strip.fillRect(0, 490, W, 50);
-    strip.setDepth(10);
+    this.bottomStrip = this.add.graphics().setDepth(10);
 
     this.buildStatusIndicator();
     this.buildDemoButton();
@@ -871,10 +999,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildStatusIndicator(): void {
-    const y = 515;
-    this.statusDot = this.add.arc(56, y, 5, 0, 360, false, 0x555566).setDepth(11);
+    this.statusDot = this.add.arc(0, 0, 5, 0, 360, false, 0x555566).setDepth(11);
     this.statusLabel = this.add
-      .text(68, y, 'DISCONNECTED', {
+      .text(0, 0, 'DISCONNECTED', {
         fontFamily: 'monospace',
         fontSize: '11px',
         color: '#8888aa',
@@ -897,16 +1024,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildDemoButton(): void {
-    const x = 370;
-    const y = 515;
-
     this.btnDemo = this.add
-      .rectangle(x, y, 150, 34, 0x6b2a6b)
+      .rectangle(0, 0, 150, 34, 0x6b2a6b)
       .setInteractive({ useHandCursor: true })
       .setDepth(11);
 
     this.btnDemoLabel = this.add
-      .text(x, y, 'DEMO MODE: ON', {
+      .text(0, 0, 'DEMO MODE: ON', {
         fontFamily: 'monospace',
         fontSize: '12px',
         color: '#ffffff',
@@ -924,16 +1048,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildConnectButton(): void {
-    const x = 560;
-    const y = 515;
-
     this.btnConnect = this.add
-      .rectangle(x, y, 150, 34, 0x1a6b3a)
+      .rectangle(0, 0, 150, 34, 0x1a6b3a)
       .setInteractive({ useHandCursor: true })
       .setDepth(11);
 
-    this.add
-      .text(x, y, 'BT CONNECT', {
+    this.btnConnectLabel = this.add
+      .text(0, 0, 'BT CONNECT', {
         fontFamily: 'monospace',
         fontSize: '12px',
         color: '#ffffff',
@@ -949,16 +1070,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildMenuButton(): void {
-    const x = 750;
-    const y = 515;
-
-    const btn = this.add
-      .rectangle(x, y, 120, 34, 0x3a3a5a)
+    this.btnMenu = this.add
+      .rectangle(0, 0, 120, 34, 0x3a3a5a)
       .setInteractive({ useHandCursor: true })
       .setDepth(11);
 
-    this.add
-      .text(x, y, '← MENU', {
+    this.btnMenuLabel = this.add
+      .text(0, 0, '← MENU', {
         fontFamily: 'monospace',
         fontSize: '12px',
         color: '#aaaacc',
@@ -967,9 +1085,9 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(12);
 
-    btn
-      .on('pointerover', () => btn.setFillStyle(0x5555aa))
-      .on('pointerout',  () => btn.setFillStyle(0x3a3a5a))
+    this.btnMenu
+      .on('pointerover', () => this.btnMenu.setFillStyle(0x5555aa))
+      .on('pointerout',  () => this.btnMenu.setFillStyle(0x3a3a5a))
       .on('pointerdown', () => {
         this.trainer.disconnect();
         this.scene.start('MenuScene');
@@ -1103,7 +1221,7 @@ export class GameScene extends Phaser.Scene {
       .rectangle(x, yHead, 100, 34, 0x444444)
       .setInteractive({ useHandCursor: true })
       .setDepth(15);
-    this.add
+    this.btnHeadwindLabel = this.add
       .text(x, yHead, 'HEADWIND', {
         fontFamily: 'monospace',
         fontSize: '12px',
@@ -1116,7 +1234,7 @@ export class GameScene extends Phaser.Scene {
       .rectangle(x, yTail, 100, 34, 0x444444)
       .setInteractive({ useHandCursor: true })
       .setDepth(15);
-    this.add
+    this.btnTailwindLabel = this.add
       .text(x, yTail, 'TAILWIND', {
         fontFamily: 'monospace',
         fontSize: '12px',
