@@ -28,4 +28,10 @@ export interface ITrainerService {
   onData(callback: (data: Partial<TrainerData>) => void): void;
   /** True while the service is actively delivering data. */
   isConnected(): boolean;
+  /**
+   * Send a grade update to the trainer (real: writes FTMS Control Point 0x2AD9;
+   * mock: no-op since grade is applied locally in physics).
+   * Optional – callers must check for existence before calling.
+   */
+  setGrade?(grade: number): Promise<void>;
 }

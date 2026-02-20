@@ -1,13 +1,15 @@
 /**
  * GameScene.ts
  *
- * Primary Phaser 3 scene for Paper Peloton – Phase 2.
+ * Primary Phaser 3 scene for Paper Peloton – Phase 3.
  *
  * Features:
  *   • 3-layer paper-style parallax background (mountains, hills, ground, road)
- *   • Physics-driven velocity: watt output → m/s via CyclistPhysics
- *   • Compacted HUD top strip (power, physics speed, cadence)
+ *   • Physics-driven velocity: watt output → m/s via CyclistPhysics (grade-aware)
+ *   • 5-metric HUD strip: speed, grade, power, distance, cadence
+ *   • Scrolling elevation graph strip showing full course with position marker
  *   • Mock Mode toggle and BT Connect buttons in a floating bottom strip
+ *   • Bi-directional Bluetooth: grade sent to trainer via FTMS 0x2AD9
  *
  * Architecture:
  *   The scene holds a reference to ITrainerService.  Toggling mock mode
@@ -19,7 +21,19 @@ import Phaser from 'phaser';
 import type { ITrainerService, TrainerData } from '../services/ITrainerService';
 import { TrainerService } from '../services/TrainerService';
 import { MockTrainerService } from '../services/MockTrainerService';
-import { powerToVelocityMs, msToKmh } from '../physics/CyclistPhysics';
+import {
+  powerToVelocityMs,
+  msToKmh,
+  DEFAULT_PHYSICS,
+  type PhysicsConfig,
+} from '../physics/CyclistPhysics';
+import {
+  DEFAULT_COURSE,
+  getGradeAtDistance,
+  buildElevationSamples,
+  type CourseProfile,
+  type ElevationSample,
+} from '../course/CourseProfile';
 
 // ─── Layout constants ──────────────────────────────────────────────────────────
 
@@ -32,6 +46,16 @@ const WORLD_SCALE = 50; // px/(m/s)
 
 /** Velocity smoothing time constant (higher = faster response) */
 const LERP_FACTOR = 1.5;
+
+/** Minimum grade delta before broadcasting to the trainer (avoids BT spam) */
+const GRADE_SEND_THRESHOLD = 0.001; // 0.1%
+
+// ─── Elevation graph layout ───────────────────────────────────────────────────
+
+const ELEV_Y = 415;
+const ELEV_H = 75;
+const ELEV_PAD_X = 32;
+const ELEV_PAD_Y = 8;
 
 // ─── Parallax layer definitions ────────────────────────────────────────────────
 
@@ -50,8 +74,19 @@ export class GameScene extends Phaser.Scene {
   private isMockMode = true;
 
   // Physics state
+  private latestPower = 200;
   private targetVelocityMs = 0;
   private smoothVelocityMs = 0;
+  private physicsConfig: PhysicsConfig = { ...DEFAULT_PHYSICS };
+
+  // Course / elevation state
+  private course: CourseProfile = DEFAULT_COURSE;
+  private distanceM = 0;                // total cumulative distance
+  private currentGrade = 0;
+  private lastSentGrade = 0;
+  private elevationSamples: ElevationSample[] = [];
+  private minElevM = 0;
+  private maxElevM = 0;
 
   // Parallax layers
   private layerMountains!: Phaser.GameObjects.TileSprite;
@@ -63,6 +98,13 @@ export class GameScene extends Phaser.Scene {
   private hudSpeed!: Phaser.GameObjects.Text;
   private hudPower!: Phaser.GameObjects.Text;
   private hudCadence!: Phaser.GameObjects.Text;
+  private hudGrade!: Phaser.GameObjects.Text;
+  private hudDistance!: Phaser.GameObjects.Text;
+
+  // Elevation graph
+  private elevationGraphics!: Phaser.GameObjects.Graphics;
+  private elevGradeLabel!: Phaser.GameObjects.Text;
+  private elevDistLabel!: Phaser.GameObjects.Text;
 
   // Status / button objects
   private statusDot!: Phaser.GameObjects.Arc;
@@ -80,8 +122,14 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.cameras.main.setBackgroundColor('#e8dcc8');
 
+    // Pre-compute elevation samples and range for the graph
+    this.elevationSamples = buildElevationSamples(this.course, 100);
+    this.minElevM = Math.min(...this.elevationSamples.map((s) => s.elevationM));
+    this.maxElevM = Math.max(...this.elevationSamples.map((s) => s.elevationM));
+
     this.buildParallaxLayers();
     this.buildHUD();
+    this.buildElevationGraph();
     this.buildBottomControls();
 
     // Start in mock mode with 200 W so the world scrolls immediately
@@ -95,19 +143,45 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     const dt = delta / 1000; // seconds
 
+    // ── Grade from course ────────────────────────────────────────────────────
+    this.distanceM += this.smoothVelocityMs * dt;
+    const wrappedDist = this.distanceM % this.course.totalDistanceM;
+    const newGrade = getGradeAtDistance(this.course, wrappedDist);
+
+    if (newGrade !== this.currentGrade) {
+      this.currentGrade = newGrade;
+      this.physicsConfig = { ...DEFAULT_PHYSICS, grade: newGrade };
+      // Send to trainer hardware only when grade change is significant
+      if (
+        this.trainer.setGrade &&
+        Math.abs(newGrade - this.lastSentGrade) >= GRADE_SEND_THRESHOLD
+      ) {
+        this.lastSentGrade = newGrade;
+        void this.trainer.setGrade(newGrade);
+      }
+    }
+
+    // ── Physics ─────────────────────────────────────────────────────────────
+    this.targetVelocityMs = powerToVelocityMs(this.latestPower, this.physicsConfig);
+
     // Smooth velocity toward target
     this.smoothVelocityMs +=
       (this.targetVelocityMs - this.smoothVelocityMs) * dt * LERP_FACTOR;
 
-    // Scroll each parallax layer
+    // ── Parallax scroll ──────────────────────────────────────────────────────
     const baseScroll = this.smoothVelocityMs * WORLD_SCALE * dt;
     this.layerMountains.tilePositionX += baseScroll * 0.10;
     this.layerMidHills.tilePositionX  += baseScroll * 0.30;
     this.layerNearGround.tilePositionX += baseScroll * 0.65;
     this.layerRoad.tilePositionX      += baseScroll * 1.00;
 
-    // Update HUD speed from physics (not raw FTMS)
+    // ── HUD updates ──────────────────────────────────────────────────────────
     this.hudSpeed.setText(msToKmh(this.smoothVelocityMs).toFixed(1));
+    this.updateGradeDisplay(this.currentGrade);
+    this.hudDistance.setText((this.distanceM / 1000).toFixed(2));
+
+    // ── Elevation graph ──────────────────────────────────────────────────────
+    this.drawElevationGraph(wrappedDist);
   }
 
   // ── Parallax layers ──────────────────────────────────────────────────────────
@@ -225,16 +299,13 @@ export class GameScene extends Phaser.Scene {
 
   /** Road: paper grey strip at y≈455 with white dashed centre line */
   private drawRoad(g: Phaser.GameObjects.Graphics): void {
-    // Road surface
     g.fillStyle(0x9a8878, 1);
     g.fillRect(0, 420, W, H - 420);
 
-    // Road edges — slightly darker
     g.fillStyle(0x7a6858, 1);
     g.fillRect(0, 420, W, 4);
     g.fillRect(0, H - 4, W, 4);
 
-    // White dashed centre line
     g.fillStyle(0xffffff, 0.7);
     const dashW = 40;
     const gapW = 30;
@@ -245,53 +316,59 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ── HUD (top strip) ──────────────────────────────────────────────────────────
+  // ── HUD (top strip – 5 metrics) ───────────────────────────────────────────
 
   private buildHUD(): void {
-    // Semi-transparent dark overlay strip
     const overlay = this.add.graphics();
     overlay.fillStyle(0x000000, 0.55);
     overlay.fillRect(0, 0, W, 70);
     overlay.setDepth(10);
 
-    const style = (size: string) => ({
+    // Vertical separators between metrics
+    overlay.fillStyle(0x444455, 1);
+    for (const sepX of [192, 384, 576, 768]) {
+      overlay.fillRect(sepX, 8, 1, 54);
+    }
+
+    const valueBig = (colour = '#ffffff') => ({
       fontFamily: 'monospace',
-      fontSize: size,
-      color: '#ffffff',
+      fontSize: '26px',
+      color: colour,
+      fontStyle: 'bold',
     });
-    const labelStyle = {
+    const label = {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: '#aaaaaa',
+      letterSpacing: 3,
+    };
+    const unit = {
       fontFamily: 'monospace',
       fontSize: '10px',
       color: '#aaaaaa',
       letterSpacing: 3,
     };
 
-    // ── Speed (left) ────────────────────────────────────────────────────────
-
-    this.add
-      .text(160, 14, 'SPEED', labelStyle)
-      .setOrigin(0.5, 0)
-      .setDepth(11);
-
+    // ── Speed  x=96 ─────────────────────────────────────────────────────────
+    this.add.text(96,  14, 'SPEED',   label).setOrigin(0.5, 0).setDepth(11);
     this.hudSpeed = this.add
-      .text(160, 28, '--.-', { ...style('26px'), fontStyle: 'bold' })
+      .text(96, 28, '--.-', valueBig())
       .setOrigin(0.5, 0)
       .setDepth(11);
+    this.add.text(96,  58, 'km/h',    unit).setOrigin(0.5, 1).setDepth(11);
 
-    this.add
-      .text(160, 58, 'km/h', labelStyle)
-      .setOrigin(0.5, 1)
-      .setDepth(11);
-
-    // ── Power (centre, large) ───────────────────────────────────────────────
-
-    this.add
-      .text(CX, 14, 'POWER', labelStyle)
+    // ── Grade  x=288 ────────────────────────────────────────────────────────
+    this.add.text(288, 14, 'GRADE',   label).setOrigin(0.5, 0).setDepth(11);
+    this.hudGrade = this.add
+      .text(288, 28, '0.0%', valueBig())
       .setOrigin(0.5, 0)
       .setDepth(11);
+    // (unit label intentionally omitted – % is in the value)
 
+    // ── Power  x=CX=480 (large, accent colour) ───────────────────────────────
+    this.add.text(CX,  14, 'POWER',   label).setOrigin(0.5, 0).setDepth(11);
     this.hudPower = this.add
-      .text(CX, 28, '---', {
+      .text(CX, 26, '---', {
         fontFamily: 'monospace',
         fontSize: '34px',
         color: '#00f5d4',
@@ -299,34 +376,141 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 0)
       .setDepth(11);
+    this.add.text(CX,  58, 'W',       unit).setOrigin(0.5, 1).setDepth(11);
 
-    this.add
-      .text(CX, 58, 'W', labelStyle)
-      .setOrigin(0.5, 1)
-      .setDepth(11);
-
-    // ── Cadence (right) ─────────────────────────────────────────────────────
-
-    this.add
-      .text(800, 14, 'CADENCE', labelStyle)
+    // ── Distance  x=672 ─────────────────────────────────────────────────────
+    this.add.text(672, 14, 'DIST',    label).setOrigin(0.5, 0).setDepth(11);
+    this.hudDistance = this.add
+      .text(672, 28, '0.00', valueBig())
       .setOrigin(0.5, 0)
       .setDepth(11);
+    this.add.text(672, 58, 'km',      unit).setOrigin(0.5, 1).setDepth(11);
 
+    // ── Cadence  x=864 ──────────────────────────────────────────────────────
+    this.add.text(864, 14, 'CADENCE', label).setOrigin(0.5, 0).setDepth(11);
     this.hudCadence = this.add
-      .text(800, 28, '---', { ...style('26px'), fontStyle: 'bold' })
+      .text(864, 28, '---', valueBig())
       .setOrigin(0.5, 0)
       .setDepth(11);
-
-    this.add
-      .text(800, 58, 'rpm', labelStyle)
-      .setOrigin(0.5, 1)
-      .setDepth(11);
+    this.add.text(864, 58, 'rpm',     unit).setOrigin(0.5, 1).setDepth(11);
   }
 
-  // ── Bottom controls ──────────────────────────────────────────────────────────
+  // ── Elevation graph ───────────────────────────────────────────────────────
+
+  private buildElevationGraph(): void {
+    // Static background strip
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.45);
+    bg.fillRect(0, ELEV_Y, W, ELEV_H);
+    bg.setDepth(10);
+
+    // "ELEV" label (top-left of strip)
+    this.add
+      .text(ELEV_PAD_X, ELEV_Y + 5, 'ELEV', {
+        fontFamily: 'monospace',
+        fontSize: '9px',
+        color: '#888899',
+        letterSpacing: 2,
+      })
+      .setDepth(12);
+
+    // Dynamic graphics redrawn every frame
+    this.elevationGraphics = this.add.graphics().setDepth(11);
+
+    // Grade and distance labels (updated in update())
+    this.elevGradeLabel = this.add
+      .text(W - ELEV_PAD_X, ELEV_Y + 5, '', {
+        fontFamily: 'monospace',
+        fontSize: '10px',
+        color: '#aaaaaa',
+      })
+      .setOrigin(1, 0)
+      .setDepth(12);
+
+    this.elevDistLabel = this.add
+      .text(W - ELEV_PAD_X, ELEV_Y + ELEV_H - 6, '', {
+        fontFamily: 'monospace',
+        fontSize: '9px',
+        color: '#888899',
+      })
+      .setOrigin(1, 1)
+      .setDepth(12);
+  }
+
+  private drawElevationGraph(currentDistM: number): void {
+    const g = this.elevationGraphics;
+    g.clear();
+
+    const samples = this.elevationSamples;
+    const totalDist = this.course.totalDistanceM;
+    const elevRange = (this.maxElevM - this.minElevM) || 1;
+
+    const drawW = W - 2 * ELEV_PAD_X;
+    const drawH = ELEV_H - 2 * ELEV_PAD_Y;
+    const ox = ELEV_PAD_X;
+    const oy = ELEV_Y + ELEV_PAD_Y;
+
+    const toX = (d: number) => ox + (d / totalDist) * drawW;
+    const toY = (e: number) => oy + drawH - ((e - this.minElevM) / elevRange) * drawH;
+
+    // Filled elevation polygon
+    g.fillStyle(0xb8aa96, 0.55);
+    const points: Phaser.Types.Math.Vector2Like[] = [
+      { x: toX(0),         y: oy + drawH },
+      ...samples.map((s) => ({ x: toX(s.distanceM), y: toY(s.elevationM) })),
+      { x: toX(totalDist), y: oy + drawH },
+    ];
+    g.fillPoints(points, true);
+
+    // Outline
+    g.lineStyle(1, 0x7a6858, 0.8);
+    g.beginPath();
+    samples.forEach((s, i) => {
+      const px = toX(s.distanceM);
+      const py = toY(s.elevationM);
+      if (i === 0) g.moveTo(px, py);
+      else g.lineTo(px, py);
+    });
+    g.strokePath();
+
+    // Completed-distance fill (slightly brighter tint)
+    g.fillStyle(0x00f5d4, 0.12);
+    const completedPoints: Phaser.Types.Math.Vector2Like[] = [
+      { x: toX(0),            y: oy + drawH },
+      ...samples
+        .filter((s) => s.distanceM <= currentDistM)
+        .map((s) => ({ x: toX(s.distanceM), y: toY(s.elevationM) })),
+      { x: toX(currentDistM), y: oy + drawH },
+    ];
+    if (completedPoints.length > 2) {
+      g.fillPoints(completedPoints, true);
+    }
+
+    // Position marker – vertical teal line
+    const mx = toX(currentDistM);
+    g.lineStyle(2, 0x00f5d4, 1);
+    g.beginPath();
+    g.moveTo(mx, oy);
+    g.lineTo(mx, oy + drawH);
+    g.strokePath();
+
+    // Small triangle marker at bottom
+    g.fillStyle(0x00f5d4, 1);
+    g.fillTriangle(mx - 4, oy + drawH + 2, mx + 4, oy + drawH + 2, mx, oy + drawH - 4);
+
+    // Update text labels
+    const gradeSign = this.currentGrade >= 0 ? '+' : '';
+    this.elevGradeLabel.setText(`${gradeSign}${(this.currentGrade * 100).toFixed(1)}%`);
+    this.elevGradeLabel.setColor(this.gradeColour(this.currentGrade));
+
+    const lapKm = (currentDistM / 1000).toFixed(1);
+    const totalKm = (totalDist / 1000).toFixed(1);
+    this.elevDistLabel.setText(`${lapKm} / ${totalKm} km`);
+  }
+
+  // ── Bottom controls ───────────────────────────────────────────────────────
 
   private buildBottomControls(): void {
-    // Semi-transparent dark strip
     const strip = this.add.graphics();
     strip.fillStyle(0x000000, 0.50);
     strip.fillRect(0, 490, W, 50);
@@ -352,10 +536,10 @@ export class GameScene extends Phaser.Scene {
 
   private setStatus(state: 'ok' | 'mock' | 'off' | 'err', label: string): void {
     const colors: Record<string, number> = {
-      ok: 0x00ff88,
+      ok:   0x00ff88,
       mock: 0xffcc00,
-      off: 0x555566,
-      err: 0xff4444,
+      off:  0x555566,
+      err:  0xff4444,
     };
     const col = colors[state] ?? 0x555566;
     const hex = '#' + col.toString(16).padStart(6, '0');
@@ -420,7 +604,7 @@ export class GameScene extends Phaser.Scene {
     this.btnMockLabel.setText(this.isMockMode ? 'MOCK MODE: ON' : 'MOCK MODE: OFF');
   }
 
-  // ── Mode switching ───────────────────────────────────────────────────────────
+  // ── Mode switching ────────────────────────────────────────────────────────
 
   private toggleMockMode(): void {
     this.isMockMode = !this.isMockMode;
@@ -457,6 +641,11 @@ export class GameScene extends Phaser.Scene {
       .connect()
       .then(() => {
         this.setStatus('ok', 'BT CONNECTED');
+        // Sync current grade to the trainer immediately on connect
+        if (this.trainer.setGrade) {
+          void this.trainer.setGrade(this.currentGrade);
+          this.lastSentGrade = this.currentGrade;
+        }
       })
       .catch((err: unknown) => {
         console.error('[GameScene] Bluetooth connect failed:', err);
@@ -464,12 +653,12 @@ export class GameScene extends Phaser.Scene {
       });
   }
 
-  // ── Data handling ────────────────────────────────────────────────────────────
+  // ── Data handling ─────────────────────────────────────────────────────────
 
   private handleData(data: Partial<TrainerData>): void {
     if (data.instantaneousPower !== undefined) {
+      this.latestPower = data.instantaneousPower;
       this.hudPower.setText(String(Math.round(data.instantaneousPower)));
-      this.targetVelocityMs = powerToVelocityMs(data.instantaneousPower);
     }
     if (data.instantaneousCadence !== undefined) {
       this.hudCadence.setText(String(Math.round(data.instantaneousCadence)));
@@ -480,6 +669,27 @@ export class GameScene extends Phaser.Scene {
     this.hudPower.setText('---');
     this.hudSpeed.setText('--.-');
     this.hudCadence.setText('---');
+    this.hudGrade.setText('0.0%');
+    this.hudDistance.setText('0.00');
+    this.latestPower = 0;
     this.targetVelocityMs = 0;
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  private updateGradeDisplay(grade: number): void {
+    const sign = grade >= 0 ? '+' : '';
+    this.hudGrade
+      .setText(`${sign}${(grade * 100).toFixed(1)}%`)
+      .setColor(this.gradeColour(grade));
+  }
+
+  /** Returns a hex colour string based on road grade for visual feedback. */
+  private gradeColour(grade: number): string {
+    if (grade > 0.08) return '#ff5555'; // steep climb  → red
+    if (grade > 0.04) return '#ffaa00'; // moderate     → orange
+    if (grade > 0.005) return '#ffffff'; // gentle       → white
+    if (grade > -0.005) return '#aaaaaa'; // flat        → grey
+    return '#55aaff';                      // descent     → blue
   }
 }

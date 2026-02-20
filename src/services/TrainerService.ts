@@ -28,6 +28,14 @@ import type { ITrainerService, TrainerData } from './ITrainerService';
 export const FTMS_SERVICE_UUID = 'fitness_machine';
 /** Indoor Bike Data – 0x2AD2 */
 export const INDOOR_BIKE_DATA_UUID = 'indoor_bike_data';
+/** Fitness Machine Control Point – 0x2AD9 (write + indicate) */
+export const CONTROL_POINT_UUID = 'fitness_machine_control_point';
+
+// ─── Control Point Op Codes (FTMS spec §4.16.1) ──────────────────────────────
+
+const OP_REQUEST_CONTROL = 0x00;
+/** Set Indoor Bike Simulation Parameters – sends wind, grade, Crr, CWA */
+const OP_SET_INDOOR_BIKE_SIMULATION = 0x11;
 
 // ─── Indoor Bike Data flag bit positions (FTMS spec §4.9.1) ─────────────────
 
@@ -141,6 +149,8 @@ export function parseIndoorBikeData(data: DataView): Partial<TrainerData> {
 export class TrainerService implements ITrainerService {
   private device: BluetoothDevice | null = null;
   private characteristic: BluetoothRemoteGATTCharacteristic | null = null;
+  private controlPoint: BluetoothRemoteGATTCharacteristic | null = null;
+  private controlGranted = false;
   private dataCallback: ((data: Partial<TrainerData>) => void) | null = null;
 
   async connect(): Promise<void> {
@@ -154,19 +164,44 @@ export class TrainerService implements ITrainerService {
 
     const server = await this.device.gatt.connect();
     const service = await server.getPrimaryService(FTMS_SERVICE_UUID);
-    this.characteristic = await service.getCharacteristic(
-      INDOOR_BIKE_DATA_UUID,
-    );
 
+    // ── Indoor Bike Data (read-only notifications) ──────────────────────────
+    this.characteristic = await service.getCharacteristic(INDOOR_BIKE_DATA_UUID);
     this.characteristic.addEventListener(
       'characteristicvaluechanged',
       this.handleNotification,
     );
-
     await this.characteristic.startNotifications();
+
+    // ── Fitness Machine Control Point (write + indications) ─────────────────
+    // Optional: if the trainer does not expose 0x2AD9 we continue without it.
+    try {
+      this.controlPoint = await service.getCharacteristic(CONTROL_POINT_UUID);
+      this.controlPoint.addEventListener(
+        'characteristicvaluechanged',
+        this.handleControlResponse,
+      );
+      await this.controlPoint.startNotifications();
+      // Request exclusive write access to the control point
+      await this.controlPoint.writeValueWithResponse(
+        new Uint8Array([OP_REQUEST_CONTROL]).buffer,
+      );
+    } catch (err) {
+      console.warn('[TrainerService] Control Point unavailable – grade writes disabled:', err);
+      this.controlPoint = null;
+    }
   }
 
   disconnect(): void {
+    if (this.controlPoint) {
+      this.controlPoint.removeEventListener(
+        'characteristicvaluechanged',
+        this.handleControlResponse,
+      );
+      void this.controlPoint.stopNotifications().catch(() => undefined);
+      this.controlPoint = null;
+      this.controlGranted = false;
+    }
     if (this.characteristic) {
       this.characteristic.removeEventListener(
         'characteristicvaluechanged',
@@ -189,10 +224,54 @@ export class TrainerService implements ITrainerService {
     return this.device?.gatt?.connected ?? false;
   }
 
+  /**
+   * Write Op Code 0x11 (Set Indoor Bike Simulation Parameters) to 0x2AD9.
+   *
+   * Byte layout (7 bytes total):
+   *   [0]    Op Code = 0x11
+   *   [1–2]  Wind Speed   sint16 LE, resolution 0.001 m/s  → 0
+   *   [3–4]  Grade        sint16 LE, resolution 0.01%      → grade * 10 000
+   *   [5]    Crr          uint8,     resolution 0.0001      → 50 (= 0.005)
+   *   [6]    CWA          uint8,     resolution 0.01 kg/m   → 0
+   */
+  async setGrade(grade: number): Promise<void> {
+    if (!this.controlPoint || !this.controlGranted) return;
+    const buf = new DataView(new ArrayBuffer(7));
+    buf.setUint8(0, OP_SET_INDOOR_BIKE_SIMULATION);
+    buf.setInt16(1, 0, true);                            // wind speed: 0
+    buf.setInt16(3, Math.round(grade * 10000), true);    // grade in 0.01% units
+    buf.setUint8(5, 50);                                 // Crr = 0.005
+    buf.setUint8(6, 0);                                  // CWA = 0
+    await this.controlPoint.writeValueWithResponse(buf.buffer);
+  }
+
+  // ── Private event handlers ─────────────────────────────────────────────────
+
   private handleNotification = (event: Event): void => {
     const characteristic = event.target as BluetoothRemoteGATTCharacteristic;
     if (characteristic.value && this.dataCallback) {
       this.dataCallback(parseIndoorBikeData(characteristic.value));
+    }
+  };
+
+  /**
+   * Parse FTMS Control Point indication responses.
+   * Response byte layout:
+   *   [0] = 0x80 (Response Code)
+   *   [1] = Request Op Code
+   *   [2] = Result Code: 0x01 = Success
+   */
+  private handleControlResponse = (event: Event): void => {
+    const characteristic = event.target as BluetoothRemoteGATTCharacteristic;
+    if (!characteristic.value) return;
+    const view = characteristic.value;
+    // Byte 0 = 0x80 (response), byte 1 = echoed op code, byte 2 = result
+    if (view.byteLength >= 3 && view.getUint8(0) === 0x80) {
+      const opCode = view.getUint8(1);
+      const result = view.getUint8(2);
+      if (opCode === OP_REQUEST_CONTROL && result === 0x01) {
+        this.controlGranted = true;
+      }
     }
   };
 }
