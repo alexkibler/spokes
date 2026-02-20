@@ -13,6 +13,7 @@
 
 import Phaser from 'phaser';
 import { generateCourseProfile, DEFAULT_COURSE } from '../course/CourseProfile';
+import { RunStateManager } from '../roguelike/RunState';
 import type { ITrainerService } from '../services/ITrainerService';
 import { TrainerService } from '../services/TrainerService';
 import { HeartRateService } from '../services/HeartRateService';
@@ -27,6 +28,23 @@ import {
 // ─── Units ────────────────────────────────────────────────────────────────────
 
 export type Units = 'imperial' | 'metric';
+
+// ─── Roguelike config ────────────────────────────────────────────────────────
+
+export type RunLength = 'short' | 'normal' | 'long';
+
+interface RunLenConfig {
+  label:    string;
+  floors:   number;
+}
+
+const RUN_LENGTHS: Record<RunLength, RunLenConfig> = {
+  short:  { label: 'SHORT (5)',  floors: 5 },
+  normal: { label: 'NORMAL (10)', floors: 10 },
+  long:   { label: 'LONG (15)',   floors: 15 },
+};
+
+const RUN_LENGTH_ORDER: RunLength[] = ['short', 'normal', 'long'];
 
 // ─── Difficulty config ────────────────────────────────────────────────────────
 
@@ -65,6 +83,7 @@ const DEFAULT_WEIGHT_KG =  75;
 
 export class MenuScene extends Phaser.Scene {
   private difficulty: Difficulty = 'easy';
+  private runLength: RunLength = 'normal';
   private distanceKm = 50;
   private weightKg   = DEFAULT_WEIGHT_KG;
   private units: Units = 'imperial';
@@ -84,6 +103,7 @@ export class MenuScene extends Phaser.Scene {
   private weightCursorOn     = true;
   private ignoreNextGlobalClick = false;
   private diffBtns   = new Map<Difficulty, Phaser.GameObjects.Rectangle>();
+  private runLenBtns = new Map<RunLength, Phaser.GameObjects.Rectangle>();
   private unitsBtns  = new Map<Units, Phaser.GameObjects.Rectangle>();
   private presetLabels: Phaser.GameObjects.Text[] = [];
 
@@ -104,6 +124,7 @@ export class MenuScene extends Phaser.Scene {
   private weightSection!: Phaser.GameObjects.Container;
   private unitsSection!: Phaser.GameObjects.Container;
   private diffSection!: Phaser.GameObjects.Container;
+  private runLenSection!: Phaser.GameObjects.Container;
   private devicesSection!: Phaser.GameObjects.Container;
   private startBtnContainer!: Phaser.GameObjects.Container;
 
@@ -125,6 +146,7 @@ export class MenuScene extends Phaser.Scene {
     this.buildWeightSection();
     this.buildUnitsSection();
     this.buildDifficultySection();
+    this.buildRunLengthSection();
     this.buildDevicesSection();
     this.buildStartButton();
 
@@ -142,7 +164,7 @@ export class MenuScene extends Phaser.Scene {
     if (this.titleContainer) this.titleContainer.setPosition(cx, 50);
 
     // Row 1: Distance | Weight | Units (centred)
-    const middleY = 150;
+    const middleY = 145;
     const distW   = 385;
     const weightW = 215;
     const unitsW  = 145;
@@ -154,14 +176,16 @@ export class MenuScene extends Phaser.Scene {
     if (this.weightSection) this.weightSection.setPosition(startX + distW + gap, middleY);
     if (this.unitsSection)  this.unitsSection.setPosition(startX + distW + weightW + gap * 2, middleY);
 
-    // Row 2: Difficulty (centred 620 px panel)
-    if (this.diffSection) this.diffSection.setPosition(cx - 310, 298);
+    // Row 2: Difficulty (centred 620 px panel) and Run Length
+    const row2Y = 288;
+    if (this.diffSection)   this.diffSection.setPosition(cx - 310, row2Y);
+    if (this.runLenSection) this.runLenSection.setPosition(cx - 310, row2Y + 85);
 
     // Row 3: Devices – sits just above the start buttons
-    if (this.devicesSection) this.devicesSection.setPosition(cx - 310, height - 170);
+    if (this.devicesSection) this.devicesSection.setPosition(cx - 310, height - 165);
 
     // Row 4: Start buttons
-    if (this.startBtnContainer) this.startBtnContainer.setPosition(cx, height - 65);
+    if (this.startBtnContainer) this.startBtnContainer.setPosition(cx, height - 60);
   }
 
   update(_time: number, delta: number): void {
@@ -509,23 +533,23 @@ export class MenuScene extends Phaser.Scene {
   // ── Difficulty selector ────────────────────────────────────────────────────
 
   private buildDifficultySection(): void {
-    const PW = 620; const PH = 110;
+    const PW = 300; const PH = 110;
 
-    this.diffSection = this.add.container(0, 298);
+    this.diffSection = this.add.container(0, 0);
 
     const bg = this.add.graphics();
     bg.fillStyle(0x000000, 0.40);
     bg.fillRoundedRect(0, 0, PW, PH, 6);
     this.diffSection.add(bg);
 
-    this.diffSection.add(this.add.text(18, 10, 'DIFFICULTY', {
+    this.diffSection.add(this.add.text(12, 10, 'DIFFICULTY', {
       fontFamily: 'monospace', fontSize: '10px', color: '#aaaaaa', letterSpacing: 3,
     }));
 
     const BTN_Y = 68;
-    const BTN_W = 155;
+    const BTN_W = 88;
     const BTN_H = 44;
-    const xs: Record<Difficulty, number> = { easy: 135, medium: 310, hard: 485 };
+    const xs: Record<Difficulty, number> = { easy: 54, medium: 150, hard: 246 };
 
     DIFF_ORDER.forEach((diff) => {
       const { label, hint, colorOff } = DIFF[diff];
@@ -535,13 +559,13 @@ export class MenuScene extends Phaser.Scene {
         .rectangle(x, BTN_Y, BTN_W, BTN_H, colorOff)
         .setInteractive({ useHandCursor: true });
 
-      const btnLabel = this.add.text(x, BTN_Y, label, {
-        fontFamily: 'monospace', fontSize: '14px', color: '#ffffff',
-        fontStyle: 'bold', letterSpacing: 2,
+      const btnLabel = this.add.text(x, BTN_Y - 8, label, {
+        fontFamily: 'monospace', fontSize: '11px', color: '#ffffff',
+        fontStyle: 'bold', letterSpacing: 1,
       }).setOrigin(0.5);
 
-      const hintText = this.add.text(x, BTN_Y + 30, hint, {
-        fontFamily: 'monospace', fontSize: '9px', color: '#888899', letterSpacing: 1,
+      const hintText = this.add.text(x, BTN_Y + 12, hint.replace('max ', ''), {
+        fontFamily: 'monospace', fontSize: '8px', color: '#888899',
       }).setOrigin(0.5);
 
       this.diffSection.add([btn, btnLabel, hintText]);
@@ -560,6 +584,59 @@ export class MenuScene extends Phaser.Scene {
       const { colorOn, colorOff } = DIFF[diff];
       const selected = diff === this.difficulty;
       btn.setFillStyle(selected ? colorOn : colorOff);
+      btn.setStrokeStyle(selected ? 2 : 0, 0xffffff, selected ? 0.85 : 0);
+    }
+  }
+
+  // ── Run Length selector ────────────────────────────────────────────────────
+
+  private buildRunLengthSection(): void {
+    const PW = 300; const PH = 110;
+
+    this.runLenSection = this.add.container(0, 0);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.40);
+    bg.fillRoundedRect(0, 0, PW, PH, 6);
+    this.runLenSection.add(bg);
+
+    this.runLenSection.add(this.add.text(12, 10, 'RUN LENGTH', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#aaaaaa', letterSpacing: 3,
+    }));
+
+    const BTN_Y = 68;
+    const BTN_W = 88;
+    const BTN_H = 44;
+    const xs: Record<RunLength, number> = { short: 54, normal: 150, long: 246 };
+
+    RUN_LENGTH_ORDER.forEach((rl) => {
+      const { label } = RUN_LENGTHS[rl];
+      const x = xs[rl];
+
+      const btn = this.add
+        .rectangle(x, BTN_Y, BTN_W, BTN_H, 0x3a3a5a)
+        .setInteractive({ useHandCursor: true });
+
+      const btnLabel = this.add.text(x, BTN_Y, label, {
+        fontFamily: 'monospace', fontSize: '11px', color: '#ffffff',
+        fontStyle: 'bold', letterSpacing: 1,
+      }).setOrigin(0.5);
+
+      this.runLenSection.add([btn, btnLabel]);
+      this.runLenBtns.set(rl, btn);
+
+      btn.on('pointerdown', () => { this.runLength = rl; this.refreshRunLenStyles(); });
+      btn.on('pointerover', () => { if (this.runLength !== rl) btn.setFillStyle(0x555588); });
+      btn.on('pointerout',  () => this.refreshRunLenStyles());
+    });
+
+    this.refreshRunLenStyles();
+  }
+
+  private refreshRunLenStyles(): void {
+    for (const [rl, btn] of this.runLenBtns) {
+      const selected = rl === this.runLength;
+      btn.setFillStyle(selected ? 0x4a4a8b : 0x2a2a44);
       btn.setStrokeStyle(selected ? 2 : 0, 0xffffff, selected ? 0.85 : 0);
     }
   }
@@ -679,13 +756,18 @@ export class MenuScene extends Phaser.Scene {
   private buildStartButton(): void {
     this.startBtnContainer = this.add.container(0, 0); // positioned by onResize
 
+    const btnW = 200;
+    const gap = 15;
+    const totalW = btnW * 3 + gap * 2;
+    const startX = -totalW / 2 + btnW / 2;
+
     // ── Quick Demo (left) ──────────────────────────────────────────────────
     const demoBtn = this.add
-      .rectangle(-160, 0, 220, 52, 0x3a4a6b)
+      .rectangle(startX, 0, btnW, 52, 0x3a4a6b)
       .setInteractive({ useHandCursor: true });
-    const demoTxt = this.add.text(-160, 0, '▶  QUICK DEMO', {
-      fontFamily: 'monospace', fontSize: '15px',
-      color: '#bbbbff', fontStyle: 'bold', letterSpacing: 2,
+    const demoTxt = this.add.text(startX, 0, '▶  QUICK DEMO', {
+      fontFamily: 'monospace', fontSize: '13px',
+      color: '#bbbbff', fontStyle: 'bold', letterSpacing: 1,
     }).setOrigin(0.5);
     this.startBtnContainer.add([demoBtn, demoTxt]);
 
@@ -702,13 +784,38 @@ export class MenuScene extends Phaser.Scene {
       });
     });
 
+    // ── Start Run (middle) ─────────────────────────────────────────────────
+    const runBtn = this.add
+      .rectangle(startX + btnW + gap, 0, btnW, 52, 0x8b5a00)
+      .setInteractive({ useHandCursor: true });
+    const runTxt = this.add.text(startX + btnW + gap, 0, '▶  START RUN', {
+      fontFamily: 'monospace', fontSize: '15px',
+      color: '#ffffff', fontStyle: 'bold', letterSpacing: 1,
+    }).setOrigin(0.5);
+    this.startBtnContainer.add([runBtn, runTxt]);
+
+    runBtn.on('pointerover', () => runBtn.setFillStyle(0xcc8800));
+    runBtn.on('pointerout',  () => runBtn.setFillStyle(0x8b5a00));
+    runBtn.on('pointerdown', () => {
+      RunStateManager.startNewRun(
+        RUN_LENGTHS[this.runLength].floors,
+        this.difficulty
+      );
+      this.scene.start('MapScene', {
+        weightKg: this.weightKg,
+        units:    this.units,
+        trainer:  this.trainerService,
+        hrm:      this.hrmService,
+      });
+    });
+
     // ── Start Ride (right) ─────────────────────────────────────────────────
     const startBtn = this.add
-      .rectangle(+160, 0, 220, 52, 0x00a892)
+      .rectangle(startX + (btnW + gap) * 2, 0, btnW, 52, 0x00a892)
       .setInteractive({ useHandCursor: true });
-    const startTxt = this.add.text(+160, 0, '▶  START RIDE', {
-      fontFamily: 'monospace', fontSize: '18px',
-      color: '#ffffff', fontStyle: 'bold', letterSpacing: 2,
+    const startTxt = this.add.text(startX + (btnW + gap) * 2, 0, '▶  START RIDE', {
+      fontFamily: 'monospace', fontSize: '15px',
+      color: '#ffffff', fontStyle: 'bold', letterSpacing: 1,
     }).setOrigin(0.5);
     this.startBtnContainer.add([startBtn, startTxt]);
 
