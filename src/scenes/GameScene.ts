@@ -35,9 +35,12 @@ import type { Units } from './MenuScene';
 import {
   DEFAULT_COURSE,
   getGradeAtDistance,
+  getSurfaceAtDistance,
+  getCrrForSurface,
   buildElevationSamples,
   type CourseProfile,
   type ElevationSample,
+  type SurfaceType,
 } from '../course/CourseProfile';
 
 // ─── Effect / powerup types ───────────────────────────────────────────────────
@@ -47,6 +50,14 @@ type EffectType = 'headwind' | 'tailwind';
 interface ActiveEffect {
   type: EffectType;
 }
+
+/** Fill colours for each surface type on the elevation graph. */
+const SURFACE_FILL_COLORS: Record<SurfaceType, number> = {
+  asphalt: 0x7799bb,  // steel blue-grey
+  gravel:  0xddaa22,  // golden amber
+  dirt:    0xcc5522,  // terracotta
+  mud:     0x449933,  // forest green
+};
 
 const EFFECT_META: Record<EffectType, {
   label: string;
@@ -154,6 +165,7 @@ export class GameScene extends Phaser.Scene {
   private course: CourseProfile = DEFAULT_COURSE;
   private distanceM = 0;                // total cumulative distance
   private currentGrade = 0;
+  private currentSurface: SurfaceType = 'asphalt';
   private lastSentGrade = 0;
   private smoothGrade = 0;
 
@@ -191,6 +203,11 @@ export class GameScene extends Phaser.Scene {
   private elevationSamples: ElevationSample[] = [];
   private minElevM = 0;
   private maxElevM = 0;
+  private segmentBoundaries: Array<{
+    startM: number; endM: number;
+    startElevM: number; endElevM: number;
+    surface: SurfaceType;
+  }> = [];
 
   // Parallax layers
   private layerMountains!: Phaser.GameObjects.TileSprite;
@@ -371,6 +388,7 @@ export class GameScene extends Phaser.Scene {
     this.smoothVelocityMs = 0;
     this.targetVelocityMs = 0;
     this.currentGrade     = 0;
+    this.currentSurface   = 'asphalt';
     this.smoothGrade      = 0;
     this.lastSentGrade    = 0;
     this.latestPower      = 200;
@@ -407,13 +425,29 @@ export class GameScene extends Phaser.Scene {
     this.minElevM = Math.min(...this.elevationSamples.map((s) => s.elevationM));
     this.maxElevM = Math.max(...this.elevationSamples.map((s) => s.elevationM));
 
+    // Precompute segment boundaries for surface-coloured elevation graph
+    let _cumDist = 0;
+    let _cumElev = 0;
+    this.segmentBoundaries = this.course.segments.map(seg => {
+      const startM    = _cumDist;
+      const startElevM = _cumElev;
+      _cumDist += seg.distanceM;
+      _cumElev += seg.distanceM * seg.grade;
+      return { startM, endM: _cumDist, startElevM, endElevM: _cumElev, surface: seg.surface ?? 'asphalt' };
+    });
+
     this.buildParallaxLayers();
     this.buildCyclist();
 
-    // Pre-seed grade so the world starts already tilted at the correct angle
-    this.currentGrade = getGradeAtDistance(this.course, 0);
+    // Pre-seed grade and surface so the world starts at the correct state
+    this.currentGrade   = getGradeAtDistance(this.course, 0);
+    this.currentSurface = getSurfaceAtDistance(this.course, 0);
     this.smoothGrade = this.currentGrade;
-    this.physicsConfig = { ...this.basePhysics, grade: this.currentGrade };
+    this.physicsConfig = {
+      ...this.basePhysics,
+      grade: this.currentGrade,
+      crr:   getCrrForSurface(this.currentSurface),
+    };
     this.worldContainer.rotation = -Math.atan(this.smoothGrade);
     this.worldContainer.setScale(Math.sqrt(1 + this.smoothGrade * this.smoothGrade) * 1.02);
 
@@ -479,13 +513,29 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const newGrade = getGradeAtDistance(this.course, wrappedDist);
+    const newGrade   = getGradeAtDistance(this.course, wrappedDist);
+    const newSurface = getSurfaceAtDistance(this.course, wrappedDist);
 
-    if (newGrade !== this.currentGrade) {
+    const gradeChanged   = newGrade   !== this.currentGrade;
+    const surfaceChanged = newSurface !== this.currentSurface;
+
+    if (gradeChanged) {
       this.currentGrade = newGrade;
-      this.physicsConfig = { ...this.basePhysics, grade: newGrade };
       // In demo mode, randomise power & cadence each time a new segment begins
       if (this.isDemoMode) this.randomizeDemoMetrics();
+    }
+
+    if (surfaceChanged) {
+      this.currentSurface = newSurface;
+      this.showSurfaceNotification(newSurface);
+    }
+
+    if (gradeChanged || surfaceChanged) {
+      this.physicsConfig = {
+        ...this.basePhysics,
+        grade: this.currentGrade,
+        crr:   getCrrForSurface(this.currentSurface),
+      };
     }
 
     // Smooth grade: exponential lerp toward current segment grade
@@ -1000,14 +1050,19 @@ export class GameScene extends Phaser.Scene {
     const toX = (d: number) => ox + (d / totalDist) * drawW;
     const toY = (e: number) => oy + drawH - ((e - this.minElevM) / elevRange) * drawH;
 
-    // Filled elevation polygon
-    g.fillStyle(0xb8aa96, 0.55);
-    const points: Phaser.Types.Math.Vector2Like[] = [
-      { x: toX(0),         y: oy + drawH },
-      ...samples.map((s) => ({ x: toX(s.distanceM), y: toY(s.elevationM) })),
-      { x: toX(totalDist), y: oy + drawH },
-    ];
-    g.fillPoints(points, true);
+    // Surface-coloured elevation segments
+    for (const seg of this.segmentBoundaries) {
+      const inSeg = samples.filter(s => s.distanceM > seg.startM && s.distanceM < seg.endM);
+      const poly: Phaser.Types.Math.Vector2Like[] = [
+        { x: toX(seg.startM), y: oy + drawH },
+        { x: toX(seg.startM), y: toY(seg.startElevM) },
+        ...inSeg.map(s => ({ x: toX(s.distanceM), y: toY(s.elevationM) })),
+        { x: toX(seg.endM),   y: toY(seg.endElevM) },
+        { x: toX(seg.endM),   y: oy + drawH },
+      ];
+      g.fillStyle(SURFACE_FILL_COLORS[seg.surface], 1.0);
+      g.fillPoints(poly, true);
+    }
 
     // Outline
     g.lineStyle(1, 0x7a6858, 0.8);
@@ -1311,6 +1366,37 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.updatePowerDisplay();
+  }
+
+  private showSurfaceNotification(surface: SurfaceType): void {
+    const SURFACE_COLORS: Record<SurfaceType, string> = {
+      asphalt: '#aaaaaa',
+      gravel:  '#ccaa44',
+      dirt:    '#bb8844',
+      mud:     '#88aa44',
+    };
+    const SURFACE_LABELS: Record<SurfaceType, string> = {
+      asphalt: 'ASPHALT',
+      gravel:  'GRAVEL',
+      dirt:    'DIRT',
+      mud:     'MUD',
+    };
+
+    const sub = surface === 'asphalt'
+      ? 'BACK ON SMOOTH ROAD'
+      : `+${Math.round((getCrrForSurface(surface) / getCrrForSurface('asphalt') - 1) * 100)}% ROLLING RESISTANCE`;
+
+    this.notifTitle.setText(SURFACE_LABELS[surface]).setColor(SURFACE_COLORS[surface]);
+    this.notifSub.setText(sub);
+    if (this.notifTween) this.notifTween.stop();
+    this.notifContainer.setAlpha(1);
+    this.notifTween = this.tweens.add({
+      targets: this.notifContainer,
+      alpha: 0,
+      delay: 2000,
+      duration: 500,
+      ease: 'Power2',
+    });
   }
 
   private clearEffect(): void {

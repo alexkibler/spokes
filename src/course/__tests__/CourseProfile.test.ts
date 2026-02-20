@@ -3,6 +3,9 @@ import {
   buildCourseProfile,
   getGradeAtDistance,
   getElevationAtDistance,
+  getSurfaceAtDistance,
+  getCrrForSurface,
+  CRR_BY_SURFACE,
   buildElevationSamples,
   DEFAULT_COURSE,
 } from '../CourseProfile';
@@ -14,6 +17,14 @@ const SIMPLE_COURSE = buildCourseProfile([
   { distanceM: 1000, grade: 0.00 },
   { distanceM: 1000, grade: 0.05 },
   { distanceM: 1000, grade: -0.03 },
+]);
+
+/** Surface course: asphalt → gravel → mud (explicit) + asphalt (implicit) */
+const SURFACE_COURSE = buildCourseProfile([
+  { distanceM: 500, grade: 0.00 },                        // asphalt (implicit)
+  { distanceM: 500, grade: 0.02, surface: 'gravel' },
+  { distanceM: 500, grade: 0.01, surface: 'mud'    },
+  { distanceM: 500, grade: 0.00 },                        // asphalt (implicit)
 ]);
 
 // ─── buildCourseProfile ───────────────────────────────────────────────────────
@@ -121,6 +132,52 @@ describe('buildElevationSamples', () => {
         5,
       );
     }
+  });
+});
+
+// ─── getSurfaceAtDistance ─────────────────────────────────────────────────────
+
+describe('getSurfaceAtDistance', () => {
+  it('returns asphalt for a segment with no explicit surface', () => {
+    expect(getSurfaceAtDistance(SURFACE_COURSE, 0)).toBe('asphalt');
+    expect(getSurfaceAtDistance(SURFACE_COURSE, 250)).toBe('asphalt');
+  });
+
+  it('returns the explicit surface mid-segment', () => {
+    expect(getSurfaceAtDistance(SURFACE_COURSE, 750)).toBe('gravel');
+    expect(getSurfaceAtDistance(SURFACE_COURSE, 1250)).toBe('mud');
+  });
+
+  it('picks up the next segment exactly at the boundary', () => {
+    expect(getSurfaceAtDistance(SURFACE_COURSE, 500)).toBe('gravel');
+    expect(getSurfaceAtDistance(SURFACE_COURSE, 1000)).toBe('mud');
+  });
+
+  it('wraps around to the start surface', () => {
+    // 2000 m wraps to 0 m → asphalt
+    expect(getSurfaceAtDistance(SURFACE_COURSE, 2000)).toBe('asphalt');
+  });
+
+  it('returns asphalt for an implicit trailing segment', () => {
+    expect(getSurfaceAtDistance(SURFACE_COURSE, 1600)).toBe('asphalt');
+  });
+});
+
+// ─── getCrrForSurface ─────────────────────────────────────────────────────────
+
+describe('getCrrForSurface', () => {
+  it('returns the baseline asphalt Crr', () => {
+    expect(getCrrForSurface('asphalt')).toBe(CRR_BY_SURFACE.asphalt);
+  });
+
+  it('returns increasing Crr for progressively rougher surfaces', () => {
+    expect(getCrrForSurface('gravel')).toBeGreaterThan(getCrrForSurface('asphalt'));
+    expect(getCrrForSurface('dirt')).toBeGreaterThan(getCrrForSurface('gravel'));
+    expect(getCrrForSurface('mud')).toBeGreaterThan(getCrrForSurface('dirt'));
+  });
+
+  it('defaults to asphalt Crr when called with no argument', () => {
+    expect(getCrrForSurface()).toBe(getCrrForSurface('asphalt'));
   });
 });
 

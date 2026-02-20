@@ -12,7 +12,7 @@
  */
 
 import Phaser from 'phaser';
-import { generateCourseProfile } from '../course/CourseProfile';
+import { generateCourseProfile, DEFAULT_COURSE } from '../course/CourseProfile';
 import type { ITrainerService } from '../services/ITrainerService';
 import { TrainerService } from '../services/TrainerService';
 import { HeartRateService } from '../services/HeartRateService';
@@ -598,10 +598,9 @@ export class MenuScene extends Phaser.Scene {
     demoBtn.on('pointerover', () => demoBtn.setFillStyle(0x5a6aab));
     demoBtn.on('pointerout',  () => demoBtn.setFillStyle(0x3a4a6b));
     demoBtn.on('pointerdown', () => {
-      // Quick demo: easy difficulty, 25 km course, mock trainer data
-      const course = generateCourseProfile(25, DIFF.easy.maxGrade);
+      // Quick demo: use the default curated course (has surface variety)
       this.scene.start('GameScene', {
-        course,
+        course: DEFAULT_COURSE,
         weightKg: this.weightKg,
         units:    this.units,
         trainer:  null,           // null → GameScene uses MockTrainerService
