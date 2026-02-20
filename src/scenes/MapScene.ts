@@ -12,6 +12,9 @@ import type { Units } from './MenuScene';
 import type { ITrainerService } from '../services/ITrainerService';
 import { HeartRateService } from '../services/HeartRateService';
 
+// Node types that are freely accessible in dev mode regardless of traversal
+const DEV_ACCESSIBLE_TYPES: NodeType[] = ['shop'];
+
 // Darker colors for better contrast against #e8dcc8 background
 const SURFACE_FILL_COLORS: Record<SurfaceType, number> = {
   asphalt: 0x446688, // Darker blue
@@ -60,6 +63,9 @@ export class MapScene extends Phaser.Scene {
   private legendContainer!: Phaser.GameObjects.Container;
   private goldText!: Phaser.GameObjects.Text;
 
+  private isTeleportMode = false;
+  private teleportBtn: Phaser.GameObjects.Container | null = null;
+
   constructor() {
     super({ key: 'MapScene' });
   }
@@ -105,7 +111,11 @@ export class MapScene extends Phaser.Scene {
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    this.updateGoldUI();
+    const run = RunStateManager.getRun();
+    this.goldText = this.add.text(this.scale.width - 20, 20, `GOLD: ${run?.gold ?? 0}`, {
+      fontFamily: 'monospace', fontSize: '20px', color: '#8b5a00', fontStyle: 'bold',
+    }).setOrigin(1, 0);
+
     this.buildLegend();
     this.createTooltip();
 
@@ -117,21 +127,48 @@ export class MapScene extends Phaser.Scene {
     const run = RunStateManager.getRun();
     if (!run || !this.sys.isActive()) return;
 
-    if (this.goldText && (!this.goldText.active || !this.goldText.scene)) {
-      // It exists but is stale/destroyed
-      this.goldText = null as any; 
-    }
+    this.goldText.setText(`GOLD: ${run.gold}`);
+    this.goldText.setX(this.scale.width - 20);
 
-    if (!this.goldText) {
-      this.goldText = this.add.text(this.scale.width - 20, 20, `GOLD: ${run.gold}`, {
-        fontFamily: 'monospace',
-        fontSize: '20px',
-        color: '#8b5a00',
-        fontStyle: 'bold',
-      }).setOrigin(1, 0);
+    // ── Teleport Button ──
+    const teleCount = run.inventory.filter(i => i === 'teleport').length;
+    
+    if (teleCount > 0) {
+      if (!this.teleportBtn) {
+        this.teleportBtn = this.add.container(this.scale.width - 20, 60);
+        
+        const bg = this.add.rectangle(0, 0, 140, 30, 0x442244)
+          .setInteractive({ useHandCursor: true });
+        const txt = this.add.text(0, 0, `TELEPORT (${teleCount})`, {
+          fontFamily: 'monospace', fontSize: '12px', color: '#ff88ff', fontStyle: 'bold'
+        }).setOrigin(0.5);
+        
+        this.teleportBtn.add([bg, txt]);
+
+        bg.on('pointerdown', () => {
+          this.isTeleportMode = !this.isTeleportMode;
+          // Update button appearance
+          bg.setFillStyle(this.isTeleportMode ? 0x884488 : 0x442244);
+          this.drawMap();
+        });
+        
+        bg.on('pointerover', () => bg.setFillStyle(this.isTeleportMode ? 0x995599 : 0x553355));
+        bg.on('pointerout', () => bg.setFillStyle(this.isTeleportMode ? 0x884488 : 0x442244));
+      } else {
+        this.teleportBtn.setVisible(true);
+        this.teleportBtn.setX(this.scale.width - 20); // Resize handling
+        const txt = this.teleportBtn.getAt(1) as Phaser.GameObjects.Text;
+        txt.setText(this.isTeleportMode ? 'CANCEL TELEPORT' : `TELEPORT (${teleCount})`);
+        
+        const bg = this.teleportBtn.getAt(0) as Phaser.GameObjects.Rectangle;
+        bg.setFillStyle(this.isTeleportMode ? 0x884488 : 0x442244);
+      }
     } else {
-      this.goldText.setText(`GOLD: ${run.gold}`);
-      this.goldText.setX(this.scale.width - 20);
+      if (this.teleportBtn) this.teleportBtn.setVisible(false);
+      if (this.isTeleportMode) {
+        this.isTeleportMode = false;
+        this.drawMap();
+      }
     }
   }
 
@@ -146,7 +183,7 @@ export class MapScene extends Phaser.Scene {
 
   private generateMap(run: any): void {
     const totalFloors = run.runLength;
-    const segmentKm = Math.max(1, run.totalDistanceKm / totalFloors); // Minimum 1km per segment
+    const segmentKm = Math.max(0.2, run.totalDistanceKm / totalFloors); // Minimum 200m per segment
     const numCols = 7;
     const nodes: MapNode[] = [];
     const edges: MapEdge[] = [];
@@ -308,7 +345,8 @@ export class MapScene extends Phaser.Scene {
         circle.disableInteractive();
       } else if (isReachable) {
         // Reachable: Bright, Interactive
-        circle.setStrokeStyle(3, 0xffd700, 1); // Gold outline
+        const outlineColor = this.isTeleportMode ? 0xff88ff : 0xffd700; // Purple for teleport, Gold for travel
+        circle.setStrokeStyle(3, outlineColor, 1);
         circle.setScale(1.1);
         circle.setAlpha(1.0);
         circle.setInteractive({ useHandCursor: true });
@@ -476,8 +514,18 @@ export class MapScene extends Phaser.Scene {
     const run = RunStateManager.getRun();
     if (!run) return false;
     
+    // Teleport Mode: Any visited node is reachable (except current, arguably, but allowing it is harmless)
+    if (this.isTeleportMode) {
+      return run.visitedNodeIds.includes(nodeId) && nodeId !== run.currentNodeId;
+    }
+    
     const targetNode = run.nodes.find(n => n.id === nodeId);
     if (!targetNode) return false;
+
+    // Dev mode: shops (and future event nodes) are always reachable
+    if (this.isDevMode && DEV_ACCESSIBLE_TYPES.includes(targetNode.type)) {
+      return nodeId !== run.currentNodeId;
+    }
 
     // 1. Initial Choice
     if (!run.currentNodeId) {
@@ -499,6 +547,20 @@ export class MapScene extends Phaser.Scene {
   private onNodeClick(node: MapNode): void {
     const run = RunStateManager.getRun();
     if (!run) return;
+
+    // ── Teleport Mode Handling ──
+    if (this.isTeleportMode) {
+      if (run.visitedNodeIds.includes(node.id)) {
+        // Deduct item
+        if (RunStateManager.removeFromInventory('teleport')) {
+          RunStateManager.setCurrentNode(node.id);
+          this.isTeleportMode = false;
+          this.drawMap();
+          this.updateGoldUI(); // Refresh UI to update teleport button count/state
+        }
+      }
+      return;
+    }
 
     // Handle Start Node (no edge to traverse)
     if (node.floor === 0 && !run.currentNodeId) {
@@ -595,46 +657,77 @@ export class MapScene extends Phaser.Scene {
     overlay.add(goldTxt);
 
     const itemX = w / 2;
-    const itemY = py + 150;
-    const price = 100;
+    const itemY = py + 120; // Moved up slightly
+    const priceTailwind = 100;
+    const priceTeleport = 10;
 
-    const buyBtn = this.add.rectangle(itemX, itemY, 320, 60, 0x2a2a44).setInteractive({ useHandCursor: true });
-    const buyTxt = this.add.text(itemX, itemY, `TAILWIND (2x POWER)\nPrice: ${price} GOLD`, {
-      fontFamily: 'monospace', fontSize: '16px', color: '#ffffff', align: 'center'
+    // ── Item 1: Tailwind ──
+    const btnTailwind = this.add.rectangle(itemX, itemY, 320, 50, 0x2a2a44).setInteractive({ useHandCursor: true });
+    const txtTailwind = this.add.text(itemX, itemY, `TAILWIND (2x POWER)\nPrice: ${priceTailwind} GOLD`, {
+      fontFamily: 'monospace', fontSize: '14px', color: '#ffffff', align: 'center'
     }).setOrigin(0.5);
-    overlay.add([buyBtn, buyTxt]);
+    overlay.add([btnTailwind, txtTailwind]);
+
+    // ── Item 2: Teleport ──
+    const itemY2 = itemY + 60;
+    const btnTeleport = this.add.rectangle(itemX, itemY2, 320, 50, 0x442244).setInteractive({ useHandCursor: true });
+    const txtTeleport = this.add.text(itemX, itemY2, `TELEPORT SCROLL\nPrice: ${priceTeleport} GOLD`, {
+      fontFamily: 'monospace', fontSize: '14px', color: '#ff88ff', align: 'center'
+    }).setOrigin(0.5);
+    overlay.add([btnTeleport, txtTeleport]);
 
     const refreshShop = () => {
       goldTxt.setText(`GOLD: ${run.gold}`);
+
+      // Update Tailwind
       if (run.inventory.includes('tailwind')) {
-        buyTxt.setText('TAILWIND - OWNED');
-        buyBtn.setFillStyle(0x1a5a3a);
-        buyBtn.disableInteractive();
-      } else if (run.gold < price) {
-        buyBtn.setFillStyle(0x442222);
-        buyBtn.disableInteractive();
-        buyTxt.setAlpha(0.5);
+        txtTailwind.setText('TAILWIND - OWNED');
+        btnTailwind.setFillStyle(0x1a5a3a);
+        btnTailwind.disableInteractive();
+      } else if (run.gold < priceTailwind) {
+        btnTailwind.setFillStyle(0x442222);
+        btnTailwind.disableInteractive();
+        txtTailwind.setAlpha(0.5);
       } else {
-        buyBtn.setFillStyle(0x2a2a44);
-        buyBtn.setInteractive();
-        buyTxt.setAlpha(1);
+        btnTailwind.setFillStyle(0x2a2a44);
+        btnTailwind.setInteractive();
+        txtTailwind.setAlpha(1);
+      }
+
+      // Update Teleport (Consumable, so always buyable if afforded)
+      if (run.gold < priceTeleport) {
+        btnTeleport.setFillStyle(0x332222);
+        btnTeleport.disableInteractive();
+        txtTeleport.setAlpha(0.5);
+      } else {
+        btnTeleport.setFillStyle(0x442244);
+        btnTeleport.setInteractive();
+        txtTeleport.setAlpha(1);
       }
     };
 
-    buyBtn.on('pointerdown', () => {
-      if (RunStateManager.spendGold(price)) {
+    btnTailwind.on('pointerdown', () => {
+      if (RunStateManager.spendGold(priceTailwind)) {
         RunStateManager.addToInventory('tailwind');
         refreshShop();
         this.updateGoldUI();
       }
     });
+    
+    btnTeleport.on('pointerdown', () => {
+      if (RunStateManager.spendGold(priceTeleport)) {
+        RunStateManager.addToInventory('teleport');
+        refreshShop();
+        this.updateGoldUI();
+      }
+    });
 
-    buyBtn.on('pointerover', () => {
-      if (!run.inventory.includes('tailwind') && run.gold >= price) buyBtn.setFillStyle(0x3a3a5a);
-    });
-    buyBtn.on('pointerout', () => {
-      if (!run.inventory.includes('tailwind') && run.gold >= price) buyBtn.setFillStyle(0x2a2a44);
-    });
+    // Hover effects
+    btnTailwind.on('pointerover', () => { if (btnTailwind.input!.enabled) btnTailwind.setFillStyle(0x3a3a5a); });
+    btnTailwind.on('pointerout', () => { if (btnTailwind.input!.enabled) btnTailwind.setFillStyle(0x2a2a44); });
+    
+    btnTeleport.on('pointerover', () => { if (btnTeleport.input!.enabled) btnTeleport.setFillStyle(0x553355); });
+    btnTeleport.on('pointerout', () => { if (btnTeleport.input!.enabled) btnTeleport.setFillStyle(0x442244); });
 
     refreshShop();
 
@@ -651,7 +744,8 @@ export class MapScene extends Phaser.Scene {
 
   shutdown(): void {
     this.scale.off('resize', this.onResize, this);
-    this.goldText = null as any;
+    this.teleportBtn = null;
+    this.isTeleportMode = false;
     this.nodeObjects.clear();
     if (this.legendContainer) this.legendContainer.destroy();
     if (this.tooltipContainer) this.tooltipContainer.destroy();

@@ -1317,20 +1317,26 @@ export class GameScene extends Phaser.Scene {
 
   /** Returns a hex colour string based on road grade for visual feedback. */
   private gradeColour(grade: number): string {
-    if (grade > 0.08) return '#ff5555'; // steep climb  → red
-    if (grade > 0.04) return '#ffaa00'; // moderate     → orange
-    if (grade > 0.005) return '#ffffff'; // gentle       → white
-    if (grade > -0.005) return '#aaaaaa'; // flat        → grey
-    return '#55aaff';                      // descent     → blue
+    if (grade >  0.10) return '#cc0000'; // > 10%        → dark red
+    if (grade >  0.06) return '#ff3300'; // 6–10%        → red
+    if (grade >  0.03) return '#ff8800'; // 3–6%         → orange
+    if (grade >  0.01) return '#cccc00'; // 1–3%         → yellow-green
+    if (grade > -0.01) return '#33cc33'; // ±1%          → green (flat)
+    if (grade > -0.03) return '#66ccff'; // -1– -3%      → light blue
+    if (grade > -0.06) return '#3388ff'; // -3– -6%      → blue
+    return                '#0033cc';     // < -6%        → dark blue
   }
 
   /** Returns a hex number for graphics fill based on road grade. */
   private getGradeColorHex(grade: number): number {
-    if (grade > 0.08) return 0xff5555; // steep climb  → red
-    if (grade > 0.04) return 0xffaa00; // moderate     → orange
-    if (grade > 0.005) return 0xffffff; // gentle       → white
-    if (grade > -0.005) return 0xaaaaaa; // flat        → grey
-    return 0x55aaff;                      // descent     → blue
+    if (grade >  0.10) return 0xcc0000; // > 10%        → dark red
+    if (grade >  0.06) return 0xff3300; // 6–10%        → red
+    if (grade >  0.03) return 0xff8800; // 3–6%         → orange
+    if (grade >  0.01) return 0xcccc00; // 1–3%         → yellow-green
+    if (grade > -0.01) return 0x33cc33; // ±1%          → green (flat)
+    if (grade > -0.03) return 0x66ccff; // -1– -3%      → light blue
+    if (grade > -0.06) return 0x3388ff; // -3– -6%      → blue
+    return                    0x0033cc; // < -6%        → dark blue
   }
 
   /**

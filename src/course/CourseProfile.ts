@@ -160,16 +160,16 @@ export function generateCourseProfile(
 ): CourseProfile {
   const totalM = distanceKm * 1000;
 
-  // Flat bookends: 5 % of total length, clamped 500–1 500 m
-  const flatEndM = Math.max(500, Math.min(1500, totalM * 0.05));
+  // Flat bookends: 5 % of total length, clamped 50–1 500 m
+  const flatEndM = Math.max(50, Math.min(1500, totalM * 0.05));
 
   const segments: CourseSegment[] = [{ distanceM: flatEndM, grade: 0, surface }];
   let budgetM  = totalM - 2 * flatEndM;
   let netElevM = 0; // running Σ(grade × length) to track elevation balance
 
-  // Segment length: 4 % of course length, clamped 400–2 500 m
-  const segMax = Math.min(2500, Math.max(600, totalM * 0.04));
-  const segMin = Math.max(400, segMax * 0.35);
+  // Segment length: clamped 200–2 500 m
+  const segMax = Math.min(2500, Math.max(200, totalM * 0.04));
+  const segMin = Math.max(100, segMax * 0.35);
 
   // Grade magnitudes available (25 / 50 / 75 / 100 % of maxGrade)
   const mags = [
@@ -179,9 +179,10 @@ export function generateCourseProfile(
     maxGrade,
   ];
 
-  while (budgetM >= segMin * 2) {
+  while (budgetM >= segMin) {
     // Pick a random segment length within budget
     const hi  = Math.min(segMax, budgetM - segMin);
+    if (hi <= 0) break; // remaining budget too small for another segment
     const lo  = Math.min(segMin, hi);
     const len = lo + Math.random() * Math.max(0, hi - lo);
 
@@ -203,6 +204,19 @@ export function generateCourseProfile(
     segments.push({ distanceM: len, grade, surface });
     netElevM += len * grade;
     budgetM  -= len;
+  }
+
+  // If the loop didn't run or left a gap, and we have no terrain segments yet,
+  // we must create at least one segment to bridge the gap.
+  if (budgetM > 0 && segments.length === 1) {
+     // Create a single bridge segment. 
+     // Since we can't balance it, just pick a random grade so it's not flat.
+     // 50/50 chance of climb or descent.
+     const sign = Math.random() < 0.5 ? 1 : -1;
+     const grade = sign * mags[Math.floor(Math.random() * mags.length)];
+     
+     segments.push({ distanceM: budgetM, grade, surface });
+     budgetM = 0;
   }
 
   // Absorb any leftover budget into the last terrain segment

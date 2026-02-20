@@ -31,6 +31,7 @@ export interface RunData {
   gold: number;
   inventory: string[];
   currentNodeId: string;
+  visitedNodeIds: string[]; // Track all nodes the player has visited
   activeEdge: MapEdge | null; // The edge currently being traversed (or just finished)
   nodes: MapNode[];
   edges: MapEdge[];
@@ -49,6 +50,7 @@ export class RunStateManager {
       gold: 0,
       inventory: [],
       currentNodeId: '', // Set by map generator
+      visitedNodeIds: [],
       activeEdge: null,
       nodes: [],
       edges: [],
@@ -67,7 +69,21 @@ export class RunStateManager {
   static setCurrentNode(nodeId: string): void {
     if (this.instance) {
       this.instance.currentNodeId = nodeId;
+      if (!this.instance.visitedNodeIds.includes(nodeId)) {
+        this.instance.visitedNodeIds.push(nodeId);
+      }
     }
+  }
+
+  static removeFromInventory(item: string): boolean {
+    if (this.instance) {
+      const idx = this.instance.inventory.indexOf(item);
+      if (idx !== -1) {
+        this.instance.inventory.splice(idx, 1);
+        return true;
+      }
+    }
+    return false;
   }
 
   static setActiveEdge(edge: MapEdge | null): void {

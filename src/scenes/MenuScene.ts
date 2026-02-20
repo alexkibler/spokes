@@ -29,23 +29,6 @@ import {
 
 export type Units = 'imperial' | 'metric';
 
-// ─── Roguelike config ────────────────────────────────────────────────────────
-
-export type RunLength = 'short' | 'normal' | 'long';
-
-interface RunLenConfig {
-  label:    string;
-  floors:   number;
-}
-
-const RUN_LENGTHS: Record<RunLength, RunLenConfig> = {
-  short:  { label: 'SHORT (5)',  floors: 5 },
-  normal: { label: 'NORMAL (10)', floors: 10 },
-  long:   { label: 'LONG (15)',   floors: 15 },
-};
-
-const RUN_LENGTH_ORDER: RunLength[] = ['short', 'normal', 'long'];
-
 // ─── Difficulty config ────────────────────────────────────────────────────────
 
 type Difficulty = 'easy' | 'medium' | 'hard';
@@ -85,7 +68,6 @@ const CURSOR_BLINK_MS = 530;
 
 export class MenuScene extends Phaser.Scene {
   private difficulty: Difficulty = 'easy';
-  private runLength: RunLength = 'normal';
   private distanceKm = 50;
   private weightKg   = DEFAULT_WEIGHT_KG;
   private units: Units = 'imperial';
@@ -105,7 +87,6 @@ export class MenuScene extends Phaser.Scene {
   private weightCursorOn     = true;
   private ignoreNextGlobalClick = false;
   private diffBtns   = new Map<Difficulty, Phaser.GameObjects.Rectangle>();
-  private runLenBtns = new Map<RunLength, Phaser.GameObjects.Rectangle>();
   private unitsBtns  = new Map<Units, Phaser.GameObjects.Rectangle>();
   private presetLabels: Phaser.GameObjects.Text[] = [];
 
@@ -126,7 +107,6 @@ export class MenuScene extends Phaser.Scene {
   private weightSection!: Phaser.GameObjects.Container;
   private unitsSection!: Phaser.GameObjects.Container;
   private diffSection!: Phaser.GameObjects.Container;
-  private runLenSection!: Phaser.GameObjects.Container;
   private devicesSection!: Phaser.GameObjects.Container;
   private startBtnContainer!: Phaser.GameObjects.Container;
 
@@ -153,7 +133,6 @@ export class MenuScene extends Phaser.Scene {
     this.buildWeightSection();
     this.buildUnitsSection();
     this.buildDifficultySection();
-    this.buildRunLengthSection();
     this.buildDevicesSection();
     this.buildStartButton();
     this.setupInputHandlers();
@@ -188,10 +167,9 @@ export class MenuScene extends Phaser.Scene {
     if (this.weightSection) this.weightSection.setPosition(startX + distW + gap, middleY);
     if (this.unitsSection)  this.unitsSection.setPosition(startX + distW + weightW + gap * 2, middleY);
 
-    // Row 2: Difficulty (centred 620 px panel) and Run Length
+    // Row 2: Difficulty (centred)
     const row2Y = 288;
-    if (this.diffSection)   this.diffSection.setPosition(cx - 310, row2Y);
-    if (this.runLenSection) this.runLenSection.setPosition(cx - 310, row2Y + 85);
+    if (this.diffSection) this.diffSection.setPosition(cx - 150, row2Y);
 
     // Row 3: Devices – sits just above the start buttons
     if (this.devicesSection) this.devicesSection.setPosition(cx - 310, height - 165);
@@ -607,59 +585,6 @@ export class MenuScene extends Phaser.Scene {
     }
   }
 
-  // ── Run Length selector ────────────────────────────────────────────────────
-
-  private buildRunLengthSection(): void {
-    const PW = 300; const PH = 110;
-
-    this.runLenSection = this.add.container(0, 0);
-
-    const bg = this.add.graphics();
-    bg.fillStyle(0x000000, 0.40);
-    bg.fillRoundedRect(0, 0, PW, PH, 6);
-    this.runLenSection.add(bg);
-
-    this.runLenSection.add(this.add.text(12, 10, 'RUN LENGTH', {
-      fontFamily: 'monospace', fontSize: '10px', color: '#aaaaaa', letterSpacing: 3,
-    }));
-
-    const BTN_Y = 68;
-    const BTN_W = 88;
-    const BTN_H = 44;
-    const xs: Record<RunLength, number> = { short: 54, normal: 150, long: 246 };
-
-    RUN_LENGTH_ORDER.forEach((rl) => {
-      const { label } = RUN_LENGTHS[rl];
-      const x = xs[rl];
-
-      const btn = this.add
-        .rectangle(x, BTN_Y, BTN_W, BTN_H, 0x3a3a5a)
-        .setInteractive({ useHandCursor: true });
-
-      const btnLabel = this.add.text(x, BTN_Y, label, {
-        fontFamily: 'monospace', fontSize: '11px', color: '#ffffff',
-        fontStyle: 'bold', letterSpacing: 1,
-      }).setOrigin(0.5);
-
-      this.runLenSection.add([btn, btnLabel]);
-      this.runLenBtns.set(rl, btn);
-
-      btn.on('pointerdown', () => { this.runLength = rl; this.refreshRunLenStyles(); });
-      btn.on('pointerover', () => { if (this.runLength !== rl) btn.setFillStyle(0x555588); });
-      btn.on('pointerout',  () => this.refreshRunLenStyles());
-    });
-
-    this.refreshRunLenStyles();
-  }
-
-  private refreshRunLenStyles(): void {
-    for (const [rl, btn] of this.runLenBtns) {
-      const selected = rl === this.runLength;
-      btn.setFillStyle(selected ? 0x4a4a8b : 0x2a2a44);
-      btn.setStrokeStyle(selected ? 2 : 0, 0xffffff, selected ? 0.85 : 0);
-    }
-  }
-
   // ── Devices section ────────────────────────────────────────────────────────
 
   private buildDevicesSection(): void {
@@ -864,8 +789,9 @@ export class MenuScene extends Phaser.Scene {
         return;
       }
 
+      const floors = Math.max(4, Math.min(20, Math.round(this.distanceKm / 5)));
       RunStateManager.startNewRun(
-        RUN_LENGTHS[this.runLength].floors,
+        floors,
         this.distanceKm,
         this.difficulty
       );
