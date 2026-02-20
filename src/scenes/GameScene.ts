@@ -35,6 +35,29 @@ import {
   type ElevationSample,
 } from '../course/CourseProfile';
 
+// ─── Effect / powerup types ───────────────────────────────────────────────────
+
+type EffectType = 'headwind' | 'tailwind';
+
+interface ActiveEffect {
+  type: EffectType;
+  durationMs: number;
+  remainingMs: number;
+}
+
+const EFFECT_DURATION_MS = 60_000; // 1 minute
+
+const EFFECT_META: Record<EffectType, {
+  label: string;
+  sub: string;
+  multiplier: number;
+  color: number;
+  hexColor: string;
+}> = {
+  headwind: { label: 'HEADWIND!', sub: '× ½ POWER  |  60s', multiplier: 0.5, color: 0xff5544, hexColor: '#ff5544' },
+  tailwind: { label: 'TAILWIND!', sub: '× 2 POWER  |  60s', multiplier: 2,   color: 0xffcc00, hexColor: '#ffcc00' },
+};
+
 // ─── IK helper ────────────────────────────────────────────────────────────────
 
 /**
@@ -135,6 +158,27 @@ export class GameScene extends Phaser.Scene {
   private cadenceHistory: Array<{ rpm: number; timeMs: number }> = [];
   private avgCadence = 0;
 
+  // Effect / powerup state
+  private activeEffect: ActiveEffect | null = null;
+  private nextEffectMs = 0;   // countdown until next random effect (ms)
+  private rawPower     = 200; // unmodified power from trainer
+
+  // Effect indicator UI
+  private effectContainer!:   Phaser.GameObjects.Container;
+  private effectArcGraphics!: Phaser.GameObjects.Graphics;
+  private effectNameText!:    Phaser.GameObjects.Text;
+  private effectSecsText!:    Phaser.GameObjects.Text;
+
+  // Notification banner UI
+  private notifContainer!: Phaser.GameObjects.Container;
+  private notifTitle!:     Phaser.GameObjects.Text;
+  private notifSub!:       Phaser.GameObjects.Text;
+  private notifTween:      Phaser.Tweens.Tween | null = null;
+
+  // Extra power HUD elements
+  private hudRealPower!: Phaser.GameObjects.Text;
+  private hudPowerUnit!: Phaser.GameObjects.Text;
+
   private elevationSamples: ElevationSample[] = [];
   private minElevM = 0;
   private maxElevM = 0;
@@ -189,6 +233,9 @@ export class GameScene extends Phaser.Scene {
     this.crankAngle       = 0;
     this.cadenceHistory   = [];
     this.avgCadence       = 0;
+    this.rawPower         = 200;
+    this.activeEffect     = null;
+    this.nextEffectMs     = 0;
     this.physicsConfig    = { ...this.basePhysics };
   }
 
@@ -213,6 +260,7 @@ export class GameScene extends Phaser.Scene {
     this.buildHUD();
     this.buildElevationGraph();
     this.buildBottomControls();
+    this.buildEffectUI();
 
     // Start in demo mode with 200 W so the world scrolls immediately
     this.trainer = new MockTrainerService({ power: 200, speed: 30, cadence: 90 });
@@ -220,10 +268,17 @@ export class GameScene extends Phaser.Scene {
     void this.trainer.connect();
     this.updateDemoButtonStyle();
     this.setStatus('demo', 'DEMO');
+
+    // Always start with a random effect so it's easy to demo/test
+    const startEffect: EffectType = Math.random() < 0.5 ? 'headwind' : 'tailwind';
+    this.triggerEffect(startEffect);
   }
 
   update(_time: number, delta: number): void {
     const dt = delta / 1000; // seconds
+
+    // ── Effect ticking ───────────────────────────────────────────────────────
+    this.updateEffectTick(delta);
 
     // ── Grade from course ────────────────────────────────────────────────────
     this.distanceM += this.smoothVelocityMs * dt;
@@ -632,17 +687,31 @@ export class GameScene extends Phaser.Scene {
     // (unit label intentionally omitted – % is in the value)
 
     // ── Power  x=CX=480 (large, accent colour) ───────────────────────────────
-    this.add.text(CX,  14, 'POWER',   label).setOrigin(0.5, 0).setDepth(11);
+    this.add.text(CX,  7, 'POWER',   label).setOrigin(0.5, 0).setDepth(11);
     this.hudPower = this.add
-      .text(CX, 26, '---', {
+      .text(CX, 19, '---', {
         fontFamily: 'monospace',
-        fontSize: '34px',
+        fontSize: '28px',
         color: '#00f5d4',
         fontStyle: 'bold',
       })
       .setOrigin(0.5, 0)
       .setDepth(11);
-    this.add.text(CX,  58, 'W',       unit).setOrigin(0.5, 1).setDepth(11);
+    // "W" unit — hidden when the raw-power label is shown
+    this.hudPowerUnit = this.add
+      .text(CX, 64, 'W', unit)
+      .setOrigin(0.5, 1)
+      .setDepth(11);
+    // Raw power label (visible only when an effect is active)
+    this.hudRealPower = this.add
+      .text(CX, 64, '', {
+        fontFamily: 'monospace',
+        fontSize: '9px',
+        color: '#888888',
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(11)
+      .setAlpha(0);
 
     // ── Distance  x=672 ─────────────────────────────────────────────────────
     this.add.text(672, 14, 'DIST',    label).setOrigin(0.5, 0).setDepth(11);
@@ -952,8 +1021,8 @@ export class GameScene extends Phaser.Scene {
 
   private handleData(data: Partial<TrainerData>): void {
     if (data.instantaneousPower !== undefined) {
-      this.latestPower = data.instantaneousPower;
-      this.hudPower.setText(String(Math.round(data.instantaneousPower)));
+      this.rawPower = data.instantaneousPower;
+      this.updatePowerDisplay();
     }
     if (data.instantaneousCadence !== undefined) {
       this.hudCadence.setText(String(Math.round(data.instantaneousCadence)));
@@ -967,11 +1036,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private resetReadouts(): void {
-    this.hudPower.setText('---');
+    this.hudPower.setText('---').setColor('#00f5d4');
+    this.hudRealPower.setAlpha(0);
+    this.hudPowerUnit.setAlpha(1);
     this.hudSpeed.setText('--.-');
     this.hudCadence.setText('---');
     this.hudGrade.setText('0.0%');
     this.hudDistance.setText('0.00');
+    this.rawPower = 0;
     this.latestPower = 0;
     this.targetVelocityMs = 0;
   }
@@ -1004,6 +1076,177 @@ export class GameScene extends Phaser.Scene {
       const cadence = Math.round(70  + Math.random() * 40);  // 70–110 rpm
       this.trainer.setPower(power);
       this.trainer.setCadence(cadence);
+    }
+  }
+
+  // ── Effect / powerup system ───────────────────────────────────────────────
+
+  private buildEffectUI(): void {
+    const RADIUS = 34;
+    const cx = 860;
+    const cy = 135;
+
+    // ── Circular countdown indicator ────────────────────────────────────────
+    this.effectContainer = this.add.container(cx, cy).setDepth(15).setAlpha(0);
+
+    const bgGfx = this.add.graphics();
+    bgGfx.fillStyle(0x000000, 0.65);
+    bgGfx.fillCircle(0, 0, RADIUS + 8);
+    this.effectContainer.add(bgGfx);
+
+    this.effectArcGraphics = this.add.graphics();
+    this.effectContainer.add(this.effectArcGraphics);
+
+    this.effectNameText = this.add
+      .text(0, -9, '', {
+        fontFamily: 'monospace',
+        fontSize: '9px',
+        fontStyle: 'bold',
+        color: '#ffffff',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+    this.effectContainer.add(this.effectNameText);
+
+    this.effectSecsText = this.add
+      .text(0, 10, '', {
+        fontFamily: 'monospace',
+        fontSize: '18px',
+        fontStyle: 'bold',
+        color: '#ffffff',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+    this.effectContainer.add(this.effectSecsText);
+
+    // ── Notification banner ─────────────────────────────────────────────────
+    this.notifContainer = this.add.container(W / 2, 200).setDepth(20).setAlpha(0);
+
+    const notifBg = this.add.graphics();
+    notifBg.fillStyle(0x000000, 0.80);
+    notifBg.fillRect(-175, -38, 350, 76);
+    this.notifContainer.add(notifBg);
+
+    this.notifTitle = this.add
+      .text(0, -12, '', {
+        fontFamily: 'monospace',
+        fontSize: '26px',
+        fontStyle: 'bold',
+        color: '#ffffff',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+    this.notifContainer.add(this.notifTitle);
+
+    this.notifSub = this.add
+      .text(0, 18, '', {
+        fontFamily: 'monospace',
+        fontSize: '11px',
+        color: '#cccccc',
+        align: 'center',
+        letterSpacing: 2,
+      })
+      .setOrigin(0.5);
+    this.notifContainer.add(this.notifSub);
+  }
+
+  private triggerEffect(type: EffectType): void {
+    const meta = EFFECT_META[type];
+
+    this.activeEffect = {
+      type,
+      durationMs: EFFECT_DURATION_MS,
+      remainingMs: EFFECT_DURATION_MS,
+    };
+
+    // Show circular countdown indicator
+    this.effectContainer.setAlpha(1);
+    this.effectNameText
+      .setText(type === 'headwind' ? 'HEAD\nWIND' : 'TAIL\nWIND')
+      .setColor(meta.hexColor);
+    this.effectSecsText.setText('60');
+    this.drawEffectArc();
+
+    // Show notification banner, then fade it out
+    this.notifTitle.setText(meta.label).setColor(meta.hexColor);
+    this.notifSub.setText(meta.sub);
+    if (this.notifTween) this.notifTween.stop();
+    this.notifContainer.setAlpha(1);
+    this.notifTween = this.tweens.add({
+      targets: this.notifContainer,
+      alpha: 0,
+      delay: 3200,
+      duration: 700,
+      ease: 'Power2',
+    });
+
+    this.updatePowerDisplay();
+  }
+
+  private clearEffect(): void {
+    this.activeEffect = null;
+    this.effectContainer.setAlpha(0);
+    // Schedule next effect in 20–40 seconds
+    this.nextEffectMs = 20_000 + Math.random() * 20_000;
+    this.updatePowerDisplay();
+  }
+
+  private updateEffectTick(delta: number): void {
+    if (this.activeEffect) {
+      this.activeEffect.remainingMs -= delta;
+      if (this.activeEffect.remainingMs <= 0) {
+        this.clearEffect();
+        return;
+      }
+      this.effectSecsText.setText(String(Math.ceil(this.activeEffect.remainingMs / 1000)));
+      this.drawEffectArc();
+    } else if (this.nextEffectMs > 0) {
+      this.nextEffectMs -= delta;
+      if (this.nextEffectMs <= 0) {
+        this.nextEffectMs = 0;
+        const type: EffectType = Math.random() < 0.5 ? 'headwind' : 'tailwind';
+        this.triggerEffect(type);
+      }
+    }
+  }
+
+  private drawEffectArc(): void {
+    if (!this.activeEffect) return;
+
+    const g        = this.effectArcGraphics;
+    const radius   = 34;
+    const meta     = EFFECT_META[this.activeEffect.type];
+    const fraction = this.activeEffect.remainingMs / this.activeEffect.durationMs;
+
+    g.clear();
+
+    // Background ring
+    g.lineStyle(5, 0x333333, 0.8);
+    g.strokeCircle(0, 0, radius);
+
+    // Remaining-time arc (sweeps clockwise from 12 o'clock, depletes over time)
+    const startAngle = -Math.PI / 2;
+    const endAngle   = startAngle + fraction * Math.PI * 2;
+    g.lineStyle(5, meta.color, 1);
+    g.beginPath();
+    g.arc(0, 0, radius, startAngle, endAngle, false);
+    g.strokePath();
+  }
+
+  private updatePowerDisplay(): void {
+    const multiplier = this.activeEffect ? EFFECT_META[this.activeEffect.type].multiplier : 1;
+    const net        = Math.round(this.rawPower * multiplier);
+    this.latestPower = net;
+
+    if (this.activeEffect) {
+      const meta = EFFECT_META[this.activeEffect.type];
+      this.hudPower.setText(String(net)).setColor(meta.hexColor);
+      this.hudPowerUnit.setAlpha(0);
+      this.hudRealPower.setText(`raw: ${Math.round(this.rawPower)}W`).setAlpha(1);
+    } else {
+      this.hudPower.setText(String(net)).setColor('#00f5d4');
+      this.hudPowerUnit.setAlpha(1);
+      this.hudRealPower.setAlpha(0);
     }
   }
 
