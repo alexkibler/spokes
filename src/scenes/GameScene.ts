@@ -1204,9 +1204,9 @@ export class GameScene extends Phaser.Scene {
     g.fillTriangle(mx - 4, oy + drawH + 2, mx + 4, oy + drawH + 2, mx, oy + drawH - 4);
 
     // Update text labels
-    const gradeSign = this.currentGrade >= 0 ? '+' : '';
-    this.elevGradeLabel.setText(`${gradeSign}${(this.currentGrade * 100).toFixed(1)}%`);
-    this.elevGradeLabel.setColor(this.gradeColour(this.currentGrade));
+    const gradeSign = this.smoothGrade >= 0 ? '+' : '';
+    this.elevGradeLabel.setText(`${gradeSign}${(this.smoothGrade * 100).toFixed(1)}%`);
+    this.elevGradeLabel.setColor(this.gradeColour(this.smoothGrade));
 
     let lapLabel: string;
     let totalLabel: string;

@@ -53,14 +53,16 @@ const DIFF_ORDER: Difficulty[] = ['easy', 'medium', 'hard'];
 // ─── Distance config ──────────────────────────────────────────────────────────
 
 const MIN_KM  =   1;
-const MAX_KM  = 200;
-const PRESETS = [10, 25, 50, 100, 150, 200];
+const MAX_KM  = 400;
+const PRESETS_KM: number[] = [10, 25, 50, 100, 150, 200];
+// Imperial presets stored internally as km (converted from round mile values)
+const PRESETS_MI_KM: number[] = [5, 10, 20, 40, 62, 100, 200].map(mi => mi * MI_TO_KM);
 
 // ─── Weight config ────────────────────────────────────────────────────────────
 
 const MIN_KG            =  40;
-const MAX_KG            = 130;
-const DEFAULT_WEIGHT_KG =  75;
+const MAX_KG            = 200;
+const DEFAULT_WEIGHT_KG =  150 * LB_TO_KG; // 150 lb default
 
 const CURSOR_BLINK_MS = 530;
 
@@ -68,7 +70,7 @@ const CURSOR_BLINK_MS = 530;
 
 export class MenuScene extends Phaser.Scene {
   private difficulty: Difficulty = 'easy';
-  private distanceKm = 50;
+  private distanceKm = 20 * MI_TO_KM; // 20 miles default
   private weightKg   = DEFAULT_WEIGHT_KG;
   private units: Units = 'imperial';
 
@@ -89,6 +91,7 @@ export class MenuScene extends Phaser.Scene {
   private diffBtns   = new Map<Difficulty, Phaser.GameObjects.Rectangle>();
   private unitsBtns  = new Map<Units, Phaser.GameObjects.Rectangle>();
   private presetLabels: Phaser.GameObjects.Text[] = [];
+  private presetObjects: Phaser.GameObjects.GameObject[] = [];
 
   // ── Device services (connected from menu, passed to GameScene) ────────────
   private trainerService: ITrainerService | null = null;
@@ -111,7 +114,7 @@ export class MenuScene extends Phaser.Scene {
   private startBtnContainer!: Phaser.GameObjects.Container;
 
   // ── Dev Mode ──────────────────────────────────────────────────────────────
-  private isDevMode = false;
+  private isDevMode = true;
   private isStartWarningActive = false;
   private devModeToggle!: Phaser.GameObjects.Container;
 
@@ -137,9 +140,7 @@ export class MenuScene extends Phaser.Scene {
     this.buildStartButton();
     this.setupInputHandlers();
 
-    if (import.meta.env.DEV) {
-      this.buildDevToggle();
-    }
+    this.buildDevToggle();
 
     this.scale.on('resize', this.onResize, this);
     this.onResize();
@@ -374,17 +375,28 @@ export class MenuScene extends Phaser.Scene {
       this.startDistEdit();
     });
 
-    // Preset quick-select row
-    const presetY = PH - 20;
-    const btnW    = 56;
-    const gap     = 7;
-    const totalW  = PRESETS.length * btnW + (PRESETS.length - 1) * gap;
+    this.buildPresetButtons();
+  }
+
+  private buildPresetButtons(): void {
+    const PW = 385;
+    const CX = PW / 2;
+    const presetY = 112; // PH - 20
+    const btnW    = 50;
+    const gap     = 6;
+
+    // Destroy previous preset objects
+    for (const obj of this.presetObjects) obj.destroy();
+    this.presetObjects = [];
+    this.presetLabels  = [];
+
+    const presets = this.units === 'imperial' ? PRESETS_MI_KM : PRESETS_KM;
+    const totalW  = presets.length * btnW + (presets.length - 1) * gap;
     const startX  = Math.round(CX - totalW / 2);
 
-    this.presetLabels = [];
-    PRESETS.forEach((km, i) => {
+    presets.forEach((km, i) => {
       const bx  = startX + i * (btnW + gap) + btnW / 2;
-      const lbl = this.addIconBtn(
+      const lbl = this.addIconBtnTracked(
         this.distSection, bx, presetY, btnW, 22,
         this.fmtPreset(km), 0x3a3a8b, 0x5555bb,
         () => {
@@ -917,9 +929,7 @@ export class MenuScene extends Phaser.Scene {
     if (this.weightInputActive) this.commitWeightEdit();
     this.distText.setText(this.fmtDist(this.distanceKm));
     this.weightText.setText(this.fmtWeight(this.weightKg));
-    PRESETS.forEach((km, i) => {
-      this.presetLabels[i]?.setText(this.fmtPreset(km));
-    });
+    this.buildPresetButtons();
   }
 
   // ── Format helpers ─────────────────────────────────────────────────────────
@@ -948,6 +958,22 @@ export class MenuScene extends Phaser.Scene {
    * given container (fixing the bug where only the text was added), and
    * returns the text object so callers can store it for later updates.
    */
+  /** Like addIconBtn but records created objects into presetObjects for later cleanup. */
+  private addIconBtnTracked(
+    container: Phaser.GameObjects.Container,
+    x: number, y: number, w: number, h: number,
+    label: string,
+    colorNormal: number, colorHover: number,
+    onClick: () => void,
+    textStyle?: object,
+  ): Phaser.GameObjects.Text {
+    const txt = this.addIconBtn(container, x, y, w, h, label, colorNormal, colorHover, onClick, textStyle);
+    // The rect was added just before txt; grab both from the container's last two entries
+    const list = container.list;
+    this.presetObjects.push(list[list.length - 2], list[list.length - 1]);
+    return txt;
+  }
+
   private addIconBtn(
     container: Phaser.GameObjects.Container,
     x: number, y: number, w: number, h: number,

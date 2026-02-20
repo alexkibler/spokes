@@ -1,16 +1,14 @@
 # Paper Peloton
 
-2D cycling simulator built with **Phaser 3**, **TypeScript**, and **Vite**.
-Connects to FTMS-compatible smart trainers (e.g. Saris H3) over Web Bluetooth,
-with a built-in Mock Mode for development without hardware.
+2D roguelike cycling simulator built with **Phaser 3**, **TypeScript**, and **Vite**.
+Connects to FTMS-compatible smart trainers over Web Bluetooth, with a built-in Mock Mode for development without hardware.
 
 ---
 
 ## Requirements
 
 - **Node.js** 18 or later
-- A Chromium-based browser (Chrome, Edge, Brave) for Web Bluetooth support
-  Firefox and Safari do not support Web Bluetooth
+- A Chromium-based browser (Chrome, Edge, Brave) — Web Bluetooth is not supported in Firefox or Safari
 
 ---
 
@@ -28,44 +26,50 @@ npm install
 npm run dev
 ```
 
-Opens at `http://localhost:3000`.  The app starts in **Mock Mode** by default — no trainer required.
+Opens at `http://localhost:3200`. The app starts in **Mock Mode** by default — no trainer required.
 
 ---
 
-## Mock Mode vs. real Bluetooth
+## Commands
+
+```bash
+npm run dev          # Dev server at http://localhost:3200 (auto-opens browser)
+npm run build        # tsc + vite build → dist/
+npm run preview      # Serve production build locally
+npm test             # Vitest single run
+npm run test:watch   # Vitest in watch mode
+```
+
+Run a single test file:
+
+```bash
+npx vitest run src/services/__tests__/TrainerService.test.ts
+```
+
+---
+
+## Modes
 
 | Mode | How to activate | What happens |
 |------|----------------|--------------|
-| **Mock Mode** | Default on launch, or click **MOCK MODE** button | Emits simulated power / speed / cadence from an in-memory timer |
-| **Bluetooth** | Click **BT CONNECT** (or toggle Mock Mode off, then connect) | Opens the browser device picker; pair your FTMS trainer |
-
-Toggling **MOCK MODE: ON/OFF** hot-swaps the data source without reloading the page.
-
----
-
-## Running tests
-
-```bash
-npm test          # single run
-npm run test:watch  # re-runs on file changes
-```
-
-Tests cover the FTMS `0x2AD2` Indoor Bike Data byte parser, including the
-10-byte Saris H3 frame where **bytes 8–9 carry instantaneous power** (e.g. 250 W).
+| **Mock Mode** | Default on launch | Emits simulated power / speed / cadence (~200 W) from an in-memory timer |
+| **Dev Mode** | `import.meta.env.DEV` builds only | Sets mock output to 10,000 W to speed through courses |
+| **Bluetooth** | Click **BT CONNECT** in the menu | Opens the browser device picker; pair your FTMS trainer |
+| **Quick Demo** | Select from menu | Skips map and drops straight into a `GameScene` ride |
 
 ---
 
-## Building for production
+## Scene flow
 
-```bash
-npm run build
+```
+MenuScene → MapScene → GameScene → VictoryScene
+                ↑___________↓  (back to map after each edge)
 ```
 
-Output is written to `dist/`.  Serve it with any static file host.
-
-```bash
-npm run preview   # local preview of the production build
-```
+1. **MenuScene** — Collects rider weight, run distance, difficulty, and units. Handles Bluetooth pairing.
+2. **MapScene** — Procedurally generates a DAG of nodes across floors. Player navigates by clicking reachable nodes. Shop nodes allow item purchases.
+3. **GameScene** — Main riding view. Drives the physics loop, parallax background, HUD, elevation graph, and sends grade to the trainer via FTMS `0x2AD9`.
+4. **VictoryScene** — End-of-run screen. Offers a `.fit` file download.
 
 ---
 
@@ -73,17 +77,29 @@ npm run preview   # local preview of the production build
 
 ```
 paper-peloton/
-├── index.html                      Entry HTML
+├── index.html
 ├── src/
-│   ├── main.ts                     Phaser game bootstrap
+│   ├── main.ts                          Phaser game bootstrap + scene registration
 │   ├── scenes/
-│   │   └── GameScene.ts            HUD: power display, speed, cadence, buttons
-│   └── services/
-│       ├── ITrainerService.ts      Shared interface (TrainerData + ITrainerService)
-│       ├── TrainerService.ts       Real FTMS Bluetooth service + byte parser
-│       ├── MockTrainerService.ts   In-memory stub for testing / offline dev
-│       └── __tests__/
-│           └── TrainerService.test.ts  Vitest unit tests
+│   │   ├── MenuScene.ts                 Entry point; weight, distance, difficulty, BT pairing
+│   │   ├── MapScene.ts                  Roguelike map; node/edge DAG generation and navigation
+│   │   ├── GameScene.ts                 Main ride; physics loop, HUD, elevation graph
+│   │   └── VictoryScene.ts             End screen; .fit file download
+│   ├── services/
+│   │   ├── ITrainerService.ts           Shared interface (connect, disconnect, onData, setSimulationParams)
+│   │   ├── TrainerService.ts            Real FTMS Bluetooth; parses 0x2AD2 Indoor Bike Data frames
+│   │   ├── MockTrainerService.ts        In-memory stub for offline dev
+│   │   └── HeartRateService.ts         Separate BT GATT service for heart rate monitors
+│   ├── roguelike/
+│   │   └── RunState.ts                  RunStateManager singleton; gold, inventory, node/edge graph
+│   ├── course/
+│   │   └── CourseProfile.ts             Segment-based course definition; procedural generator
+│   ├── physics/
+│   │   └── CyclistPhysics.ts            calculateAcceleration(); rider weight, Crr, CdA, grade
+│   ├── fit/
+│   │   └── FitWriter.ts                 Dependency-free binary encoder for Garmin .fit files
+│   └── utils/
+│       └── UnitConversions.ts           Metric ↔ imperial display conversion
 ├── package.json
 ├── tsconfig.json
 └── vite.config.ts
@@ -91,10 +107,46 @@ paper-peloton/
 
 ---
 
+## Glossary
+
+| Term | Meaning |
+|------|---------|
+| **Run** | A full roguelike playthrough, from start to finish node |
+| **Floor** | A layer/depth in the map DAG; nodes are grouped by floor number |
+| **Node** | A stop on the map (`start`, `standard`, `hard`, `shop`, `finish`) |
+| **Edge** | The rideable connection between two nodes; carries a `CourseProfile` |
+| **Course / CourseProfile** | The actual ride on an edge — an ordered list of segments with grade, distance, and surface |
+| **Segment** | One continuous stretch within a course with a fixed grade and surface type |
+| **Surface** | Road type for a segment: `asphalt`, `gravel`, `dirt`, or `mud` (affects rolling resistance) |
+| **Grade** | Slope of a segment as a decimal (0.05 = 5% climb, −0.03 = 3% descent) |
+| **Gold** | In-run currency, earned by clearing edges |
+| **Inventory** | Items the player has purchased at shop nodes |
+| **Active edge** | The edge currently being ridden (stored in `RunState`) |
+| **Cleared** | An edge that has been successfully traversed at least once (`isCleared`) |
+
+---
+
+## Hardware abstraction
+
+All scenes interact with the trainer only through `ITrainerService`. Swapping mock vs. real is transparent to game logic:
+
+```typescript
+interface ITrainerService {
+  connect(): Promise<void>;
+  disconnect(): void;
+  onData(cb: (data: Partial<TrainerData>) => void): void;
+  isConnected(): boolean;
+  setSimulationParams(grade: number, crr: number): void;
+}
+```
+
+To add a custom data source, implement this interface and pass it to `GameScene`.
+
+---
+
 ## FTMS byte layout (0x2AD2 Indoor Bike Data)
 
-The parser handles any valid FTMS frame by walking the flags field.
-The Saris H3 emits a 10-byte frame with flags `0x0046`:
+The parser handles any valid FTMS frame by walking the flags field. The Saris H3 emits a 10-byte frame with flags `0x0046`:
 
 | Bytes | Field | Unit |
 |-------|-------|------|
@@ -106,19 +158,12 @@ The Saris H3 emits a 10-byte frame with flags `0x0046`:
 
 ---
 
-## Adding a new trainer data source
+## FIT recording
 
-Implement `ITrainerService` from `src/services/ITrainerService.ts`:
+`FitWriter` is a dependency-free binary encoder for Garmin `.fit` files. It records power, speed, cadence, HR, and elevation each second. `VictoryScene` calls `fitWriter.finish()` and triggers a browser download.
 
-```typescript
-import type { ITrainerService, TrainerData } from './ITrainerService';
+---
 
-export class MyCustomService implements ITrainerService {
-  async connect(): Promise<void> { /* ... */ }
-  disconnect(): void { /* ... */ }
-  onData(cb: (data: Partial<TrainerData>) => void): void { /* ... */ }
-  isConnected(): boolean { /* ... */ }
-}
-```
+## Units
 
-Pass an instance to `GameScene` or swap it via the toggle button — no other code needs to change.
+Internal calculations use metric (m/s, metres, kg). `UnitConversions.ts` handles display conversion. Unit preference (`'imperial' | 'metric'`) is collected in `MenuScene` and threaded through all scenes.

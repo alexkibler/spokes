@@ -92,16 +92,25 @@ export class RunStateManager {
     }
   }
 
-  /** Marks the currently active edge as cleared. Returns true if it was newly cleared. */
+  /** Marks the currently active edge as cleared and advances currentNodeId to the destination. Returns true if it was newly cleared. */
   static completeActiveEdge(): boolean {
     if (this.instance && this.instance.activeEdge) {
       // Find the edge in the main list to update it persistently
-      const edge = this.instance.edges.find(e => 
-        e.from === this.instance!.activeEdge!.from && 
+      const edge = this.instance.edges.find(e =>
+        e.from === this.instance!.activeEdge!.from &&
         e.to === this.instance!.activeEdge!.to
       );
-      
+
       if (edge) {
+        // Derive destination — whichever end of the edge isn't the origin
+        const destination = edge.from === this.instance.currentNodeId
+          ? edge.to
+          : edge.from;
+        this.instance.currentNodeId = destination;
+        if (!this.instance.visitedNodeIds.includes(destination)) {
+          this.instance.visitedNodeIds.push(destination);
+        }
+
         if (!edge.isCleared) {
           edge.isCleared = true;
           // Also update the active reference

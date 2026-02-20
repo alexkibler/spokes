@@ -262,11 +262,24 @@ export class MapScene extends Phaser.Scene {
   }
 
   private getRandomNodeType(floor: number, total: number): NodeType {
-    const r = Math.random();
-    // Shops appear more frequently as we progress, but never on the first few floors
-    if (floor > 2 && r < 0.15) return 'shop';
-    // Hard rides become more likely later on
-    if (r < 0.2 + (floor / total) * 0.3) return 'hard';
+    const progress = floor / total; // 0 → 1 across the run
+
+    const weights: Record<NodeType, number> = {
+      start:    0,
+      finish:   0,
+      standard: 0.70 - progress * 0.20, // 70% early → 50% late
+      hard:     0.15 + progress * 0.20, // 15% early → 35% late
+      shop:     0.15,                   // flat 15% throughout
+    };
+
+    const total_weight = Object.values(weights).reduce((a, b) => a + b, 0);
+    let r = Math.random() * total_weight;
+
+    for (const [type, weight] of Object.entries(weights) as [NodeType, number][]) {
+      r -= weight;
+      if (r <= 0) return type;
+    }
+
     return 'standard';
   }
 
@@ -606,8 +619,6 @@ export class MapScene extends Phaser.Scene {
         }
         RunStateManager.setActiveEdge(edge);
       }
-
-      RunStateManager.setCurrentNode(node.id);
 
       console.log('[MapScene] Starting GameScene. isDevMode:', this.isDevMode);
       this.scene.start('GameScene', {
