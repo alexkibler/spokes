@@ -13,6 +13,7 @@
       body {
         background: #0a0a0a;
         display: flex;
+        flex-direction: column;
         justify-content: center;
         align-items: center;
         height: 100vh;
@@ -21,10 +22,52 @@
       #game-container {
         display: block;
       }
+      #unsupported-banner {
+        display: none;
+        width: 100%;
+        background-color: #ff4757;
+        color: white;
+        text-align: center;
+        padding: 15px;
+        font-family: sans-serif;
+        font-size: 14px;
+        line-height: 1.6;
+        z-index: 9999;
+        position: absolute;
+        top: 0;
+      }
+      #unsupported-banner a {
+        color: #fffa65;
+        text-decoration: none;
+        font-weight: bold;
+      }
+      #unsupported-banner a:hover {
+        text-decoration: underline;
+      }
     </style>
   </head>
   <body>
+    <div id="unsupported-banner">
+      This browser is NOT supported. Please open the app with
+      <a href="https://www.google.com/chrome/" target="_blank">Chrome</a> or 
+      <a href="https://www.microsoft.com/edge" target="_blank">Edge</a>.
+      <br />
+      Please note that <strong>iOS is NOT supported at all</strong>, regardless of browser.
+      <br />
+      For more information visit the project <a href="https://github.com/alexkibler/paper-peloton" target="_blank">Page</a>.
+    </div>
     <div id="game-container"></div>
+    <script>
+      (function() {
+        var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        var hasBluetooth = !!navigator.bluetooth;
+
+        if (isIOS || !hasBluetooth) {
+          document.getElementById('unsupported-banner').style.display = 'block';
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
