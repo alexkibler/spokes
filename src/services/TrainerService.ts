@@ -229,19 +229,22 @@ export class TrainerService implements ITrainerService {
    *
    * Byte layout (7 bytes total):
    *   [0]    Op Code = 0x11
-   *   [1–2]  Wind Speed   sint16 LE, resolution 0.001 m/s  → 0
+   *   [1–2]  Wind Speed   sint16 LE, resolution 0.001 m/s  → 0 (no wind)
    *   [3–4]  Grade        sint16 LE, resolution 0.01%      → grade * 10 000
-   *   [5]    Crr          uint8,     resolution 0.0001      → 50 (= 0.005)
-   *   [6]    CWA          uint8,     resolution 0.01 kg/m   → 0
+   *   [5]    Crr          uint8,     resolution 0.0001      → crr / 0.0001
+   *   [6]    CWA          uint8,     resolution 0.01 kg/m   → cwa / 0.01
+   *
+   * CWA (Wind Resistance Coefficient) = ½ × ρ_air × CdA
+   * At sea level with CdA = 0.325 m²: CWA = 0.5 × 1.225 × 0.325 ≈ 0.199 → 20
    */
-  async setGrade(grade: number): Promise<void> {
+  async setSimulationParams(grade: number, crr: number, cwa: number): Promise<void> {
     if (!this.controlPoint || !this.controlGranted) return;
     const buf = new DataView(new ArrayBuffer(7));
     buf.setUint8(0, OP_SET_INDOOR_BIKE_SIMULATION);
-    buf.setInt16(1, 0, true);                            // wind speed: 0
-    buf.setInt16(3, Math.round(grade * 10000), true);    // grade in 0.01% units
-    buf.setUint8(5, 50);                                 // Crr = 0.005
-    buf.setUint8(6, 0);                                  // CWA = 0
+    buf.setInt16(1, 0, true);                                             // wind speed: 0
+    buf.setInt16(3, Math.round(grade * 10000), true);                     // grade in 0.01% units
+    buf.setUint8(5, Math.min(255, Math.round(crr / 0.0001)));             // Crr
+    buf.setUint8(6, Math.min(255, Math.round(cwa / 0.01)));               // CWA
     await this.controlPoint.writeValueWithResponse(buf.buffer);
   }
 

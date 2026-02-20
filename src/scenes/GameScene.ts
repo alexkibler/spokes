@@ -167,6 +167,7 @@ export class GameScene extends Phaser.Scene {
   private currentGrade = 0;
   private currentSurface: SurfaceType = 'asphalt';
   private lastSentGrade = 0;
+  private lastSentSurface: SurfaceType = 'asphalt';
   private smoothGrade = 0;
 
   // World container (holds all parallax layers; rotated for grade tilt)
@@ -391,6 +392,7 @@ export class GameScene extends Phaser.Scene {
     this.currentSurface   = 'asphalt';
     this.smoothGrade      = 0;
     this.lastSentGrade    = 0;
+    this.lastSentSurface  = 'asphalt';
     this.latestPower      = 200;
     this.crankAngle       = 0;
     this.cadenceHistory   = [];
@@ -469,10 +471,12 @@ export class GameScene extends Phaser.Scene {
       this.trainer.onData((data) => this.handleData(data));
       this.isDemoMode = false;
       this.setStatus('ok', 'BT CONNECTED');
-      // Sync grade immediately so the trainer receives the starting grade
-      if (this.trainer.setGrade) {
-        void this.trainer.setGrade(this.smoothGrade);
-        this.lastSentGrade = this.smoothGrade;
+      // Sync simulation params immediately so the trainer receives the starting conditions
+      if (this.trainer.setSimulationParams) {
+        const cwa = 0.5 * this.physicsConfig.rhoAir * this.physicsConfig.cdA;
+        void this.trainer.setSimulationParams(this.smoothGrade, this.physicsConfig.crr, cwa);
+        this.lastSentGrade   = this.smoothGrade;
+        this.lastSentSurface = this.currentSurface;
       }
     } else {
       // No BT trainer → demo mode with mock data
@@ -546,13 +550,16 @@ export class GameScene extends Phaser.Scene {
     const scale = Math.sqrt(1 + this.smoothGrade * this.smoothGrade) * 1.02;
     this.worldContainer.setScale(scale);
 
-    // Send smoothGrade to trainer hardware (gated by threshold to avoid BT spam)
+    // Send simulation params to trainer hardware when grade or surface changes
     if (
-      this.trainer.setGrade &&
-      Math.abs(this.smoothGrade - this.lastSentGrade) >= GRADE_SEND_THRESHOLD
+      this.trainer.setSimulationParams &&
+      (Math.abs(this.smoothGrade - this.lastSentGrade) >= GRADE_SEND_THRESHOLD ||
+       this.currentSurface !== this.lastSentSurface)
     ) {
-      this.lastSentGrade = this.smoothGrade;
-      void this.trainer.setGrade(this.smoothGrade);
+      this.lastSentGrade   = this.smoothGrade;
+      this.lastSentSurface = this.currentSurface;
+      const cwa = 0.5 * this.physicsConfig.rhoAir * this.physicsConfig.cdA;
+      void this.trainer.setSimulationParams(this.smoothGrade, this.physicsConfig.crr, cwa);
     }
 
     // ── Physics ─────────────────────────────────────────────────────────────

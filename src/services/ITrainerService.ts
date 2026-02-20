@@ -29,9 +29,13 @@ export interface ITrainerService {
   /** True while the service is actively delivering data. */
   isConnected(): boolean;
   /**
-   * Send a grade update to the trainer (real: writes FTMS Control Point 0x2AD9;
-   * mock: no-op since grade is applied locally in physics).
+   * Send simulation parameters to the trainer (real: writes FTMS Control Point
+   * 0x2AD9 Op Code 0x11; mock: no-op since physics is applied locally).
    * Optional – callers must check for existence before calling.
+   *
+   * @param grade - Road grade as decimal fraction (0 = flat, 0.05 = 5% climb)
+   * @param crr   - Rolling resistance coefficient (e.g. 0.005 for asphalt)
+   * @param cwa   - Wind resistance coefficient in kg/m (= ½ × ρ_air × CdA)
    */
-  setGrade?(grade: number): Promise<void>;
+  setSimulationParams?(grade: number, crr: number, cwa: number): Promise<void>;
 }

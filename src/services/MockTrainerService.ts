@@ -85,8 +85,8 @@ export class MockTrainerService implements ITrainerService {
     this.cadence = rpm;
   }
 
-  /** No-op: grade is applied to physics locally in the scene, not via hardware */
-  async setGrade(_grade: number): Promise<void> {
+  /** No-op: simulation params are applied to physics locally in the scene, not via hardware */
+  async setSimulationParams(_grade: number, _crr: number, _cwa: number): Promise<void> {
     // intentionally empty
   }
 
