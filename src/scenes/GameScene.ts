@@ -135,6 +135,14 @@ export class GameScene extends Phaser.Scene {
     this.maxElevM = Math.max(...this.elevationSamples.map((s) => s.elevationM));
 
     this.buildParallaxLayers();
+
+    // Pre-seed grade so the world starts already tilted at the correct angle
+    this.currentGrade = getGradeAtDistance(this.course, 0);
+    this.smoothGrade = this.currentGrade;
+    this.physicsConfig = { ...DEFAULT_PHYSICS, grade: this.currentGrade };
+    this.worldContainer.rotation = -Math.atan(this.smoothGrade);
+    this.worldContainer.setScale(Math.sqrt(1 + this.smoothGrade * this.smoothGrade) * 1.02);
+
     this.buildHUD();
     this.buildElevationGraph();
     this.buildBottomControls();
