@@ -12,7 +12,6 @@
  */
 
 import Phaser from 'phaser';
-import { generateCourseProfile, DEFAULT_COURSE } from '../course/CourseProfile';
 import { RunStateManager } from '../roguelike/RunState';
 import type { ITrainerService } from '../services/ITrainerService';
 import { TrainerService } from '../services/TrainerService';
@@ -889,57 +888,25 @@ export class MenuScene extends Phaser.Scene {
     });
   }
 
-  // ── Start / Demo buttons ───────────────────────────────────────────────────
+  // ── Start buttons ──────────────────────────────────────────────────────────
 
   private buildStartButton(): void {
     this.startBtnContainer = this.add.container(0, 0); // positioned by onResize
 
     const hasSave = SaveService.hasSave();
-    const btnW = 200;
-    const gap = 15;
+    const btnW = 215;
+    const gap = 20;
 
     if (hasSave) {
-      // Layout: [QUICK DEMO] [CONTINUE RUN] [START NEW RUN]
-      const totalW = btnW * 3 + gap * 2;
+      // Layout: [CONTINUE RUN] [START NEW RUN]
+      const totalW = btnW * 2 + gap;
       const startX = -totalW / 2 + btnW / 2;
-
-      this.buildDemoButton(startX, btnW);
-      this.buildContinueRunButton(startX + btnW + gap, btnW);
-      this.buildStartNewRunButton(startX + (btnW + gap) * 2, btnW, /*hasSave*/ true);
+      this.buildContinueRunButton(startX, btnW);
+      this.buildStartNewRunButton(startX + btnW + gap, btnW);
     } else {
-      // Layout: [QUICK DEMO] [START RUN] [START RIDE]
-      const totalW = btnW * 3 + gap * 2;
-      const startX = -totalW / 2 + btnW / 2;
-
-      this.buildDemoButton(startX, btnW);
-      this.buildStartRunButton(startX + btnW + gap, btnW);
-      this.buildStartRideButton(startX + (btnW + gap) * 2, btnW);
+      // Layout: [START RUN] (centred)
+      this.buildStartRunButton(0, btnW);
     }
-  }
-
-  private buildDemoButton(x: number, btnW: number): void {
-    const demoBtn = this.add
-      .rectangle(x, 0, btnW, 52, 0x3a4a6b)
-      .setInteractive({ useHandCursor: true });
-    const demoTxt = this.add.text(x, 0, '▶  QUICK DEMO', {
-      fontFamily: 'monospace', fontSize: '13px',
-      color: '#bbbbff', fontStyle: 'bold', letterSpacing: 1,
-    }).setOrigin(0.5);
-    this.startBtnContainer.add([demoBtn, demoTxt]);
-
-    demoBtn.on('pointerover', () => demoBtn.setFillStyle(0x5a6aab));
-    demoBtn.on('pointerout',  () => demoBtn.setFillStyle(0x3a4a6b));
-    demoBtn.on('pointerdown', () => {
-      this.scene.start('GameScene', {
-        course: DEFAULT_COURSE,
-        weightKg: this.weightKg,
-        units:    this.units,
-        trainer:  null,
-        hrm:      this.hrmService,
-        isDevMode: false,
-        isQuickDemo: true,
-      });
-    });
   }
 
   private buildContinueRunButton(x: number, btnW: number): void {
@@ -968,7 +935,7 @@ export class MenuScene extends Phaser.Scene {
     });
   }
 
-  private buildStartNewRunButton(x: number, btnW: number, _hasSave: boolean): void {
+  private buildStartNewRunButton(x: number, btnW: number): void {
     const btn = this.add
       .rectangle(x, 0, btnW, 52, 0x6b3a00)
       .setInteractive({ useHandCursor: true });
@@ -1075,52 +1042,6 @@ export class MenuScene extends Phaser.Scene {
         this.units,
       );
       this.scene.start('MapScene', {
-        weightKg: this.weightKg,
-        units:    this.units,
-        trainer:  this.trainerService,
-        hrm:      this.hrmService,
-        isDevMode: this.isDevMode,
-      });
-    });
-  }
-
-  private buildStartRideButton(x: number, btnW: number): void {
-    const startBtn = this.add
-      .rectangle(x, 0, btnW, 52, 0x00a892)
-      .setInteractive({ useHandCursor: true });
-    const startTxt = this.add.text(x, 0, '▶  START RIDE', {
-      fontFamily: 'monospace', fontSize: '15px',
-      color: '#ffffff', fontStyle: 'bold', letterSpacing: 1,
-    }).setOrigin(0.5);
-    this.startBtnContainer.add([startBtn, startTxt]);
-
-    startBtn.on('pointerover', () => {
-      if (!this.isStartWarningActive) startBtn.setFillStyle(0x00d4b8);
-    });
-    startBtn.on('pointerout',  () => {
-      if (!this.isStartWarningActive) startBtn.setFillStyle(0x00a892);
-    });
-    startBtn.on('pointerdown', () => {
-      console.log('[MenuScene] START RIDE. isDevMode:', this.isDevMode);
-      if (!this.trainerService && !this.isDevMode) {
-        if (this.isStartWarningActive) return;
-        this.isStartWarningActive = true;
-        startTxt.setText('TRAINER REQUIRED');
-        startBtn.setFillStyle(0xa82222);
-        this.time.delayedCall(1500, () => {
-          this.isStartWarningActive = false;
-          startTxt.setText('▶  START RIDE');
-          startBtn.setFillStyle(0x00a892);
-        });
-        return;
-      }
-
-      const course = generateCourseProfile(
-        this.distanceKm,
-        DIFF[this.difficulty].maxGrade,
-      );
-      this.scene.start('GameScene', {
-        course,
         weightKg: this.weightKg,
         units:    this.units,
         trainer:  this.trainerService,

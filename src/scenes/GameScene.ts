@@ -146,7 +146,6 @@ export class GameScene extends Phaser.Scene {
   private weightKg = 75;
   private isRoguelike = false;
   private isDevMode = false;
-  private isQuickDemo = false;
   private isBackwards = false; // New flag for R->L traversal
 
   // Service reference – swapped when toggling demo mode
@@ -374,7 +373,6 @@ export class GameScene extends Phaser.Scene {
     hrm?: HeartRateService | null;
     isRoguelike?: boolean;
     isDevMode?: boolean;
-    isQuickDemo?: boolean;
     isBackwards?: boolean;
   }): void {
     if (import.meta.env.DEV) console.log('[GameScene] init data:', data);
@@ -386,7 +384,6 @@ export class GameScene extends Phaser.Scene {
     this.preConnectedHrm     = data?.hrm     ?? null;
     this.isRoguelike         = data?.isRoguelike ?? false;
     this.isDevMode           = data?.isDevMode ?? false;
-    this.isQuickDemo         = data?.isQuickDemo ?? false;
     this.isBackwards         = data?.isBackwards ?? false;
 
     if (import.meta.env.DEV) console.log('[GameScene] isDevMode set to:', this.isDevMode);
@@ -502,7 +499,7 @@ export class GameScene extends Phaser.Scene {
 
     // ── Trainer setup ─────────────────────────────────────────────────────
     if (import.meta.env.DEV) {
-      console.log(`[GameScene] create checks - preConnectedTrainer: ${!!this.preConnectedTrainer}, isDevMode: ${this.isDevMode}, isQuickDemo: ${this.isQuickDemo}`);
+      console.log(`[GameScene] create checks - preConnectedTrainer: ${!!this.preConnectedTrainer}, isDevMode: ${this.isDevMode}`);
     }
     
     if (this.preConnectedTrainer) {
@@ -524,14 +521,6 @@ export class GameScene extends Phaser.Scene {
       // Important: isDemoMode = false ensures we don't randomise metrics in update()
       this.isDemoMode = false;
       this.setStatus('demo', `DEV (${DEV_POWER_WATTS}W)`);
-    } else if (this.isQuickDemo) {
-      console.log(`[GameScene] Starting STANDARD DEMO MODE (${DEMO_POWER_WATTS}W)`);
-      // No BT trainer → demo mode with mock data (randomised)
-      this.trainer = new MockTrainerService({ power: DEMO_POWER_WATTS, speed: 30, cadence: 90 });
-      this.trainer.onData((data) => this.handleData(data));
-      void this.trainer.connect();
-      this.isDemoMode = true;
-      this.setStatus('demo', 'DEMO');
     } else {
       console.warn('[GameScene] No trainer connected and not in Demo/Dev mode. Defaulting to 0W idle.');
       // Fallback: Idle "mock" that produces no power, effectively waiting for input that will never come
