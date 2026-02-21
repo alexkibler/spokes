@@ -246,6 +246,10 @@ export class GameScene extends Phaser.Scene {
   // Running sums for overlay stats (updated each recorded sample)
   private recordedPowerSum = 0;
   private recordedSpeedSum = 0;
+  private peakPowerW = 0;
+  private challengeEverStopped = false;
+  private challengeStartMs = 0;
+  private edgeStartRecordCount = 0;
 
   // Status / button objects
   private statusDot!: Phaser.GameObjects.Arc;
@@ -255,6 +259,13 @@ export class GameScene extends Phaser.Scene {
 
   private btnHeadwindLabel!: Phaser.GameObjects.Text;
   private btnTailwindLabel!: Phaser.GameObjects.Text;
+
+  // Challenge status panel (shown during elite segments)
+  private challengePanel!: Phaser.GameObjects.Graphics;
+  private challengePanelTitle!: Phaser.GameObjects.Text;
+  private challengePanelValue!: Phaser.GameObjects.Text;
+  private challengePanelTarget!: Phaser.GameObjects.Text;
+  private challengePanelBar!: Phaser.GameObjects.Graphics;
 
   // UI containers and backgrounds for resizing
   private hudBackground!: Phaser.GameObjects.Graphics;
@@ -424,8 +435,12 @@ export class GameScene extends Phaser.Scene {
     this.overlayVisible     = false;
     this.currentHR          = 0;
     this.lastRecordMs       = 0;
-    this.recordedPowerSum   = 0;
-    this.recordedSpeedSum   = 0;
+    this.recordedPowerSum      = 0;
+    this.recordedSpeedSum      = 0;
+    this.peakPowerW               = 0;
+    this.challengeEverStopped     = false;
+    this.challengeStartMs         = 0;
+    this.edgeStartRecordCount  = 0;
   }
 
   create(): void {
@@ -447,11 +462,17 @@ export class GameScene extends Phaser.Scene {
       this.fitWriter     = new FitWriter(this.rideStartTime);
     }
     
-    // Ensure we track start time for this segment either way? 
+    // Snapshot how many FIT records already exist before this edge begins.
+    // recordedPowerSum only covers this edge, so the denominator must be
+    // (fitWriter.recordCount - edgeStartRecordCount) to get the per-edge average.
+    this.edgeStartRecordCount = this.fitWriter.recordCount;
+
+    // Ensure we track start time for this edge either way?
     // Actually if using shared writer, timestamps must be continuous.
     // FitWriter expects unix timestamps. 
-    this.rideStartTime = Date.now();
-    this.lastRecordMs  = this.rideStartTime;
+    this.rideStartTime        = Date.now();
+    this.lastRecordMs         = this.rideStartTime;
+    this.challengeStartMs     = this.rideStartTime;
 
     // These arrays accumulate across restarts because the scene instance is
     // reused. Clear them so buildHUD() starts from a clean slate each run.
@@ -494,6 +515,7 @@ export class GameScene extends Phaser.Scene {
     this.worldContainer.setScale(Math.sqrt(1 + this.smoothGrade * this.smoothGrade) * 1.02);
 
     this.buildHUD();
+    this.buildChallengePanel();
     this.buildElevationGraph();
     this.buildBottomControls();
     this.buildEffectUI();
@@ -668,6 +690,7 @@ export class GameScene extends Phaser.Scene {
       this.hudDistance.setText((this.distanceM / 1000).toFixed(2));
     }
     this.updateGradeDisplay(this.currentGrade);
+    this.updateChallengePanel();
 
     // ── Cyclist animation ────────────────────────────────────────────────────
     // Average cadence over rolling 3-second window
@@ -1086,6 +1109,139 @@ export class GameScene extends Phaser.Scene {
     else if (colIdx === 3) this.hudUnits[1]?.setX(x);
     else if (colIdx === 4) this.hudUnits[2]?.setX(x);
     else if (colIdx === 5) this.hudUnits[3]?.setX(x);
+  }
+
+  // ── Challenge status panel ────────────────────────────────────────────────
+
+  private buildChallengePanel(): void {
+    const PANEL_H = 38;
+    const PANEL_Y = 70; // sits flush below the HUD strip
+    const depth = 12;
+    const mono = 'monospace';
+
+    this.challengePanel = this.add.graphics().setDepth(depth);
+    this.challengePanel.fillStyle(0x1a1a2e, 0.82);
+    this.challengePanel.fillRect(0, PANEL_Y, this.scale.width, PANEL_H);
+
+    // Left: challenge title
+    this.challengePanelTitle = this.add.text(10, PANEL_Y + 5, '', {
+      fontFamily: mono, fontSize: '9px', color: '#ffcc00', letterSpacing: 2,
+    }).setDepth(depth + 1);
+
+    // Centre: "CURRENT → TARGET" values
+    this.challengePanelValue = this.add.text(this.scale.width / 2, PANEL_Y + 5, '', {
+      fontFamily: mono, fontSize: '11px', color: '#ffffff', fontStyle: 'bold',
+    }).setOrigin(0.5, 0).setDepth(depth + 1);
+
+    // Right: pass / fail hint
+    this.challengePanelTarget = this.add.text(this.scale.width - 10, PANEL_Y + 5, '', {
+      fontFamily: mono, fontSize: '9px', color: '#aaaaaa',
+    }).setOrigin(1, 0).setDepth(depth + 1);
+
+    // Progress bar drawn dynamically
+    this.challengePanelBar = this.add.graphics().setDepth(depth + 1);
+
+    if (!this.activeChallenge) {
+      this.challengePanel.setVisible(false);
+      this.challengePanelTitle.setVisible(false);
+      this.challengePanelValue.setVisible(false);
+      this.challengePanelTarget.setVisible(false);
+      this.challengePanelBar.setVisible(false);
+    }
+  }
+
+  private updateChallengePanel(): void {
+    if (!this.activeChallenge) return;
+
+    const PANEL_Y = 70;
+    const PANEL_H = 38;
+    const BAR_H   = 4;
+    const BAR_Y   = PANEL_Y + PANEL_H - BAR_H - 2;
+    const w       = this.scale.width;
+    const mono    = 'monospace';
+    const cond    = this.activeChallenge.condition;
+
+    // Title (truncated to left slot)
+    this.challengePanelTitle.setText(`★ ${this.activeChallenge.title.toUpperCase()}`);
+
+    let current = 0;
+    let target  = 0;
+    let valueLabel = '';
+    let isTimeBased = false;
+
+    switch (cond.type) {
+      case 'avg_power_above_ftp_pct': {
+        // Live running average
+        const liveRecs = this.fitWriter.recordCount - this.edgeStartRecordCount;
+        const avgW = liveRecs > 0 ? this.recordedPowerSum / liveRecs : this.latestPower;
+        current = Math.round(avgW);
+        target  = Math.round(this.ftpW * (cond.ftpMultiplier ?? 1));
+        valueLabel = `AVG: ${current} W  →  TARGET: ${target} W`;
+        break;
+      }
+      case 'peak_power_above_ftp_pct': {
+        current = Math.round(this.peakPowerW);
+        target  = Math.round(this.ftpW * (cond.ftpMultiplier ?? 1));
+        valueLabel = `PEAK: ${current} W  →  TARGET: ${target} W`;
+        break;
+      }
+      case 'complete_no_stop': {
+        // Binary: show "CLEAN" or "STOPPED"
+        const clean = !this.challengeEverStopped;
+        this.challengePanelValue
+          .setText(clean ? 'KEEP MOVING' : '✗ STOPPED')
+          .setColor(clean ? '#00f5d4' : '#ff4455');
+        this.challengePanelTarget.setText(this.activeChallenge.reward.description.toUpperCase());
+
+        // Solid bar: green while clean, red after stop
+        this.challengePanelBar.clear();
+        this.challengePanelBar.fillStyle(clean ? 0x00f5d4 : 0xff4455, 0.7);
+        this.challengePanelBar.fillRect(0, BAR_Y, clean ? w : w * 0.15, BAR_H);
+        return;
+      }
+      case 'time_under_seconds': {
+        const elapsedSec = (Date.now() - this.challengeStartMs) / 1000;
+        const limit      = cond.timeLimitSeconds ?? 180;
+        current  = Math.round(elapsedSec);
+        target   = limit;
+        isTimeBased = true;
+        const remaining = Math.max(0, limit - elapsedSec);
+        const m = Math.floor(remaining / 60);
+        const s = Math.floor(remaining % 60);
+        valueLabel = `TIME LEFT: ${m}:${String(s).padStart(2, '0')}  →  LIMIT: ${Math.floor(limit / 60)}:${String(limit % 60).padStart(2, '0')}`;
+        break;
+      }
+    }
+
+    this.challengePanelValue.setText(valueLabel).setStyle({ fontFamily: mono, fontSize: '11px', color: '#ffffff', fontStyle: 'bold' });
+    this.challengePanelTarget.setText(this.activeChallenge.reward.description.toUpperCase());
+
+    // Progress bar
+    let ratio: number;
+    if (isTimeBased) {
+      // Counts down: full bar = time remaining
+      const limit = cond.timeLimitSeconds ?? 180;
+      ratio = Math.max(0, Math.min(1, 1 - current / limit));
+    } else {
+      ratio = target > 0 ? Math.min(1, current / target) : 0;
+    }
+
+    const passing = isTimeBased ? current < target : current >= target;
+    const barColor = passing ? 0x00f5d4 : 0xffaa00;
+
+    this.challengePanelBar.clear();
+    // Track
+    this.challengePanelBar.fillStyle(0x333344, 1);
+    this.challengePanelBar.fillRect(0, BAR_Y, w, BAR_H);
+    // Fill
+    this.challengePanelBar.fillStyle(barColor, 0.85);
+    this.challengePanelBar.fillRect(0, BAR_Y, Math.round(w * ratio), BAR_H);
+    // Target marker
+    if (!isTimeBased) {
+      this.challengePanelBar.fillStyle(0xffffff, 0.6);
+      this.challengePanelBar.fillRect(w - 2, BAR_Y, 2, BAR_H);
+    }
+
   }
 
   // ── Elevation graph ───────────────────────────────────────────────────────
@@ -1552,8 +1708,10 @@ export class GameScene extends Phaser.Scene {
       altitudeM:    this.getCurrentAltitude(),
     };
     this.fitWriter.addRecord(rec);
-    this.recordedPowerSum += rec.powerW;
+    this.recordedPowerSum += this.latestPower;
     this.recordedSpeedSum += rec.speedMs;
+    if (this.latestPower > this.peakPowerW) this.peakPowerW = this.latestPower;
+    if (rec.speedMs <= 0) this.challengeEverStopped = true;
   }
 
   /** Linear interpolation of elevation at the current (wrapped) course distance. */
@@ -1597,8 +1755,8 @@ export class GameScene extends Phaser.Scene {
       ? `${(this.distanceM / 1609.344).toFixed(2)} mi`
       : `${(this.distanceM / 1000).toFixed(2)} km`;
 
-    // Average power / speed from running sums
-    const recs    = this.fitWriter.recordCount;
+    // Average power / speed from running sums (segment-local record count only)
+    const recs    = this.fitWriter.recordCount - this.edgeStartRecordCount;
     const avgPow  = recs > 0 ? Math.round(this.recordedPowerSum / recs) : Math.round(this.rawPower);
     const avgSpdMs = recs > 0 ? this.recordedSpeedSum / recs : this.smoothVelocityMs;
     const avgSpdStr = this.units === 'imperial'
@@ -1664,9 +1822,13 @@ export class GameScene extends Phaser.Scene {
         // Challenge evaluation
         if (this.activeChallenge) {
           const challengeAvgPow = recs > 0 ? this.recordedPowerSum / recs : 0;
+          const elapsedSec = (Date.now() - this.challengeStartMs) / 1000;
           const passed = evaluateChallenge(this.activeChallenge, {
             avgPowerW: challengeAvgPow,
+            peakPowerW: this.peakPowerW,
             ftpW: this.ftpW,
+            everStopped: this.challengeEverStopped,
+            elapsedSeconds: elapsedSec,
           });
 
           if (passed) {

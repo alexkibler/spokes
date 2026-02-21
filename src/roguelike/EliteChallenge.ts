@@ -43,7 +43,7 @@ export const ELITE_CHALLENGES: EliteChallenge[] = [
     flavorText:
       'A steep switchback cuts across the ridge. A local rival blocks the road and sneers: "Bet you can\'t hold threshold the whole way up."',
     conditionText:
-      'Complete this segment with average power above 110% of your FTP ({ftp_watts} W).',
+      'Complete this ride with average power above 110% of your FTP ({ftp_watts} W).',
     condition: { type: 'avg_power_above_ftp_pct', ftpMultiplier: 1.10 },
     reward: { type: 'gold', goldAmount: 60, description: 'earn 60 gold' },
   },
@@ -53,7 +53,7 @@ export const ELITE_CHALLENGES: EliteChallenge[] = [
     flavorText:
       'The road levels out and a crowd lines the barriers. A hand-painted sign reads: "Town sprint — 200m." Your legs are fresh. Your ego is not.',
     conditionText:
-      'Hit a peak power above 150% of your FTP ({ftp_watts} W) at any point in this segment.',
+      'Hit a peak power above 150% of your FTP ({ftp_watts} W) at any point during this ride.',
     condition: { type: 'peak_power_above_ftp_pct', ftpMultiplier: 1.50 },
     reward: { type: 'item', item: 'tailwind', description: 'receive a Tailwind' },
   },
@@ -63,7 +63,7 @@ export const ELITE_CHALLENGES: EliteChallenge[] = [
     flavorText:
       'A rain-slicked cobbled climb stretches ahead. A chalk message on the tarmac reads: "The old code demands you never unclip."',
     conditionText:
-      'Complete this segment without coming to a full stop at any point.',
+      'Complete this ride without coming to a full stop at any point.',
     condition: { type: 'complete_no_stop' },
     reward: { type: 'gold', goldAmount: 40, description: 'earn 40 gold' },
   },
@@ -73,7 +73,7 @@ export const ELITE_CHALLENGES: EliteChallenge[] = [
     flavorText:
       'Race marshals have chalked a start and finish line across the road. A stopwatch clicks. A crowd of two watches expectantly.',
     conditionText:
-      'Complete this segment in under 3 minutes.',
+      'Complete this ride in under 3 minutes.',
     condition: { type: 'time_under_seconds', timeLimitSeconds: 180 },
     reward: { type: 'gold', goldAmount: 80, description: 'earn 80 gold' },
   },
@@ -83,7 +83,7 @@ export const ELITE_CHALLENGES: EliteChallenge[] = [
     flavorText:
       'The gradient ticks upward with every metre. A painted line on the road reads: "VO₂ or go home." Above it, someone has added: "Please go home."',
     conditionText:
-      'Complete this segment with average power above 120% of your FTP ({ftp_watts} W).',
+      'Complete this ride with average power above 120% of your FTP ({ftp_watts} W).',
     condition: { type: 'avg_power_above_ftp_pct', ftpMultiplier: 1.20 },
     reward: { type: 'gold', goldAmount: 100, description: 'earn 100 gold' },
   },
@@ -95,24 +95,32 @@ export function getRandomChallenge(): EliteChallenge {
 
 export interface ChallengeMetrics {
   avgPowerW: number;
+  peakPowerW: number;
   ftpW: number;
+  everStopped: boolean;
+  elapsedSeconds: number;
 }
 
 /**
  * Returns true if the rider satisfied the challenge condition.
- * Only avg_power_above_ftp_pct is evaluated in Phase 1.
  */
 export function evaluateChallenge(
   challenge: EliteChallenge,
   metrics: ChallengeMetrics,
 ): boolean {
-  const { type, ftpMultiplier } = challenge.condition;
+  const { type, ftpMultiplier, timeLimitSeconds } = challenge.condition;
   switch (type) {
     case 'avg_power_above_ftp_pct':
       return ftpMultiplier !== undefined &&
         metrics.avgPowerW >= metrics.ftpW * ftpMultiplier;
-    default:
-      return false;
+    case 'peak_power_above_ftp_pct':
+      return ftpMultiplier !== undefined &&
+        metrics.peakPowerW >= metrics.ftpW * ftpMultiplier;
+    case 'complete_no_stop':
+      return !metrics.everStopped;
+    case 'time_under_seconds':
+      return timeLimitSeconds !== undefined &&
+        metrics.elapsedSeconds < timeLimitSeconds;
   }
 }
 

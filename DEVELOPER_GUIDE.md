@@ -40,7 +40,7 @@ There are two play modes:
 | Mode | What happens |
 |------|-------------|
 | **Quick Demo** | Straight to riding, fixed course, mock 200W trainer |
-| **Start Run** | Roguelike map → choose edges → ride segments → collect gold → finish |
+| **Start Run** | Roguelike map → choose edges → ride edges → collect gold → finish |
 
 ---
 
@@ -478,7 +478,7 @@ run.gold;         // current gold balance
 run.inventory;    // string[] of items
 run.nodes;        // MapNode[]
 run.edges;        // MapEdge[] with isCleared status
-run.fitWriter;    // shared FitWriter instance (continues recording across segments)
+run.fitWriter;    // shared FitWriter instance (continues recording across edges)
 
 // Writing state
 RunStateManager.addGold(50);
@@ -490,7 +490,7 @@ RunStateManager.setActiveEdge(edge);
 RunStateManager.completeActiveEdge();  // marks edge cleared, returns true if first clear
 ```
 
-The `fitWriter` is shared across all segments of a run so the exported FIT file is one continuous activity.
+The `fitWriter` is shared across all edges of a run so the exported FIT file is one continuous activity.
 
 ---
 
