@@ -17,12 +17,13 @@ import { RunStateManager } from '../roguelike/RunState';
 import type { ITrainerService } from '../services/ITrainerService';
 import { TrainerService } from '../services/TrainerService';
 import { HeartRateService } from '../services/HeartRateService';
-import { 
-  KM_TO_MI, 
-  MI_TO_KM, 
-  KG_TO_LB, 
-  LB_TO_KG, 
-  formatFixed 
+import { SaveService } from '../services/SaveService';
+import {
+  KM_TO_MI,
+  MI_TO_KM,
+  KG_TO_LB,
+  LB_TO_KG,
+  formatFixed
 } from '../utils/UnitConversions';
 
 // ─── Units ────────────────────────────────────────────────────────────────────
@@ -122,6 +123,7 @@ export class MenuScene extends Phaser.Scene {
   private ftpSection!: Phaser.GameObjects.Container;
   private devicesSection!: Phaser.GameObjects.Container;
   private startBtnContainer!: Phaser.GameObjects.Container;
+  private saveBannerContainer: Phaser.GameObjects.Container | null = null;
 
   // ── Dev Mode ──────────────────────────────────────────────────────────────
   private isDevMode = true;
@@ -152,6 +154,12 @@ export class MenuScene extends Phaser.Scene {
     this.setupInputHandlers();
 
     this.buildDevToggle();
+
+    // Check for an existing save and build the save banner if one exists
+    const existingSave = SaveService.load();
+    if (existingSave) {
+      this.buildSaveBanner(existingSave);
+    }
 
     this.scale.on('resize', this.onResize, this);
     this.onResize();
@@ -190,6 +198,9 @@ export class MenuScene extends Phaser.Scene {
 
     // Row 3: Devices – sits just above the start buttons
     if (this.devicesSection) this.devicesSection.setPosition(cx - 310, height - 165);
+
+    // Save banner (above start buttons when present)
+    if (this.saveBannerContainer) this.saveBannerContainer.setPosition(cx, height - 130);
 
     // Row 4: Start buttons
     if (this.startBtnContainer) this.startBtnContainer.setPosition(cx, height - 60);
@@ -821,6 +832,40 @@ export class MenuScene extends Phaser.Scene {
     });
   }
 
+  // ── Save Banner ────────────────────────────────────────────────────────────
+
+  private buildSaveBanner(saved: import('../services/SaveService').SavedRun): void {
+    const BANNER_W = 620;
+
+    this.saveBannerContainer = this.add.container(0, 0);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(0x1a3320, 0.85);
+    bg.fillRoundedRect(-BANNER_W / 2, -18, BANNER_W, 36, 6);
+    bg.lineStyle(1, 0x2a6640, 0.8);
+    bg.strokeRoundedRect(-BANNER_W / 2, -18, BANNER_W, 36, 6);
+    this.saveBannerContainer.add(bg);
+
+    const rd = saved.runData;
+    const date = new Date(saved.savedAt);
+    const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const clearedEdges = rd.edges.filter(e => e.isCleared).length;
+    const bannerText = `SAVED RUN  ·  Floor ${clearedEdges}/${rd.runLength}  ·  ${rd.gold}g  ·  ${dateStr}`;
+
+    this.saveBannerContainer.add(this.add.text(-BANNER_W / 2 + 16, 0, bannerText, {
+      fontFamily: 'monospace',
+      fontSize: '12px',
+      color: '#88ffaa',
+      letterSpacing: 1,
+    }).setOrigin(0, 0.5));
+
+    this.saveBannerContainer.add(this.add.text(BANNER_W / 2 - 16, 0, '▲ SAVED', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: '#44aa66',
+    }).setOrigin(1, 0.5));
+  }
+
   private buildDevToggle(): void {
     this.devModeToggle = this.add.container(0, 0);
 
@@ -848,16 +893,34 @@ export class MenuScene extends Phaser.Scene {
   private buildStartButton(): void {
     this.startBtnContainer = this.add.container(0, 0); // positioned by onResize
 
+    const hasSave = SaveService.hasSave();
     const btnW = 200;
     const gap = 15;
-    const totalW = btnW * 3 + gap * 2;
-    const startX = -totalW / 2 + btnW / 2;
 
-    // ── Quick Demo (left) ──────────────────────────────────────────────────
+    if (hasSave) {
+      // Layout: [QUICK DEMO] [CONTINUE RUN] [START NEW RUN]
+      const totalW = btnW * 3 + gap * 2;
+      const startX = -totalW / 2 + btnW / 2;
+
+      this.buildDemoButton(startX, btnW);
+      this.buildContinueRunButton(startX + btnW + gap, btnW);
+      this.buildStartNewRunButton(startX + (btnW + gap) * 2, btnW, /*hasSave*/ true);
+    } else {
+      // Layout: [QUICK DEMO] [START RUN] [START RIDE]
+      const totalW = btnW * 3 + gap * 2;
+      const startX = -totalW / 2 + btnW / 2;
+
+      this.buildDemoButton(startX, btnW);
+      this.buildStartRunButton(startX + btnW + gap, btnW);
+      this.buildStartRideButton(startX + (btnW + gap) * 2, btnW);
+    }
+  }
+
+  private buildDemoButton(x: number, btnW: number): void {
     const demoBtn = this.add
-      .rectangle(startX, 0, btnW, 52, 0x3a4a6b)
+      .rectangle(x, 0, btnW, 52, 0x3a4a6b)
       .setInteractive({ useHandCursor: true });
-    const demoTxt = this.add.text(startX, 0, '▶  QUICK DEMO', {
+    const demoTxt = this.add.text(x, 0, '▶  QUICK DEMO', {
       fontFamily: 'monospace', fontSize: '13px',
       color: '#bbbbff', fontStyle: 'bold', letterSpacing: 1,
     }).setOrigin(0.5);
@@ -866,23 +929,115 @@ export class MenuScene extends Phaser.Scene {
     demoBtn.on('pointerover', () => demoBtn.setFillStyle(0x5a6aab));
     demoBtn.on('pointerout',  () => demoBtn.setFillStyle(0x3a4a6b));
     demoBtn.on('pointerdown', () => {
-      // Quick demo: use the default curated course (has surface variety)
       this.scene.start('GameScene', {
         course: DEFAULT_COURSE,
         weightKg: this.weightKg,
         units:    this.units,
-        trainer:  null,           // null → GameScene uses MockTrainerService
+        trainer:  null,
         hrm:      this.hrmService,
-        isDevMode: false,         // Force false for Quick Demo
-        isQuickDemo: true,        // Explicit flag for Mock Mode
+        isDevMode: false,
+        isQuickDemo: true,
       });
     });
+  }
 
-    // ── Start Run (middle) ─────────────────────────────────────────────────
-    const runBtn = this.add
-      .rectangle(startX + btnW + gap, 0, btnW, 52, 0x8b5a00)
+  private buildContinueRunButton(x: number, btnW: number): void {
+    const btn = this.add
+      .rectangle(x, 0, btnW, 52, 0x1a7040)
       .setInteractive({ useHandCursor: true });
-    const runTxt = this.add.text(startX + btnW + gap, 0, '▶  START RUN', {
+    const txt = this.add.text(x, 0, '▶  CONTINUE RUN', {
+      fontFamily: 'monospace', fontSize: '13px',
+      color: '#ffffff', fontStyle: 'bold', letterSpacing: 1,
+    }).setOrigin(0.5);
+    this.startBtnContainer.add([btn, txt]);
+
+    btn.on('pointerover', () => btn.setFillStyle(0x25a558));
+    btn.on('pointerout',  () => btn.setFillStyle(0x1a7040));
+    btn.on('pointerdown', () => {
+      const saved = SaveService.load();
+      if (!saved) return;
+      const run = RunStateManager.loadFromSave(saved);
+      this.scene.start('MapScene', {
+        weightKg: run.weightKg,
+        units:    run.units,
+        trainer:  this.trainerService,
+        hrm:      this.hrmService,
+        isDevMode: this.isDevMode,
+      });
+    });
+  }
+
+  private buildStartNewRunButton(x: number, btnW: number, _hasSave: boolean): void {
+    const btn = this.add
+      .rectangle(x, 0, btnW, 52, 0x6b3a00)
+      .setInteractive({ useHandCursor: true });
+    const txt = this.add.text(x, 0, '▶  START NEW RUN', {
+      fontFamily: 'monospace', fontSize: '12px',
+      color: '#ffcc88', fontStyle: 'bold', letterSpacing: 1,
+    }).setOrigin(0.5);
+    this.startBtnContainer.add([btn, txt]);
+
+    let confirmPending = false;
+
+    btn.on('pointerover', () => { if (!confirmPending) btn.setFillStyle(0xaa5a00); });
+    btn.on('pointerout',  () => { if (!confirmPending) btn.setFillStyle(0x6b3a00); });
+    btn.on('pointerdown', () => {
+      if (!this.trainerService && !this.isDevMode) {
+        if (this.isStartWarningActive) return;
+        this.isStartWarningActive = true;
+        const origText = '▶  START NEW RUN';
+        const origColor = 0x6b3a00;
+        txt.setText('TRAINER REQUIRED');
+        btn.setFillStyle(0xa82222);
+        this.time.delayedCall(1500, () => {
+          this.isStartWarningActive = false;
+          txt.setText(origText);
+          btn.setFillStyle(origColor);
+        });
+        return;
+      }
+
+      if (!confirmPending) {
+        // First click: ask for confirmation
+        confirmPending = true;
+        txt.setText('ERASE SAVE? CONFIRM');
+        btn.setFillStyle(0xaa2222);
+        this.time.delayedCall(2500, () => {
+          if (confirmPending) {
+            confirmPending = false;
+            txt.setText('▶  START NEW RUN');
+            btn.setFillStyle(0x6b3a00);
+          }
+        });
+        return;
+      }
+
+      // Second click: confirmed — wipe save and start fresh
+      confirmPending = false;
+      const floors = Math.max(4, Math.min(20, Math.round(this.distanceKm / 5)));
+      RunStateManager.startNewRun(
+        floors,
+        this.distanceKm,
+        this.difficulty,
+        this.ftpW,
+        this.weightKg,
+        this.units,
+      );
+      this.scene.start('MapScene', {
+        weightKg: this.weightKg,
+        units:    this.units,
+        trainer:  this.trainerService,
+        hrm:      this.hrmService,
+        isDevMode: this.isDevMode,
+      });
+    });
+  }
+
+  private buildStartRunButton(x: number, btnW: number): void {
+    const runBtn = this.add
+      .rectangle(x, 0, btnW, 52, 0x8b5a00)
+      .setInteractive({ useHandCursor: true });
+    const runTxt = this.add.text(x, 0, '▶  START RUN', {
       fontFamily: 'monospace', fontSize: '15px',
       color: '#ffffff', fontStyle: 'bold', letterSpacing: 1,
     }).setOrigin(0.5);
@@ -897,20 +1052,14 @@ export class MenuScene extends Phaser.Scene {
     runBtn.on('pointerdown', () => {
       console.log('[MenuScene] START RUN. isDevMode:', this.isDevMode);
       if (!this.trainerService && !this.isDevMode) {
-        // Warn user
-        if (this.isStartWarningActive) return; // Already showing warning
+        if (this.isStartWarningActive) return;
         this.isStartWarningActive = true;
-
-        const originalText = '▶  START RUN';
-        const originalColor = 0x8b5a00;
-        
         runTxt.setText('TRAINER REQUIRED');
         runBtn.setFillStyle(0xa82222);
-        
         this.time.delayedCall(1500, () => {
           this.isStartWarningActive = false;
-          runTxt.setText(originalText);
-          runBtn.setFillStyle(originalColor);
+          runTxt.setText('▶  START RUN');
+          runBtn.setFillStyle(0x8b5a00);
         });
         return;
       }
@@ -921,6 +1070,8 @@ export class MenuScene extends Phaser.Scene {
         this.distanceKm,
         this.difficulty,
         this.ftpW,
+        this.weightKg,
+        this.units,
       );
       this.scene.start('MapScene', {
         weightKg: this.weightKg,
@@ -930,12 +1081,13 @@ export class MenuScene extends Phaser.Scene {
         isDevMode: this.isDevMode,
       });
     });
+  }
 
-    // ── Start Ride (right) ─────────────────────────────────────────────────
+  private buildStartRideButton(x: number, btnW: number): void {
     const startBtn = this.add
-      .rectangle(startX + (btnW + gap) * 2, 0, btnW, 52, 0x00a892)
+      .rectangle(x, 0, btnW, 52, 0x00a892)
       .setInteractive({ useHandCursor: true });
-    const startTxt = this.add.text(startX + (btnW + gap) * 2, 0, '▶  START RIDE', {
+    const startTxt = this.add.text(x, 0, '▶  START RIDE', {
       fontFamily: 'monospace', fontSize: '15px',
       color: '#ffffff', fontStyle: 'bold', letterSpacing: 1,
     }).setOrigin(0.5);
@@ -950,20 +1102,14 @@ export class MenuScene extends Phaser.Scene {
     startBtn.on('pointerdown', () => {
       console.log('[MenuScene] START RIDE. isDevMode:', this.isDevMode);
       if (!this.trainerService && !this.isDevMode) {
-        // Warn user
-        if (this.isStartWarningActive) return; // Already showing warning
+        if (this.isStartWarningActive) return;
         this.isStartWarningActive = true;
-
-        const originalText = '▶  START RIDE';
-        const originalColor = 0x00a892;
-        
         startTxt.setText('TRAINER REQUIRED');
         startBtn.setFillStyle(0xa82222);
-        
         this.time.delayedCall(1500, () => {
           this.isStartWarningActive = false;
-          startTxt.setText(originalText);
-          startBtn.setFillStyle(originalColor);
+          startTxt.setText('▶  START RIDE');
+          startBtn.setFillStyle(0x00a892);
         });
         return;
       }
@@ -976,7 +1122,7 @@ export class MenuScene extends Phaser.Scene {
         course,
         weightKg: this.weightKg,
         units:    this.units,
-        trainer:  this.trainerService, // may be null → demo mode in GameScene
+        trainer:  this.trainerService,
         hrm:      this.hrmService,
         isDevMode: this.isDevMode,
       });

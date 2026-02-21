@@ -1,6 +1,6 @@
 /**
  * RunState.ts
- * 
+ *
  * Defines the data structures for the roguelike progression system.
  * Tracks player progress, currency, and the procedurally generated map.
  */
@@ -8,6 +8,8 @@
 import type { CourseProfile } from '../course/CourseProfile';
 import type { EliteChallenge } from './EliteChallenge';
 import { FitWriter } from '../fit/FitWriter';
+import { SaveService } from '../services/SaveService';
+import type { Units } from '../scenes/MenuScene';
 
 export type NodeType = 'start' | 'standard' | 'hard' | 'shop' | 'event' | 'elite' | 'finish';
 
@@ -41,6 +43,8 @@ export interface RunData {
   totalDistanceKm: number; // Target total run distance
   difficulty: 'easy' | 'medium' | 'hard';
   ftpW: number; // Rider's Functional Threshold Power in watts
+  weightKg: number; // Rider weight in kg (stored for save/load)
+  units: Units; // Display preference (stored for save/load)
   fitWriter: FitWriter;
 }
 
@@ -48,7 +52,8 @@ export interface RunData {
 export class RunStateManager {
   private static instance: RunData | null = null;
 
-  static startNewRun(runLength: number, totalDistanceKm: number, difficulty: 'easy' | 'medium' | 'hard', ftpW = 200): RunData {
+  static startNewRun(runLength: number, totalDistanceKm: number, difficulty: 'easy' | 'medium' | 'hard', ftpW = 200, weightKg = 68, units: Units = 'imperial'): RunData {
+    SaveService.clear();
     this.instance = {
       gold: 0,
       inventory: [],
@@ -61,6 +66,18 @@ export class RunStateManager {
       totalDistanceKm,
       difficulty,
       ftpW,
+      weightKg,
+      units,
+      fitWriter: new FitWriter(Date.now()),
+    };
+    this.persist();
+    return this.instance;
+  }
+
+  static loadFromSave(saved: import('../services/SaveService').SavedRun): RunData {
+    this.instance = {
+      ...saved.runData,
+      activeEdge: null,
       fitWriter: new FitWriter(Date.now()),
     };
     return this.instance;
@@ -76,6 +93,7 @@ export class RunStateManager {
       if (!this.instance.visitedNodeIds.includes(nodeId)) {
         this.instance.visitedNodeIds.push(nodeId);
       }
+      this.persist();
     }
   }
 
@@ -84,12 +102,14 @@ export class RunStateManager {
       const idx = this.instance.inventory.indexOf(item);
       if (idx !== -1) {
         this.instance.inventory.splice(idx, 1);
+        this.persist();
         return true;
       }
     }
     return false;
   }
 
+  /** Sets the active edge. Does NOT persist — we intentionally skip saving mid-ride state. */
   static setActiveEdge(edge: MapEdge | null): void {
     if (this.instance) {
       this.instance.activeEdge = edge;
@@ -119,9 +139,12 @@ export class RunStateManager {
           edge.isCleared = true;
           // Also update the active reference
           this.instance.activeEdge.isCleared = true;
+          this.persist();
           return true;
         }
       }
+
+      this.persist();
     }
     return false;
   }
@@ -129,12 +152,14 @@ export class RunStateManager {
   static addGold(amount: number): void {
     if (this.instance) {
       this.instance.gold += amount;
+      this.persist();
     }
   }
 
   static spendGold(amount: number): boolean {
     if (this.instance && this.instance.gold >= amount) {
       this.instance.gold -= amount;
+      this.persist();
       return true;
     }
     return false;
@@ -143,6 +168,14 @@ export class RunStateManager {
   static addToInventory(item: string): void {
     if (this.instance) {
       this.instance.inventory.push(item);
+      this.persist();
+    }
+  }
+
+  /** Saves current run state to localStorage. Called after every meaningful state change. */
+  private static persist(): void {
+    if (this.instance) {
+      SaveService.save(this.instance, this.instance.weightKg, this.instance.units);
     }
   }
 }
