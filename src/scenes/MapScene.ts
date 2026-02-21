@@ -401,8 +401,8 @@ export class MapScene extends Phaser.Scene {
   }
 
   private getMaxGrade(diff: string, type: NodeType): number {
-    let base = diff === 'easy' ? 0.05 : diff === 'medium' ? 0.10 : 0.15;
-    if (type === 'hard') base += 0.05;
+    let base = diff === 'easy' ? 0.03 : diff === 'normal' ? 0.07 : 0.12;
+    if (type === 'hard') base += 0.03;
     return base;
   }
 

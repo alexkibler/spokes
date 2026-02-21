@@ -53,7 +53,7 @@ export interface RunData {
   edges: MapEdge[];
   runLength: number; // Total floors
   totalDistanceKm: number; // Target total run distance
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: 'easy' | 'normal' | 'hard';
   ftpW: number; // Rider's Functional Threshold Power in watts
   weightKg: number; // Rider weight in kg (stored for save/load)
   units: Units; // Display preference (stored for save/load)
@@ -71,7 +71,7 @@ export interface RunData {
 export class RunStateManager {
   private static instance: RunData | null = null;
 
-  static startNewRun(runLength: number, totalDistanceKm: number, difficulty: 'easy' | 'medium' | 'hard', ftpW = 200, weightKg = 68, units: Units = 'imperial'): RunData {
+  static startNewRun(runLength: number, totalDistanceKm: number, difficulty: 'easy' | 'normal' | 'hard', ftpW = 200, weightKg = 68, units: Units = 'imperial'): RunData {
     SaveService.clear();
     this.instance = {
       gold: 0,

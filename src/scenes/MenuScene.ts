@@ -31,7 +31,7 @@ export type Units = 'imperial' | 'metric';
 
 // ─── Difficulty config ────────────────────────────────────────────────────────
 
-type Difficulty = 'easy' | 'medium' | 'hard';
+type Difficulty = 'easy' | 'normal' | 'hard';
 
 interface DiffConfig {
   label:    string;
@@ -43,12 +43,12 @@ interface DiffConfig {
 }
 
 const DIFF: Record<Difficulty, DiffConfig> = {
-  easy:   { label: 'EASY',   hint: 'max +5% grade',  maxGrade: 0.05, colorOn: 0x1a7040, colorOff: 0x0e3d20, colorHov: 0x25a558 },
-  medium: { label: 'MEDIUM', hint: 'max +10% grade', maxGrade: 0.10, colorOn: 0x8b5a00, colorOff: 0x4a3000, colorHov: 0xcc8800 },
-  hard:   { label: 'HARD',   hint: 'max +15% grade', maxGrade: 0.15, colorOn: 0x8b2020, colorOff: 0x4a1010, colorHov: 0xcc3333 },
+  easy:   { label: 'EASY',   hint: '',    maxGrade: 0.03, colorOn: 0x1a7040, colorOff: 0x0e3d20, colorHov: 0x25a558 },
+  normal: { label: 'NORMAL', hint: '',     maxGrade: 0.07, colorOn: 0x8b5a00, colorOff: 0x4a3000, colorHov: 0xcc8800 },
+  hard:   { label: 'HARD',   hint: '',  maxGrade: 0.12, colorOn: 0x8b2020, colorOff: 0x4a1010, colorHov: 0xcc3333 },
 };
 
-const DIFF_ORDER: Difficulty[] = ['easy', 'medium', 'hard'];
+const DIFF_ORDER: Difficulty[] = ['easy', 'normal', 'hard'];
 
 // ─── Distance config ──────────────────────────────────────────────────────────
 
@@ -683,7 +683,7 @@ export class MenuScene extends Phaser.Scene {
     const BTN_Y = 68;
     const BTN_W = 88;
     const BTN_H = 44;
-    const xs: Record<Difficulty, number> = { easy: 54, medium: 150, hard: 246 };
+    const xs: Record<Difficulty, number> = { easy: 54, normal: 150, hard: 246 };
 
     DIFF_ORDER.forEach((diff) => {
       const { label, hint, colorOff } = DIFF[diff];

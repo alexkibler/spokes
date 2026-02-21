@@ -186,14 +186,17 @@ export function generateCourseProfile(
     const lo  = Math.min(segMin, hi);
     const len = lo + Math.random() * Math.max(0, hi - lo);
 
-    // Elevation-balance pressure: −1 (too low) … +1 (too high)
+    // Mild elevation pressure to prevent extreme monotony (e.g. climbing forever).
+    // The divisor uses 1.0 instead of 0.25 so pressure only kicks in strongly
+    // when net elevation reaches a full maxGrade×totalM — allowing edges to be
+    // substantially net-climbing or net-descending (as real routes are).
     const pressure = Math.max(-1, Math.min(1,
-      netElevM / (totalM * maxGrade * 0.25)));
+      netElevM / (totalM * maxGrade * 1.0)));
 
     const r = Math.random();
     let sign: number;
-    if      (pressure >  0.7)                sign = -1; // must descend
-    else if (pressure < -0.7)                sign =  1; // must climb
+    if      (pressure >  0.7)                sign = -1; // prevent runaway ascent
+    else if (pressure < -0.7)                sign =  1; // prevent runaway descent
     else if (r < 0.08)                       sign =  0; // flat recovery
     else sign = (r < 0.52 - pressure * 0.2) ? 1 : -1;
 
@@ -224,20 +227,6 @@ export function generateCourseProfile(
     segments[segments.length - 1].distanceM += budgetM;
   }
   segments.push({ distanceM: flatEndM, grade: 0, surface });
-
-  // Balance correction: distribute residual elevation across terrain segments
-  const terrain  = segments.slice(1, -1);
-  const terrainM = terrain.reduce((s, seg) => s + seg.distanceM, 0);
-  const residual = terrain.reduce((s, seg) => s + seg.distanceM * seg.grade, 0);
-  if (Math.abs(residual) > 1 && terrainM > 0) {
-    const corrPerM = -residual / terrainM;
-    for (const seg of terrain) {
-      seg.grade = Math.max(
-        -maxGrade * 1.1,
-        Math.min(maxGrade * 1.1, seg.grade + corrPerM),
-      );
-    }
-  }
 
   return {
     segments,

@@ -23,7 +23,7 @@ export interface SerializedRunData {
   edges: MapEdge[];
   runLength: number;
   totalDistanceKm: number;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: 'easy' | 'normal' | 'hard';
   ftpW: number;
   weightKg: number;
   units: Units;
