@@ -1774,6 +1774,13 @@ export class GameScene extends Phaser.Scene {
       ? `${msToMph(avgSpdMs).toFixed(1)} mph`
       : `${msToKmh(avgSpdMs).toFixed(1)} km/h`;
 
+    // Elevation gain for this segment
+    const segElevM = this.course.segments.reduce((sum, seg) =>
+      sum + (seg.grade > 0 ? seg.distanceM * seg.grade : 0), 0);
+    const segElevStr = this.units === 'imperial'
+      ? `${Math.round(segElevM * 3.28084)} ft`
+      : `${Math.round(segElevM)} m`;
+
     // ── UI dimensions ────────────────────────────────────────────────────
     const panW = Math.min(480, w - 40);
     const panH = 200;
@@ -1803,10 +1810,13 @@ export class GameScene extends Phaser.Scene {
       fontFamily: mono, fontSize: '22px', fontStyle: 'bold', color: titleColor,
     }).setOrigin(0.5, 0).setDepth(depth + 2);
 
-    // Stats row
+    // Stats rows
     const statsStr = `${distStr}   ·   ${timeStr}   ·   ${avgPow}W   ·   ${avgSpdStr}`;
     this.add.text(cx, py + 60, statsStr, {
       fontFamily: mono, fontSize: '12px', color: '#cccccc', letterSpacing: 1,
+    }).setOrigin(0.5, 0).setDepth(depth + 2);
+    this.add.text(cx, py + 76, `↑ ${segElevStr} gain`, {
+      fontFamily: mono, fontSize: '11px', color: '#99bbcc', letterSpacing: 1,
     }).setOrigin(0.5, 0).setDepth(depth + 2);
 
     // Roguelike Gold Reward
@@ -1827,7 +1837,7 @@ export class GameScene extends Phaser.Scene {
         const totalGold = Math.round(50 + (avgGrade * 100 * 10) + (avgCrrMult - 1) * 50);
         RunStateManager.addGold(totalGold);
 
-        this.add.text(cx, py + 80, `+ ${totalGold} GOLD EARNED`, {
+        this.add.text(cx, py + 96, `+ ${totalGold} GOLD EARNED`, {
           fontFamily: mono, fontSize: '16px', fontStyle: 'bold', color: '#ffcc00',
         }).setOrigin(0.5, 0).setDepth(depth + 2);
 
@@ -1845,17 +1855,17 @@ export class GameScene extends Phaser.Scene {
 
           if (passed) {
             grantChallengeReward(this.activeChallenge);
-            this.add.text(cx, py + 100, `★ CHALLENGE COMPLETE — ${this.activeChallenge.reward.description.toUpperCase()}`, {
+            this.add.text(cx, py + 116, `★ CHALLENGE COMPLETE — ${this.activeChallenge.reward.description.toUpperCase()}`, {
               fontFamily: mono, fontSize: '13px', fontStyle: 'bold', color: '#f0c030',
             }).setOrigin(0.5, 0).setDepth(depth + 2);
           } else {
-            this.add.text(cx, py + 100, `✗ CHALLENGE FAILED`, {
+            this.add.text(cx, py + 116, `✗ CHALLENGE FAILED`, {
               fontFamily: mono, fontSize: '13px', color: '#aa6655',
             }).setOrigin(0.5, 0).setDepth(depth + 2);
           }
         }
       } else {
-        this.add.text(cx, py + 80, `(ALREADY CLEARED)`, {
+        this.add.text(cx, py + 96, `(ALREADY CLEARED)`, {
           fontFamily: mono, fontSize: '14px', color: '#aaaaaa',
         }).setOrigin(0.5, 0).setDepth(depth + 2);
       }
@@ -1864,12 +1874,12 @@ export class GameScene extends Phaser.Scene {
       const divGfx = this.add.graphics().setDepth(depth + 1);
       divGfx.lineStyle(1, 0x333355, 1);
       divGfx.beginPath();
-      divGfx.moveTo(px + 20, py + 84);
-      divGfx.lineTo(px + panW - 20, py + 84);
+      divGfx.moveTo(px + 20, py + 100);
+      divGfx.lineTo(px + panW - 20, py + 100);
       divGfx.strokePath();
 
       // Prompt text
-      this.add.text(cx, py + 96, 'Save your ride data?', {
+      this.add.text(cx, py + 112, 'Save your ride data?', {
         fontFamily: mono, fontSize: '11px', color: '#888899', letterSpacing: 2,
       }).setOrigin(0.5, 0).setDepth(depth + 2);
     }

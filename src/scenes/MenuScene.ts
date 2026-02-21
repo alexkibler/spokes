@@ -849,8 +849,15 @@ export class MenuScene extends Phaser.Scene {
     const rd = saved.runData;
     const date = new Date(saved.savedAt);
     const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    const clearedEdges = rd.edges.filter(e => e.isCleared).length;
-    const bannerText = `SAVED RUN  ·  Floor ${clearedEdges}/${rd.runLength}  ·  ${rd.gold}g  ·  ${dateStr}`;
+    const clearedEdgesArr = rd.edges.filter(e => e.isCleared);
+    const clearedEdges = clearedEdgesArr.length;
+    const totalElevationM = clearedEdgesArr.reduce((sum, edge) =>
+      sum + edge.profile.segments.reduce((s, seg) =>
+        s + (seg.grade > 0 ? seg.distanceM * seg.grade : 0), 0), 0);
+    const elevStr = rd.units === 'imperial'
+      ? `${Math.round(totalElevationM * 3.28084)} ft`
+      : `${Math.round(totalElevationM)} m`;
+    const bannerText = `SAVED RUN  ·  Floor ${clearedEdges}/${rd.runLength}  ·  ${rd.gold}g  ·  ${elevStr} gain  ·  ${dateStr}`;
 
     this.saveBannerContainer.add(this.add.text(-BANNER_W / 2 + 16, 0, bannerText, {
       fontFamily: 'monospace',

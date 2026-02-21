@@ -525,9 +525,20 @@ export class MapScene extends Phaser.Scene {
     const currentFloor = run?.nodes.find(n => n.id === run.currentNodeId)?.floor ?? 0;
     const totalFloors = run?.runLength ?? 0;
 
+    const clearedEdges = run?.edges.filter(e => e.isCleared) ?? [];
+    const totalElevM = clearedEdges.reduce((sum, edge) =>
+      sum + edge.profile.segments.reduce((s, seg) =>
+        s + (seg.grade > 0 ? seg.distanceM * seg.grade : 0), 0), 0);
+    const elevStr = totalElevM > 0
+      ? (this.units === 'imperial'
+        ? `${Math.round(totalElevM * 3.28084)} ft`
+        : `${Math.round(totalElevM)} m`)
+      : '—';
+
     const rows: [string, string][] = [
-      ['DISTANCE',  distM > 0 ? distStr : '—'],
-      ['AVG POWER', avgPowW > 0 ? `${avgPowW} W` : '—'],
+      ['DISTANCE',   distM > 0 ? distStr : '—'],
+      ['ELEVATION',  elevStr],
+      ['AVG POWER',  avgPowW > 0 ? `${avgPowW} W` : '—'],
       ['AVG CADENCE', avgCadRpm > 0 ? `${avgCadRpm} rpm` : '—'],
       ['FLOOR', totalFloors > 0 ? `${currentFloor} / ${totalFloors}` : '—'],
     ];
