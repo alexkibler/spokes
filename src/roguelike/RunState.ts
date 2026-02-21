@@ -8,7 +8,7 @@
 import type { CourseProfile } from '../course/CourseProfile';
 import { FitWriter } from '../fit/FitWriter';
 
-export type NodeType = 'start' | 'standard' | 'hard' | 'shop' | 'finish';
+export type NodeType = 'start' | 'standard' | 'hard' | 'shop' | 'event' | 'finish';
 
 export interface MapNode {
   id: string;
