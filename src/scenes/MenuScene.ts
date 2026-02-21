@@ -160,8 +160,24 @@ export class MenuScene extends Phaser.Scene {
       this.buildSaveBanner(existingSave);
     }
 
+    this.showBannerIfNeeded();
+
     this.scale.on('resize', this.onResize, this);
     this.onResize();
+  }
+
+  private showBannerIfNeeded(): void {
+    const ua = navigator.userAgent;
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || (ua.includes('Mac') && navigator.maxTouchPoints > 1);
+    const hasBt = 'bluetooth' in navigator;
+    const banner = document.getElementById('unsupported-banner');
+    if (!banner || banner.dataset.dismissed === 'true') return;
+    if (isIOS || !hasBt) banner.style.display = 'block';
+  }
+
+  private hideBanner(): void {
+    const el = document.getElementById('unsupported-banner');
+    if (el) el.style.display = 'none';
   }
 
   private onResize(): void {
@@ -171,42 +187,36 @@ export class MenuScene extends Phaser.Scene {
 
     this.drawBackground();
 
-    if (this.titleContainer) this.titleContainer.setPosition(cx, 50);
+    const s = Math.min(1, width / 960, height / 540);
+
+    if (this.titleContainer) this.titleContainer.setScale(s).setPosition(cx, 50 * s);
 
     // Row 1: Distance | Weight | Units (centred)
-    const middleY = 145;
-    const distW   = 385;
-    const weightW = 215;
-    const unitsW  = 145;
-    const gap     = 20;
-    const totalW  = distW + weightW + unitsW + gap * 2;
-    const startX  = cx - totalW / 2;
+    const totalW = (385 + 215 + 145 + 40) * s; // 785*s
+    const startX = cx - totalW / 2;
 
-    if (this.distSection)   this.distSection.setPosition(startX, middleY);
-    if (this.weightSection) this.weightSection.setPosition(startX + distW + gap, middleY);
-    if (this.unitsSection)  this.unitsSection.setPosition(startX + distW + weightW + gap * 2, middleY);
+    if (this.distSection)   this.distSection.setScale(s).setPosition(startX, 145 * s);
+    if (this.weightSection) this.weightSection.setScale(s).setPosition(startX + 405 * s, 145 * s);
+    if (this.unitsSection)  this.unitsSection.setScale(s).setPosition(startX + 640 * s, 145 * s);
 
     // Row 2: Difficulty | FTP (centred together)
-    const row2Y = 288;
-    const row2DiffW = 300;
-    const row2FtpW  = 180;
-    const row2Gap   = 20;
-    const row2StartX = cx - (row2DiffW + row2Gap + row2FtpW) / 2;
-    if (this.diffSection) this.diffSection.setPosition(row2StartX, row2Y);
-    if (this.ftpSection)  this.ftpSection.setPosition(row2StartX + row2DiffW + row2Gap, row2Y);
+    const row2StartX = cx - 250 * s;
+    if (this.diffSection) this.diffSection.setScale(s).setPosition(row2StartX, 288 * s);
+    if (this.ftpSection)  this.ftpSection.setScale(s).setPosition(row2StartX + 320 * s, 288 * s);
 
     // Row 3: Devices — pushed up when save banner occupies the row above buttons
-    const devicesY = this.saveBannerContainer ? height - 210 : height - 165;
-    if (this.devicesSection) this.devicesSection.setPosition(cx - 310, devicesY);
+    // Bottom-anchored (use height - X*s)
+    const devicesY = this.saveBannerContainer ? height - 210 * s : height - 165 * s;
+    if (this.devicesSection) this.devicesSection.setScale(s).setPosition(cx - 310 * s, devicesY);
 
     // Save banner — sits between devices and start buttons
-    if (this.saveBannerContainer) this.saveBannerContainer.setPosition(cx, height - 110);
+    if (this.saveBannerContainer) this.saveBannerContainer.setScale(s).setPosition(cx, height - 110 * s);
 
     // Row 4: Start buttons
-    if (this.startBtnContainer) this.startBtnContainer.setPosition(cx, height - 60);
+    if (this.startBtnContainer) this.startBtnContainer.setScale(s).setPosition(cx, height - 60 * s);
 
     // Dev Toggle
-    if (this.devModeToggle) this.devModeToggle.setPosition(width - 120, 30);
+    if (this.devModeToggle) this.devModeToggle.setScale(s).setPosition(width - 120 * s, 30 * s);
   }
 
   update(_time: number, delta: number): void {
@@ -1195,5 +1205,6 @@ export class MenuScene extends Phaser.Scene {
 
   shutdown(): void {
     this.scale.off('resize', this.onResize, this);
+    this.hideBanner();
   }
 }
