@@ -196,11 +196,12 @@ export class MenuScene extends Phaser.Scene {
     if (this.diffSection) this.diffSection.setPosition(row2StartX, row2Y);
     if (this.ftpSection)  this.ftpSection.setPosition(row2StartX + row2DiffW + row2Gap, row2Y);
 
-    // Row 3: Devices – sits just above the start buttons
-    if (this.devicesSection) this.devicesSection.setPosition(cx - 310, height - 165);
+    // Row 3: Devices — pushed up when save banner occupies the row above buttons
+    const devicesY = this.saveBannerContainer ? height - 210 : height - 165;
+    if (this.devicesSection) this.devicesSection.setPosition(cx - 310, devicesY);
 
-    // Save banner (above start buttons when present)
-    if (this.saveBannerContainer) this.saveBannerContainer.setPosition(cx, height - 130);
+    // Save banner — sits between devices and start buttons
+    if (this.saveBannerContainer) this.saveBannerContainer.setPosition(cx, height - 110);
 
     // Row 4: Start buttons
     if (this.startBtnContainer) this.startBtnContainer.setPosition(cx, height - 60);
