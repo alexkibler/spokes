@@ -488,19 +488,25 @@ export class GameScene extends Phaser.Scene {
 
     // Pre-compute elevation samples and range for the graph
     this.elevationSamples = buildElevationSamples(this.course, 100);
-    this.minElevM = Math.min(...this.elevationSamples.map((s) => s.elevationM));
-    this.maxElevM = Math.max(...this.elevationSamples.map((s) => s.elevationM));
 
     // Precompute segment boundaries for grade-coloured elevation graph
     let _cumDist = 0;
     let _cumElev = 0;
     this.segmentBoundaries = this.course.segments.map(seg => {
-      const startM    = _cumDist;
+      const startM     = _cumDist;
       const startElevM = _cumElev;
       _cumDist += seg.distanceM;
       _cumElev += seg.distanceM * seg.grade;
       return { startM, endM: _cumDist, startElevM, endElevM: _cumElev, grade: seg.grade, surface: seg.surface ?? 'asphalt' };
     });
+
+    // Compute elevation range from both samples AND segment boundary points so
+    // that short segments whose true min/max falls between sample steps don't
+    // produce polygon corners that land outside the graph area.
+    const boundaryElevs = this.segmentBoundaries.flatMap(s => [s.startElevM, s.endElevM]);
+    const allElevs = [...this.elevationSamples.map(s => s.elevationM), ...boundaryElevs];
+    this.minElevM = Math.min(...allElevs);
+    this.maxElevM = Math.max(...allElevs);
 
     this.buildParallaxLayers();
     this.buildCyclist();

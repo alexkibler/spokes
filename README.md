@@ -46,6 +46,10 @@ Run a single test file:
 npx vitest run src/services/__tests__/TrainerService.test.ts
 ```
 
+One-liner to deploy new build:
+```
+docker pull ghcr.io/alexkibler/paper-peloton:main && docker rm -f paper-peloton && docker run -d -p 6969:80 --name paper-peloton ghcr.io/alexkibler/paper-peloton:main
+```
 ---
 
 ## Modes

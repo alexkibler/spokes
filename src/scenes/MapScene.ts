@@ -80,6 +80,7 @@ export class MapScene extends Phaser.Scene {
   private isDragging = false;
   private dragStartY = 0;
   private dragStartScrollY = 0;
+  private overlayActive = false;
 
   constructor() {
     super({ key: 'MapScene' });
@@ -104,8 +105,9 @@ export class MapScene extends Phaser.Scene {
     const run = RunStateManager.getRun();
     if (run && run.nodes.length === 0) {
       this.generateMap(run);
-      // We no longer auto-pick a start node; the player must choose one.
-      run.currentNodeId = ''; 
+      // Auto-select the single start node.
+      const startNode = run.nodes.find((n: MapNode) => n.type === 'start');
+      if (startNode) RunStateManager.setCurrentNode(startNode.id);
     }
   }
 
@@ -150,6 +152,9 @@ export class MapScene extends Phaser.Scene {
     const vh = this.virtualHeight;
     this.cameras.main.setBounds(0, 0, this.scale.width, vh);
     this.scrollToCurrentNode();
+
+    // If the player just rode to a shop or event node, open the overlay automatically.
+    this.checkPendingNodeAction();
   }
 
   private setupScrolling(): void {
@@ -157,12 +162,14 @@ export class MapScene extends Phaser.Scene {
 
     // Mouse wheel
     this.input.on('wheel', (_ptr: unknown, _objs: unknown, _dx: number, dy: number) => {
+      if (this.overlayActive) return;
       const maxScroll = Math.max(0, this.virtualHeight - this.scale.height);
       cam.scrollY = Phaser.Math.Clamp(cam.scrollY + dy * 0.8, 0, maxScroll);
     });
 
     // Touch / mouse drag
     this.input.on('pointerdown', (ptr: Phaser.Input.Pointer) => {
+      if (this.overlayActive) return;
       this.isDragging = true;
       this.dragStartY = ptr.y;
       this.dragStartScrollY = cam.scrollY;
@@ -282,24 +289,30 @@ export class MapScene extends Phaser.Scene {
       return node;
     };
 
-    // 1. Generate paths using a jittered grid approach
-    const numPaths = 3 + Math.floor(Math.random() * 2); // 3-4 starting paths
+    // 1. Generate paths from a single start node
+    const startNode = getOrCreateNode(0, Math.floor(numCols / 2));
+    const numPaths = 3 + Math.floor(Math.random() * 2); // 3-4 branching paths
+    const spreadCols = [1, 2, 4, 5, 3]; // initial branch columns spread across the grid
     for (let p = 0; p < numPaths; p++) {
-      let curCol = Math.floor(Math.random() * numCols);
-      let prevNode = getOrCreateNode(0, curCol);
+      let curCol = spreadCols[p % spreadCols.length];
+      const branchNode = getOrCreateNode(1, curCol);
+      if (!startNode.connectedTo.includes(branchNode.id)) {
+        startNode.connectedTo.push(branchNode.id);
+      }
+      let prevNode = branchNode;
 
-      for (let f = 1; f < totalFloors; f++) {
+      for (let f = 2; f < totalFloors; f++) {
         // Next column must be within [-1, 1] of the previous column
         const offset = Math.floor(Math.random() * 3) - 1;
         curCol = Math.max(0, Math.min(numCols - 1, curCol + offset));
         const curNode = getOrCreateNode(f, curCol);
-        
+
         if (!prevNode.connectedTo.includes(curNode.id)) {
           prevNode.connectedTo.push(curNode.id);
         }
         prevNode = curNode;
       }
-      
+
       const finishNode = getOrCreateNode(totalFloors, Math.floor(numCols / 2));
       if (!prevNode.connectedTo.includes(finishNode.id)) {
         prevNode.connectedTo.push(finishNode.id);
@@ -691,37 +704,14 @@ export class MapScene extends Phaser.Scene {
       return;
     }
 
-    // Handle Start Node (no edge to traverse)
-    if (node.floor === 0 && !run.currentNodeId) {
-        RunStateManager.setCurrentNode(node.id);
-        this.drawMap();
-        return;
-    }
-
     if (node.type === 'elite') {
       // Show challenge dialog before committing movement
       this.openEliteChallenge(node);
       return;
     }
 
-    if (node.type === 'shop' || node.type === 'event') {
-      // Find edge if we traveled to it
-      const edge = run.edges.find(e =>
-        (e.from === run.currentNodeId && e.to === node.id) ||
-        (e.from === node.id && e.to === run.currentNodeId)
-      );
-      if (edge) RunStateManager.setActiveEdge(edge);
-
-      RunStateManager.setCurrentNode(node.id);
-      if (node.type === 'shop') {
-        this.openShop();
-      } else {
-        this.openEvent();
-      }
-      this.drawMap();
-      this.updateGoldUI();
-    } else {
-      // Find edge connecting current <-> target
+    {
+      // Find edge connecting current <-> target (all non-elite node types ride the edge)
       const edge = run.edges.find(e => 
         (e.from === run.currentNodeId && e.to === node.id) || 
         (e.from === node.id && e.to === run.currentNodeId)
@@ -762,6 +752,20 @@ export class MapScene extends Phaser.Scene {
     }
   }
 
+  private checkPendingNodeAction(): void {
+    const run = RunStateManager.getRun();
+    if (!run?.pendingNodeAction) return;
+
+    const action = run.pendingNodeAction;
+    RunStateManager.setPendingNodeAction(null);
+
+    if (action === 'shop') {
+      this.openShop();
+    } else if (action === 'event') {
+      this.openEvent();
+    }
+  }
+
   private openShop(): void {
     const run = RunStateManager.getRun();
     if (!run) return;
@@ -793,7 +797,10 @@ export class MapScene extends Phaser.Scene {
     // ── Layout ──────────────────────────────────────────────────────────────
     const w = this.scale.width;
     const h = this.scale.height;
-    const overlay = this.add.container(0, 0).setDepth(2000);
+    const cam = this.cameras.main;
+    this.overlayActive = true;
+    const overlay = this.add.container(0, cam.scrollY).setDepth(2000);
+    overlay.on('destroy', () => { this.overlayActive = false; });
 
     const bg = this.add.graphics();
     bg.fillStyle(0x000000, 0.85);
@@ -937,7 +944,10 @@ export class MapScene extends Phaser.Scene {
     const fromNodeId = run.currentNodeId;
     const w = this.scale.width;
     const h = this.scale.height;
-    const overlay = this.add.container(0, 0).setDepth(2000);
+    const cam = this.cameras.main;
+    this.overlayActive = true;
+    const overlay = this.add.container(0, cam.scrollY).setDepth(2000);
+    overlay.on('destroy', () => { this.overlayActive = false; });
 
     // Dim background
     const dimBg = this.add.graphics();
@@ -1062,7 +1072,6 @@ export class MapScene extends Phaser.Scene {
         (e.from === node.id && e.to === fromNodeId)
       );
 
-      RunStateManager.setCurrentNode(node.id);
       if (edge) RunStateManager.setActiveEdge(edge);
       overlay.destroy();
 
@@ -1118,7 +1127,7 @@ export class MapScene extends Phaser.Scene {
     retreatHit.on('pointerdown', () => overlay.destroy());
   }
 
-  private openEvent(): void {
+  private openEvent(onComplete?: () => void): void {
     const EVENTS = [
       {
         title: 'Roadside Vendor',
@@ -1173,7 +1182,10 @@ export class MapScene extends Phaser.Scene {
 
     const w = this.scale.width;
     const h = this.scale.height;
-    const overlay = this.add.container(0, 0).setDepth(2000);
+    const cam = this.cameras.main;
+    this.overlayActive = true;
+    const overlay = this.add.container(0, cam.scrollY).setDepth(2000);
+    overlay.on('destroy', () => { this.overlayActive = false; });
 
     // Dim background
     const dimBg = this.add.graphics();
@@ -1276,6 +1288,7 @@ export class MapScene extends Phaser.Scene {
       hitRect.on('pointerdown', () => {
         opt.action();
         overlay.destroy();
+        onComplete?.();
         this.updateGoldUI();
       });
     });
@@ -1285,6 +1298,7 @@ export class MapScene extends Phaser.Scene {
     this.scale.off('resize', this.onResize, this);
     this.teleportBtn = null;
     this.isTeleportMode = false;
+    this.overlayActive = false;
     this.nodeObjects.clear();
     if (this.statsContainer) this.statsContainer.destroy();
     if (this.tooltipContainer) this.tooltipContainer.destroy();

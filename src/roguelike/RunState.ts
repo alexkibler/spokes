@@ -47,6 +47,8 @@ export interface RunData {
   currentNodeId: string;
   visitedNodeIds: string[]; // Track all nodes the player has visited
   activeEdge: MapEdge | null; // The edge currently being traversed (or just finished)
+  /** Set when the player arrives at a shop/event node via riding — MapScene opens the overlay on load. */
+  pendingNodeAction: 'shop' | 'event' | null;
   nodes: MapNode[];
   edges: MapEdge[];
   runLength: number; // Total floors
@@ -78,6 +80,7 @@ export class RunStateManager {
       currentNodeId: '', // Set by map generator
       visitedNodeIds: [],
       activeEdge: null,
+      pendingNodeAction: null,
       nodes: [],
       edges: [],
       runLength,
@@ -97,6 +100,7 @@ export class RunStateManager {
     this.instance = {
       modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 }, // default for old saves
       stats: { totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
+      pendingNodeAction: null, // default for old saves
       ...saved.runData,
       activeEdge: null,
       fitWriter: new FitWriter(Date.now()),
@@ -156,6 +160,11 @@ export class RunStateManager {
           this.instance.visitedNodeIds.push(destination);
         }
 
+        // If destination is a shop or event, signal MapScene to open the overlay after the ride
+        const destNode = this.instance.nodes.find(n => n.id === destination);
+        this.instance.pendingNodeAction =
+          (destNode?.type === 'shop' || destNode?.type === 'event') ? destNode.type : null;
+
         if (!edge.isCleared) {
           edge.isCleared = true;
           // Also update the active reference
@@ -168,6 +177,12 @@ export class RunStateManager {
       this.persist();
     }
     return false;
+  }
+
+  static setPendingNodeAction(action: 'shop' | 'event' | null): void {
+    if (this.instance) {
+      this.instance.pendingNodeAction = action;
+    }
   }
 
   static addGold(amount: number): void {
