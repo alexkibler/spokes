@@ -14,7 +14,7 @@ import type { ITrainerService } from '../services/ITrainerService';
 import { HeartRateService } from '../services/HeartRateService';
 
 // Node types that are freely accessible in dev mode regardless of traversal
-const DEV_ACCESSIBLE_TYPES: NodeType[] = ['shop', 'event', 'elite'];
+const DEV_ACCESSIBLE_TYPES: NodeType[] = [];
 
 // Darker colors for better contrast against #e8dcc8 background
 const SURFACE_FILL_COLORS: Record<SurfaceType, number> = {
@@ -306,14 +306,34 @@ export class MapScene extends Phaser.Scene {
       }
     }
 
-    // 2. Resolve Line Crossings (Basic Sort)
-    nodes.forEach(node => {
-      node.connectedTo.sort((a, b) => {
-        const nodeA = nodes.find(n => n.id === a)!;
-        const nodeB = nodes.find(n => n.id === b)!;
-        return nodeA.col - nodeB.col;
-      });
-    });
+    // 2. Resolve Line Crossings
+    // For each floor transition, swap destination connections between nodes to eliminate crossings.
+    // A crossing occurs when nodeI (col < nodeJ.col) connects to toI.col > toJ.col.
+    for (let f = 0; f < totalFloors; f++) {
+      const fromNodes = nodes.filter(n => n.floor === f).sort((a, b) => a.col - b.col);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (let i = 0; i < fromNodes.length - 1; i++) {
+          for (let j = i + 1; j < fromNodes.length; j++) {
+            const nodeI = fromNodes[i];
+            const nodeJ = fromNodes[j];
+            for (let ci = 0; ci < nodeI.connectedTo.length; ci++) {
+              for (let cj = 0; cj < nodeJ.connectedTo.length; cj++) {
+                const toI = nodes.find(n => n.id === nodeI.connectedTo[ci])!;
+                const toJ = nodes.find(n => n.id === nodeJ.connectedTo[cj])!;
+                if (toI.floor !== f + 1 || toJ.floor !== f + 1) continue;
+                if (toI.col > toJ.col) {
+                  // Swap to remove crossing
+                  [nodeI.connectedTo[ci], nodeJ.connectedTo[cj]] = [nodeJ.connectedTo[cj], nodeI.connectedTo[ci]];
+                  changed = true;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
 
     // 3. Finalize types and create edges
     nodes.forEach(node => {
