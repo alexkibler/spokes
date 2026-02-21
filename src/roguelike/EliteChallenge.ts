@@ -1,10 +1,10 @@
 /**
  * EliteChallenge.ts
  *
- * Data types and challenge pool for Elite nodes.
- * Challenge evaluation logic is future work — this module defines the
- * structures consumed by the map generator, dialog UI, and eventually GameScene.
+ * Data types, challenge pool, and scoring helpers for Elite nodes.
  */
+
+import { RunStateManager } from './RunState';
 
 export type ConditionType =
   | 'avg_power_above_ftp_pct'  // Sustain average watts > ftpMultiplier × FTP
@@ -91,6 +91,42 @@ export const ELITE_CHALLENGES: EliteChallenge[] = [
 
 export function getRandomChallenge(): EliteChallenge {
   return ELITE_CHALLENGES[Math.floor(Math.random() * ELITE_CHALLENGES.length)];
+}
+
+export interface ChallengeMetrics {
+  avgPowerW: number;
+  ftpW: number;
+}
+
+/**
+ * Returns true if the rider satisfied the challenge condition.
+ * Only avg_power_above_ftp_pct is evaluated in Phase 1.
+ */
+export function evaluateChallenge(
+  challenge: EliteChallenge,
+  metrics: ChallengeMetrics,
+): boolean {
+  const { type, ftpMultiplier } = challenge.condition;
+  switch (type) {
+    case 'avg_power_above_ftp_pct':
+      return ftpMultiplier !== undefined &&
+        metrics.avgPowerW >= metrics.ftpW * ftpMultiplier;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Applies the challenge reward to RunStateManager.
+ * Call only when evaluateChallenge returns true.
+ */
+export function grantChallengeReward(challenge: EliteChallenge): void {
+  const { reward } = challenge;
+  if (reward.type === 'gold' && reward.goldAmount !== undefined) {
+    RunStateManager.addGold(reward.goldAmount);
+  } else if (reward.type === 'item' && reward.item !== undefined) {
+    RunStateManager.addToInventory(reward.item);
+  }
 }
 
 /**

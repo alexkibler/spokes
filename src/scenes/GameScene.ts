@@ -25,6 +25,7 @@ import { MockTrainerService } from '../services/MockTrainerService';
 import { HeartRateService } from '../services/HeartRateService';
 import type { HeartRateData } from '../services/HeartRateService';
 import { RunStateManager } from '../roguelike/RunState';
+import { evaluateChallenge, grantChallengeReward, type EliteChallenge } from '../roguelike/EliteChallenge';
 import {
   calculateAcceleration,
   msToKmh,
@@ -147,6 +148,8 @@ export class GameScene extends Phaser.Scene {
   private isRoguelike = false;
   private isDevMode = false;
   private isBackwards = false; // New flag for R->L traversal
+  private ftpW = 200;
+  private activeChallenge: EliteChallenge | null = null;
 
   // Service reference – swapped when toggling demo mode
   private trainer!: ITrainerService;
@@ -374,6 +377,8 @@ export class GameScene extends Phaser.Scene {
     isRoguelike?: boolean;
     isDevMode?: boolean;
     isBackwards?: boolean;
+    ftpW?: number;
+    activeChallenge?: EliteChallenge | null;
   }): void {
     if (import.meta.env.DEV) console.log('[GameScene] init data:', data);
     // Accept a generated course, rider weight, and unit preference from MenuScene
@@ -385,6 +390,8 @@ export class GameScene extends Phaser.Scene {
     this.isRoguelike         = data?.isRoguelike ?? false;
     this.isDevMode           = data?.isDevMode ?? false;
     this.isBackwards         = data?.isBackwards ?? false;
+    this.ftpW                = data?.ftpW ?? 200;
+    this.activeChallenge     = data?.activeChallenge ?? null;
 
     if (import.meta.env.DEV) console.log('[GameScene] isDevMode set to:', this.isDevMode);
 
@@ -1653,6 +1660,26 @@ export class GameScene extends Phaser.Scene {
         this.add.text(cx, py + 80, `+ ${totalGold} GOLD EARNED`, {
           fontFamily: mono, fontSize: '16px', fontStyle: 'bold', color: '#ffcc00',
         }).setOrigin(0.5, 0).setDepth(depth + 2);
+
+        // Challenge evaluation
+        if (this.activeChallenge) {
+          const challengeAvgPow = recs > 0 ? this.recordedPowerSum / recs : 0;
+          const passed = evaluateChallenge(this.activeChallenge, {
+            avgPowerW: challengeAvgPow,
+            ftpW: this.ftpW,
+          });
+
+          if (passed) {
+            grantChallengeReward(this.activeChallenge);
+            this.add.text(cx, py + 100, `★ CHALLENGE COMPLETE — ${this.activeChallenge.reward.description.toUpperCase()}`, {
+              fontFamily: mono, fontSize: '13px', fontStyle: 'bold', color: '#f0c030',
+            }).setOrigin(0.5, 0).setDepth(depth + 2);
+          } else {
+            this.add.text(cx, py + 100, `✗ CHALLENGE FAILED`, {
+              fontFamily: mono, fontSize: '13px', color: '#aa6655',
+            }).setOrigin(0.5, 0).setDepth(depth + 2);
+          }
+        }
       } else {
         this.add.text(cx, py + 80, `(ALREADY CLEARED)`, {
           fontFamily: mono, fontSize: '14px', color: '#aaaaaa',

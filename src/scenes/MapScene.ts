@@ -657,7 +657,9 @@ export class MapScene extends Phaser.Scene {
         trainer: this.trainer,
         hrm: this.hrm,
         isRoguelike: true,
-        isDevMode: this.isDevMode
+        isDevMode: this.isDevMode,
+        ftpW: this.ftpW,
+        activeChallenge: null,
       });
     }
   }
@@ -940,6 +942,8 @@ export class MapScene extends Phaser.Scene {
         hrm: this.hrm,
         isRoguelike: true,
         isDevMode: this.isDevMode,
+        ftpW: this.ftpW,
+        activeChallenge: challenge,
       });
     });
 

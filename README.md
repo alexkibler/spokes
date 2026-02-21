@@ -55,7 +55,6 @@ npx vitest run src/services/__tests__/TrainerService.test.ts
 | **Mock Mode** | Default on launch | Emits simulated power / speed / cadence (~200 W) from an in-memory timer |
 | **Dev Mode** | `import.meta.env.DEV` builds only | Sets mock output to 10,000 W to speed through courses |
 | **Bluetooth** | Click **BT CONNECT** in the menu | Opens the browser device picker; pair your FTMS trainer |
-| **Quick Demo** | Select from menu | Skips map and drops straight into a `GameScene` ride |
 
 ---
 
@@ -67,8 +66,8 @@ MenuScene → MapScene → GameScene → VictoryScene
 ```
 
 1. **MenuScene** — Collects rider weight, run distance, difficulty, and units. Handles Bluetooth pairing.
-2. **MapScene** — Procedurally generates a DAG of nodes across floors. Player navigates by clicking reachable nodes. Shop nodes allow item purchases.
-3. **GameScene** — Main riding view. Drives the physics loop, parallax background, HUD, elevation graph, and sends grade to the trainer via FTMS `0x2AD9`.
+2. **MapScene** — Procedurally generates a DAG of nodes across floors. Player navigates by clicking reachable nodes. Shop nodes allow item purchases. Elite nodes present a challenge dialog before the ride begins.
+3. **GameScene** — Main riding view. Drives the physics loop, parallax background, HUD, elevation graph, and sends grade to the trainer via FTMS `0x2AD9`. Evaluates any active elite challenge at ride completion.
 4. **VictoryScene** — End-of-run screen. Offers a `.fit` file download.
 
 ---
@@ -91,7 +90,8 @@ paper-peloton/
 │   │   ├── MockTrainerService.ts        In-memory stub for offline dev
 │   │   └── HeartRateService.ts         Separate BT GATT service for heart rate monitors
 │   ├── roguelike/
-│   │   └── RunState.ts                  RunStateManager singleton; gold, inventory, node/edge graph
+│   │   ├── RunState.ts                  RunStateManager singleton; gold, inventory, node/edge graph
+│   │   └── EliteChallenge.ts            Challenge types, pool, evaluate/grant helpers
 │   ├── course/
 │   │   └── CourseProfile.ts             Segment-based course definition; procedural generator
 │   ├── physics/
@@ -113,16 +113,18 @@ paper-peloton/
 |------|---------|
 | **Run** | A full roguelike playthrough, from start to finish node |
 | **Floor** | A layer/depth in the map DAG; nodes are grouped by floor number |
-| **Node** | A stop on the map (`start`, `standard`, `hard`, `shop`, `finish`) |
+| **Node** | A stop on the map (`start`, `standard`, `hard`, `shop`, `event`, `elite`, `finish`) |
 | **Edge** | The rideable connection between two nodes; carries a `CourseProfile` |
 | **Course / CourseProfile** | The actual ride on an edge — an ordered list of segments with grade, distance, and surface |
 | **Segment** | One continuous stretch within a course with a fixed grade and surface type |
 | **Surface** | Road type for a segment: `asphalt`, `gravel`, `dirt`, or `mud` (affects rolling resistance) |
 | **Grade** | Slope of a segment as a decimal (0.05 = 5% climb, −0.03 = 3% descent) |
-| **Gold** | In-run currency, earned by clearing edges |
+| **FTP** | Functional Threshold Power — the rider's sustainable 1-hour power in watts; set in `MenuScene` |
+| **Gold** | In-run currency, earned by clearing edges and completing elite challenges |
 | **Inventory** | Items the player has purchased at shop nodes |
 | **Active edge** | The edge currently being ridden (stored in `RunState`) |
 | **Cleared** | An edge that has been successfully traversed at least once (`isCleared`) |
+| **Elite challenge** | An optional performance condition attached to an elite node; passing it grants a bonus reward |
 
 ---
 
