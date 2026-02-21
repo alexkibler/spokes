@@ -8,12 +8,13 @@
 import Phaser from 'phaser';
 import { RunStateManager, type MapNode, type MapEdge, type NodeType } from '../roguelike/RunState';
 import { generateCourseProfile, invertCourseProfile, type SurfaceType } from '../course/CourseProfile';
+import { getRandomChallenge, formatChallengeText } from '../roguelike/EliteChallenge';
 import type { Units } from './MenuScene';
 import type { ITrainerService } from '../services/ITrainerService';
 import { HeartRateService } from '../services/HeartRateService';
 
 // Node types that are freely accessible in dev mode regardless of traversal
-const DEV_ACCESSIBLE_TYPES: NodeType[] = ['shop', 'event'];
+const DEV_ACCESSIBLE_TYPES: NodeType[] = ['shop', 'event', 'elite'];
 
 // Darker colors for better contrast against #e8dcc8 background
 const SURFACE_FILL_COLORS: Record<SurfaceType, number> = {
@@ -29,6 +30,7 @@ const NODE_COLORS: Record<NodeType, number> = {
   hard:     0x8b0000,
   shop:     0x8b5a00,
   event:    0x4b0082,
+  elite:    0x8a6800,
   finish:   0x000000,
 };
 
@@ -38,6 +40,7 @@ const NODE_ICONS: Record<NodeType, string> = {
   hard:     'H',
   shop:     '$',
   event:    '?',
+  elite:    '★',
   finish:   'F',
 };
 
@@ -47,6 +50,7 @@ const NODE_DESCRIPTIONS: Record<NodeType, string> = {
   hard:     'HARD RIDE',
   shop:     'SHOP',
   event:    'EVENT',
+  elite:    'ELITE CHALLENGE',
   finish:   'FINISH',
 };
 
@@ -56,6 +60,8 @@ export class MapScene extends Phaser.Scene {
   private trainer: ITrainerService | null = null;
   private hrm: HeartRateService | null = null;
   private isDevMode = false;
+
+  private ftpW = 200;
 
   private mapContainer!: Phaser.GameObjects.Container;
   private graphics!: Phaser.GameObjects.Graphics;
@@ -79,6 +85,7 @@ export class MapScene extends Phaser.Scene {
     trainer: ITrainerService | null;
     hrm: HeartRateService | null;
     isDevMode?: boolean;
+    ftpW?: number;
   }): void {
     console.log('[MapScene] init data:', data);
     this.weightKg = data.weightKg;
@@ -86,6 +93,7 @@ export class MapScene extends Phaser.Scene {
     this.trainer = data.trainer;
     this.hrm = data.hrm;
     this.isDevMode = data.isDevMode ?? false;
+    this.ftpW = data.ftpW ?? RunStateManager.getRun()?.ftpW ?? 200;
 
     const run = RunStateManager.getRun();
     if (run && run.nodes.length === 0) {
@@ -246,7 +254,12 @@ export class MapScene extends Phaser.Scene {
     nodes.forEach(node => {
       if (node.floor === 0) node.type = 'start';
       else if (node.floor === totalFloors) node.type = 'finish';
-      else node.type = this.getRandomNodeType(node.floor, totalFloors);
+      else {
+        node.type = this.getRandomNodeType(node.floor, totalFloors);
+        if (node.type === 'elite') {
+          node.eliteChallenge = getRandomChallenge();
+        }
+      }
     });
 
     nodes.forEach(fromNode => {
@@ -270,10 +283,11 @@ export class MapScene extends Phaser.Scene {
     const weights: Record<NodeType, number> = {
       start:    0,
       finish:   0,
-      standard: 0.60 - progress * 0.15, // 60% early → 45% late
-      hard:     0.15 + progress * 0.15, // 15% early → 30% late
-      shop:     0.13,                   // flat 13% throughout
-      event:    0.12,                   // flat 12% throughout
+      standard: 0.55 - progress * 0.15, // 55% early → 40% late
+      hard:     0.15 + progress * 0.10, // 15% early → 25% late
+      shop:     0.12,                   // flat 12% throughout
+      event:    0.10,                   // flat 10% throughout
+      elite:    progress * progress * 0.40, // ~0% early → ~40% weight late (quadratic ramp)
     };
 
     const total_weight = Object.values(weights).reduce((a, b) => a + b, 0);
@@ -586,6 +600,12 @@ export class MapScene extends Phaser.Scene {
         return;
     }
 
+    if (node.type === 'elite') {
+      // Show challenge dialog before committing movement
+      this.openEliteChallenge(node);
+      return;
+    }
+
     if (node.type === 'shop' || node.type === 'event') {
       // Find edge if we traveled to it
       const edge = run.edges.find(e =>
@@ -759,6 +779,195 @@ export class MapScene extends Phaser.Scene {
     closeBtn.on('pointerdown', () => overlay.destroy());
     closeBtn.on('pointerover', () => closeBtn.setFillStyle(0x666666));
     closeBtn.on('pointerout', () => closeBtn.setFillStyle(0x444444));
+  }
+
+  private openEliteChallenge(node: MapNode): void {
+    const run = RunStateManager.getRun();
+    if (!run) return;
+
+    const challenge = node.eliteChallenge;
+    if (!challenge) return;
+
+    const fromNodeId = run.currentNodeId;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const overlay = this.add.container(0, 0).setDepth(2000);
+
+    // Dim background
+    const dimBg = this.add.graphics();
+    dimBg.fillStyle(0x000000, 0.82);
+    dimBg.fillRect(0, 0, w, h);
+    dimBg.setInteractive(new Phaser.Geom.Rectangle(0, 0, w, h), Phaser.Geom.Rectangle.Contains);
+    overlay.add(dimBg);
+
+    // Panel layout
+    const btnWidth = Math.min(520, w - 80);
+    const padH = 40;
+    const padV = 32;
+    const titleFontSize = 22;
+    const flavorFontSize = 15;
+    const condFontSize = 15;
+    const btnHeight = 54;
+    const btnGap = 14;
+
+    const charsPerLine = Math.floor(btnWidth / (flavorFontSize * 0.58));
+    const flavorLines = Math.ceil(challenge.flavorText.length / charsPerLine) + 1;
+    const flavorHeight = flavorLines * (flavorFontSize * 1.55);
+
+    const condText = formatChallengeText(challenge, this.ftpW);
+    const condLines = Math.ceil(condText.length / charsPerLine) + 1;
+    const condHeight = condLines * (condFontSize * 1.55);
+
+    const rewardLineH = condFontSize * 1.8;
+    const ph = padV + titleFontSize + 16 + flavorHeight + 16 + condHeight + rewardLineH + 28 + btnHeight * 2 + btnGap + padV;
+    const pw = btnWidth + padH * 2;
+    const px = (w - pw) / 2;
+    const py = (h - ph) / 2;
+
+    // Panel background
+    const panel = this.add.graphics();
+    panel.fillStyle(0x0d0d0a, 1);
+    panel.fillRoundedRect(px, py, pw, ph, 14);
+    panel.lineStyle(2, 0x3a2800, 1);
+    panel.strokeRoundedRect(px, py, pw, ph, 14);
+    overlay.add(panel);
+
+    // Gold banner strip
+    const bannerH = titleFontSize + 24;
+    const banner = this.add.graphics();
+    banner.fillStyle(0x1a1200, 1);
+    banner.fillRoundedRect(px, py, pw, bannerH, { tl: 14, tr: 14, bl: 0, br: 0 });
+    // Thin gold top border
+    banner.lineStyle(2, 0xcc9900, 0.8);
+    banner.strokeRoundedRect(px, py, pw, bannerH, { tl: 14, tr: 14, bl: 0, br: 0 });
+    overlay.add(banner);
+
+    // ★ ELITE CHALLENGE title
+    overlay.add(this.add.text(w / 2, py + bannerH / 2 - 4, `★  ${challenge.title.toUpperCase()}  ★`, {
+      fontFamily: 'monospace',
+      fontSize: `${titleFontSize}px`,
+      color: '#f0c030',
+      fontStyle: 'bold',
+    }).setOrigin(0.5));
+
+    let cursorY = py + bannerH + 16;
+
+    // Flavor text (italic-style, muted)
+    overlay.add(this.add.text(px + padH, cursorY, challenge.flavorText, {
+      fontFamily: 'monospace',
+      fontSize: `${flavorFontSize}px`,
+      color: '#a09888',
+      wordWrap: { width: btnWidth },
+      lineSpacing: 3,
+      fontStyle: 'italic',
+    }).setOrigin(0, 0));
+    cursorY += flavorHeight + 16;
+
+    // Divider line
+    const divider = this.add.graphics();
+    divider.lineStyle(1, 0x3a2800, 0.8);
+    divider.lineBetween(px + padH, cursorY - 8, px + pw - padH, cursorY - 8);
+    overlay.add(divider);
+
+    // Condition text (white, clear)
+    overlay.add(this.add.text(px + padH, cursorY, condText, {
+      fontFamily: 'monospace',
+      fontSize: `${condFontSize}px`,
+      color: '#e8e0d0',
+      wordWrap: { width: btnWidth },
+      lineSpacing: 3,
+    }).setOrigin(0, 0));
+    cursorY += condHeight;
+
+    // Reward line
+    overlay.add(this.add.text(px + padH, cursorY, `Reward: ${challenge.reward.description}`, {
+      fontFamily: 'monospace',
+      fontSize: `${condFontSize}px`,
+      color: '#f0c030',
+      fontStyle: 'bold',
+    }).setOrigin(0, 0));
+    cursorY += rewardLineH + 18;
+
+    // ── Accept button ──
+    const acceptBg = this.add.graphics();
+    const drawAccept = (hover: boolean) => {
+      acceptBg.clear();
+      acceptBg.fillStyle(hover ? 0x6b4e00 : 0x4a3600, 1);
+      acceptBg.fillRoundedRect(px + padH, cursorY, btnWidth, btnHeight, 6);
+      acceptBg.lineStyle(2, hover ? 0xf0c030 : 0xaa8800, 1);
+      acceptBg.strokeRoundedRect(px + padH, cursorY, btnWidth, btnHeight, 6);
+    };
+    drawAccept(false);
+    overlay.add(acceptBg);
+
+    const acceptHit = this.add
+      .rectangle(w / 2, cursorY + btnHeight / 2, btnWidth, btnHeight, 0x000000, 0)
+      .setInteractive({ useHandCursor: true });
+    overlay.add(acceptHit);
+    overlay.add(this.add.text(w / 2, cursorY + btnHeight / 2, 'ACCEPT CHALLENGE', {
+      fontFamily: 'monospace', fontSize: '15px', color: '#f0c030', fontStyle: 'bold',
+    }).setOrigin(0.5));
+
+    acceptHit.on('pointerover', () => drawAccept(true));
+    acceptHit.on('pointerout',  () => drawAccept(false));
+    acceptHit.on('pointerdown', () => {
+      const edge = run.edges.find(e =>
+        (e.from === fromNodeId && e.to === node.id) ||
+        (e.from === node.id && e.to === fromNodeId)
+      );
+
+      RunStateManager.setCurrentNode(node.id);
+      if (edge) RunStateManager.setActiveEdge(edge);
+      overlay.destroy();
+
+      let course = generateCourseProfile(5, 0.05, 'asphalt');
+      let isBackwards = false;
+      if (edge) {
+        if (edge.to === fromNodeId) {
+          course = invertCourseProfile(edge.profile);
+          isBackwards = true;
+        } else {
+          course = edge.profile;
+        }
+      }
+
+      this.scene.start('GameScene', {
+        course,
+        isBackwards,
+        weightKg: this.weightKg,
+        units: this.units,
+        trainer: this.trainer,
+        hrm: this.hrm,
+        isRoguelike: true,
+        isDevMode: this.isDevMode,
+      });
+    });
+
+    cursorY += btnHeight + btnGap;
+
+    // ── Retreat button ──
+    const retreatBg = this.add.graphics();
+    const drawRetreat = (hover: boolean) => {
+      retreatBg.clear();
+      retreatBg.fillStyle(hover ? 0x2a2a2a : 0x1a1a1a, 1);
+      retreatBg.fillRoundedRect(px + padH, cursorY, btnWidth, btnHeight, 6);
+      retreatBg.lineStyle(1, hover ? 0x666666 : 0x444444, 1);
+      retreatBg.strokeRoundedRect(px + padH, cursorY, btnWidth, btnHeight, 6);
+    };
+    drawRetreat(false);
+    overlay.add(retreatBg);
+
+    const retreatHit = this.add
+      .rectangle(w / 2, cursorY + btnHeight / 2, btnWidth, btnHeight, 0x000000, 0)
+      .setInteractive({ useHandCursor: true });
+    overlay.add(retreatHit);
+    overlay.add(this.add.text(w / 2, cursorY + btnHeight / 2, 'RETREAT', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#888888',
+    }).setOrigin(0.5));
+
+    retreatHit.on('pointerover', () => drawRetreat(true));
+    retreatHit.on('pointerout',  () => drawRetreat(false));
+    retreatHit.on('pointerdown', () => overlay.destroy());
   }
 
   private openEvent(): void {

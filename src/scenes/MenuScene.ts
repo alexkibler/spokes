@@ -72,6 +72,7 @@ export class MenuScene extends Phaser.Scene {
   private difficulty: Difficulty = 'easy';
   private distanceKm = 20 * MI_TO_KM; // 20 miles default
   private weightKg   = DEFAULT_WEIGHT_KG;
+  private ftpW       = 200; // Functional Threshold Power in watts
   private units: Units = 'imperial';
 
   private distText!: Phaser.GameObjects.Text;
@@ -87,6 +88,14 @@ export class MenuScene extends Phaser.Scene {
   private weightInputStr     = '';
   private weightCursorMs     = 0;
   private weightCursorOn     = true;
+
+  private ftpText!: Phaser.GameObjects.Text;
+  private ftpInputField!: Phaser.GameObjects.Rectangle;
+  private ftpInputActive  = false;
+  private ftpInputStr     = '';
+  private ftpCursorMs     = 0;
+  private ftpCursorOn     = true;
+
   private ignoreNextGlobalClick = false;
   private diffBtns   = new Map<Difficulty, Phaser.GameObjects.Rectangle>();
   private unitsBtns  = new Map<Units, Phaser.GameObjects.Rectangle>();
@@ -110,6 +119,7 @@ export class MenuScene extends Phaser.Scene {
   private weightSection!: Phaser.GameObjects.Container;
   private unitsSection!: Phaser.GameObjects.Container;
   private diffSection!: Phaser.GameObjects.Container;
+  private ftpSection!: Phaser.GameObjects.Container;
   private devicesSection!: Phaser.GameObjects.Container;
   private startBtnContainer!: Phaser.GameObjects.Container;
 
@@ -136,6 +146,7 @@ export class MenuScene extends Phaser.Scene {
     this.buildWeightSection();
     this.buildUnitsSection();
     this.buildDifficultySection();
+    this.buildFtpSection();
     this.buildDevicesSection();
     this.buildStartButton();
     this.setupInputHandlers();
@@ -168,9 +179,14 @@ export class MenuScene extends Phaser.Scene {
     if (this.weightSection) this.weightSection.setPosition(startX + distW + gap, middleY);
     if (this.unitsSection)  this.unitsSection.setPosition(startX + distW + weightW + gap * 2, middleY);
 
-    // Row 2: Difficulty (centred)
+    // Row 2: Difficulty | FTP (centred together)
     const row2Y = 288;
-    if (this.diffSection) this.diffSection.setPosition(cx - 150, row2Y);
+    const row2DiffW = 300;
+    const row2FtpW  = 180;
+    const row2Gap   = 20;
+    const row2StartX = cx - (row2DiffW + row2Gap + row2FtpW) / 2;
+    if (this.diffSection) this.diffSection.setPosition(row2StartX, row2Y);
+    if (this.ftpSection)  this.ftpSection.setPosition(row2StartX + row2DiffW + row2Gap, row2Y);
 
     // Row 3: Devices – sits just above the start buttons
     if (this.devicesSection) this.devicesSection.setPosition(cx - 310, height - 165);
@@ -199,6 +215,14 @@ export class MenuScene extends Phaser.Scene {
         this.showDistInputDisplay();
       }
     }
+    if (this.ftpInputActive) {
+      this.ftpCursorMs += delta;
+      if (this.ftpCursorMs >= CURSOR_BLINK_MS) {
+        this.ftpCursorMs = 0;
+        this.ftpCursorOn = !this.ftpCursorOn;
+        this.showFtpInputDisplay();
+      }
+    }
   }
 
   // ── Input Handling ────────────────────────────────────────────────────────
@@ -208,15 +232,15 @@ export class MenuScene extends Phaser.Scene {
       if (this.ignoreNextGlobalClick) { this.ignoreNextGlobalClick = false; return; }
       if (this.weightInputActive) this.commitWeightEdit();
       if (this.distInputActive)   this.commitDistEdit();
+      if (this.ftpInputActive)    this.commitFtpEdit();
     });
 
     this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
-      const active = this.weightInputActive || this.distInputActive;
+      const active = this.weightInputActive || this.distInputActive || this.ftpInputActive;
       if (!active) return;
 
       if ((event.key >= '0' && event.key <= '9') || event.key === '.') {
         if (this.weightInputActive && this.weightInputStr.length < 5) {
-          // Prevent multiple decimal points
           if (event.key === '.' && this.weightInputStr.includes('.')) return;
           this.weightInputStr += event.key;
           this.weightCursorOn = true;
@@ -228,6 +252,12 @@ export class MenuScene extends Phaser.Scene {
           this.distCursorOn = true;
           this.distCursorMs = 0;
           this.showDistInputDisplay();
+        } else if (this.ftpInputActive && this.ftpInputStr.length < 4) {
+          if (event.key === '.') return; // FTP is integers only
+          this.ftpInputStr += event.key;
+          this.ftpCursorOn = true;
+          this.ftpCursorMs = 0;
+          this.showFtpInputDisplay();
         }
       } else if (event.key === 'Backspace') {
         if (this.weightInputActive) {
@@ -240,10 +270,16 @@ export class MenuScene extends Phaser.Scene {
           this.distCursorOn = true;
           this.distCursorMs = 0;
           this.showDistInputDisplay();
+        } else if (this.ftpInputActive) {
+          this.ftpInputStr = this.ftpInputStr.slice(0, -1);
+          this.ftpCursorOn = true;
+          this.ftpCursorMs = 0;
+          this.showFtpInputDisplay();
         }
       } else if (event.key === 'Enter' || event.key === 'Escape') {
         if (this.weightInputActive) this.commitWeightEdit();
         if (this.distInputActive)   this.commitDistEdit();
+        if (this.ftpInputActive)    this.commitFtpEdit();
       }
     });
   }
@@ -465,6 +501,84 @@ export class MenuScene extends Phaser.Scene {
       this.ignoreNextGlobalClick = true;
       this.startWeightEdit();
     });
+  }
+
+  // ── FTP selector ───────────────────────────────────────────────────────────
+
+  private buildFtpSection(): void {
+    const PW = 180; const PH = 110;
+    const CX = PW / 2;
+
+    this.ftpSection = this.add.container(0, 0);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.40);
+    bg.fillRoundedRect(0, 0, PW, PH, 6);
+    this.ftpSection.add(bg);
+
+    this.ftpSection.add(this.add.text(14, 10, 'FTP', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#aaaaaa', letterSpacing: 3,
+    }));
+
+    const FIELD_W = 150;
+    const FIELD_H = 44;
+    const fieldCY = 60;
+
+    this.ftpInputField = this.add
+      .rectangle(CX, fieldCY, FIELD_W, FIELD_H, 0x1a1a3a)
+      .setStrokeStyle(2, 0x3a3a8b, 0.8)
+      .setInteractive({ useHandCursor: true });
+    this.ftpSection.add(this.ftpInputField);
+
+    this.ftpText = this.add.text(CX, fieldCY, `${this.ftpW} W`, {
+      fontFamily: 'monospace', fontSize: '24px', color: '#ffffff', fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.ftpSection.add(this.ftpText);
+
+    const hint = this.add.text(CX, PH - 12, 'click to edit · enter to confirm', {
+      fontFamily: 'monospace', fontSize: '8px', color: '#666677',
+    }).setOrigin(0.5);
+    this.ftpSection.add(hint);
+
+    this.ftpInputField.on('pointerover', () => {
+      if (!this.ftpInputActive) this.ftpInputField.setStrokeStyle(2, 0x5555cc, 1);
+    });
+    this.ftpInputField.on('pointerout', () => {
+      if (!this.ftpInputActive) this.ftpInputField.setStrokeStyle(2, 0x3a3a8b, 0.8);
+    });
+    this.ftpInputField.on('pointerdown', () => {
+      this.ignoreNextGlobalClick = true;
+      this.startFtpEdit();
+    });
+  }
+
+  private startFtpEdit(): void {
+    if (this.ftpInputActive) return;
+    if (this.weightInputActive) this.commitWeightEdit();
+    if (this.distInputActive)   this.commitDistEdit();
+
+    this.ftpInputActive = true;
+    this.ftpCursorMs    = 0;
+    this.ftpCursorOn    = true;
+    this.ftpInputStr    = String(this.ftpW);
+    this.ftpInputField.setStrokeStyle(2, 0x5588ff, 1);
+    this.showFtpInputDisplay();
+  }
+
+  private commitFtpEdit(): void {
+    if (!this.ftpInputActive) return;
+    this.ftpInputActive = false;
+    this.ftpInputField.setStrokeStyle(2, 0x3a3a8b, 0.8);
+    const parsed = parseInt(this.ftpInputStr, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      this.ftpW = Math.max(50, Math.min(9999, parsed));
+    }
+    this.ftpText.setText(`${this.ftpW} W`);
+  }
+
+  private showFtpInputDisplay(): void {
+    const cursor = this.ftpCursorOn ? '|' : ' ';
+    this.ftpText.setText((this.ftpInputStr || '0') + cursor + ' W');
   }
 
   private startDistEdit(): void {
@@ -805,7 +919,8 @@ export class MenuScene extends Phaser.Scene {
       RunStateManager.startNewRun(
         floors,
         this.distanceKm,
-        this.difficulty
+        this.difficulty,
+        this.ftpW,
       );
       this.scene.start('MapScene', {
         weightKg: this.weightKg,

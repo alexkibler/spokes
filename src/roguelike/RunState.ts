@@ -6,9 +6,10 @@
  */
 
 import type { CourseProfile } from '../course/CourseProfile';
+import type { EliteChallenge } from './EliteChallenge';
 import { FitWriter } from '../fit/FitWriter';
 
-export type NodeType = 'start' | 'standard' | 'hard' | 'shop' | 'event' | 'finish';
+export type NodeType = 'start' | 'standard' | 'hard' | 'shop' | 'event' | 'elite' | 'finish';
 
 export interface MapNode {
   id: string;
@@ -18,6 +19,7 @@ export interface MapNode {
   x: number; // Relative visualization (0-1)
   y: number; // Relative visualization (0-1)
   connectedTo: string[]; // IDs of nodes this node connects TO (next floor)
+  eliteChallenge?: EliteChallenge; // Only set for 'elite' type nodes
 }
 
 export interface MapEdge {
@@ -38,6 +40,7 @@ export interface RunData {
   runLength: number; // Total floors
   totalDistanceKm: number; // Target total run distance
   difficulty: 'easy' | 'medium' | 'hard';
+  ftpW: number; // Rider's Functional Threshold Power in watts
   fitWriter: FitWriter;
 }
 
@@ -45,7 +48,7 @@ export interface RunData {
 export class RunStateManager {
   private static instance: RunData | null = null;
 
-  static startNewRun(runLength: number, totalDistanceKm: number, difficulty: 'easy' | 'medium' | 'hard'): RunData {
+  static startNewRun(runLength: number, totalDistanceKm: number, difficulty: 'easy' | 'medium' | 'hard', ftpW = 200): RunData {
     this.instance = {
       gold: 0,
       inventory: [],
@@ -57,6 +60,7 @@ export class RunStateManager {
       runLength,
       totalDistanceKm,
       difficulty,
+      ftpW,
       fitWriter: new FitWriter(Date.now()),
     };
     return this.instance;
