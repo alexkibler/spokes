@@ -62,42 +62,6 @@ const EFFECT_META: Record<EffectType, {
   tailwind: { label: 'TAILWIND', multiplier: 2,   color: 0xffcc00, hexColor: '#ffcc00' },
 };
 
-// ─── IK helper ────────────────────────────────────────────────────────────────
-
-/**
- * Computes the knee joint position for a two-bone leg chain.
- * kneeSide = -1 bends the knee forward (toward the front wheel), which is
- * correct for both legs on a forward-facing cyclist.
- */
-function computeKnee(
-  hipX: number, hipY: number,
-  footX: number, footY: number,
-  upperLen: number, lowerLen: number,
-  kneeSide: 1 | -1,
-): [number, number] {
-  const dx = footX - hipX;
-  const dy = footY - hipY;
-  const dist = Math.hypot(dx, dy);
-  const total = upperLen + lowerLen;
-
-  if (dist >= total - 0.01) {
-    // Fully extended – place knee proportionally along the line
-    const t = upperLen / total;
-    return [hipX + dx * t, hipY + dy * t];
-  }
-
-  // Law of cosines: angle at the hip
-  const cosA = (dist * dist + upperLen * upperLen - lowerLen * lowerLen)
-    / (2 * dist * upperLen);
-  const angleA = Math.acos(Math.max(-1, Math.min(1, cosA)));
-  const kneeAngle = Math.atan2(dy, dx) + kneeSide * angleA;
-
-  return [
-    hipX + Math.cos(kneeAngle) * upperLen,
-    hipY + Math.sin(kneeAngle) * upperLen,
-  ];
-}
-
 // ─── Layout constants ──────────────────────────────────────────────────────────
 
 /** Pixels scrolled per (m/s) of velocity — road layer multiplier */
@@ -173,7 +137,11 @@ export class GameScene extends Phaser.Scene {
   private worldContainer!: Phaser.GameObjects.Container;
 
   // Cyclist animation
-  private cyclistGraphics!: Phaser.GameObjects.Graphics;
+  private cyclistContainer!: Phaser.GameObjects.Container;
+  private sprRearWheel!: Phaser.GameObjects.Sprite;
+  private sprFrontWheel!: Phaser.GameObjects.Sprite;
+  private sprFrame!: Phaser.GameObjects.Sprite;
+  private sprRider!: Phaser.GameObjects.Sprite;
   private crankAngle = 0;
   private cadenceHistory: Array<{ rpm: number; timeMs: number }> = [];
   private avgCadence = 0;
@@ -289,6 +257,14 @@ export class GameScene extends Phaser.Scene {
       // Cyclist ground Y: road top is ROAD_TOP_FRAC of texture height; map to
       // container local space (container origin is at screen centre).
       this.cycGroundY = height * (ROAD_TOP_FRAC - 0.5);
+
+      if (this.sprRearWheel) {
+        const axleY = this.cycGroundY - 18;
+        this.sprRearWheel.setY(axleY);
+        this.sprFrontWheel.setY(axleY);
+        this.sprFrame.setY(axleY - 15);
+        this.sprRider.setY(axleY - 30);
+      }
     }
 
     // 2. Update HUD (6 columns)
@@ -474,6 +450,7 @@ export class GameScene extends Phaser.Scene {
       return { startM, endM: _cumDist, startElevM, endElevM: _cumElev, grade: seg.grade, surface: seg.surface ?? 'asphalt' };
     });
 
+    this.generatePlaceholderSprites();
     this.buildParallaxLayers();
     this.buildCyclist();
 
@@ -682,7 +659,7 @@ export class GameScene extends Phaser.Scene {
     }
     // Advance crank: avgCadence rpm → revolutions per second → radians per second
     this.crankAngle += (this.avgCadence / 60) * 2 * Math.PI * dt;
-    this.drawCyclist();
+    this.updateCyclistAnimation();
 
     // ── Elevation graph ──────────────────────────────────────────────────────
     this.drawElevationGraph(wrappedDist);
@@ -829,162 +806,121 @@ export class GameScene extends Phaser.Scene {
    * For reference 540px height: 540 * (420/540 - 0.5) = 150.
    */
   private cycGroundY = 150;
-  private static readonly WHEEL_R = 18;
 
-  private buildCyclist(): void {
-    // Add AFTER all parallax layers so the cyclist renders on top
-    this.cyclistGraphics = this.add.graphics();
-    this.worldContainer.add(this.cyclistGraphics);
-    
-    // Flip cyclist if traveling backwards
-    if (this.isBackwards) {
-      this.cyclistGraphics.setScale(-1, 1);
+  private generatePlaceholderSprites(): void {
+    // 1. The Wheel (40x40 canvas, centered at 20,20)
+    const gWheel = this.make.graphics({ x: 0, y: 0 }, false);
+    gWheel.lineStyle(2, 0x333333);
+    gWheel.strokeCircle(20, 20, 18); // Rim
+    gWheel.beginPath(); gWheel.moveTo(20, 2); gWheel.lineTo(20, 38); gWheel.strokePath(); // Vertical spoke
+    gWheel.beginPath(); gWheel.moveTo(2, 20); gWheel.lineTo(38, 20); gWheel.strokePath(); // Horizontal spoke
+    gWheel.generateTexture('wheel_default', 40, 40);
+    gWheel.destroy();
+
+    // 2. The Frame (128x128 canvas, Bottom Bracket at 64, 96)
+    const gFrame = this.make.graphics({ x: 0, y: 0 }, false);
+    gFrame.lineStyle(4, 0xcc2222);
+    gFrame.beginPath();
+    gFrame.moveTo(64, 96); // Bottom Bracket
+    gFrame.lineTo(35, 96); // Chainstay
+    gFrame.lineTo(50, 60); // Seat tube
+    gFrame.lineTo(64, 96); // Down to BB
+    gFrame.lineTo(85, 60); // Downtube
+    gFrame.lineTo(50, 60); // Top tube
+    gFrame.strokePath();
+    gFrame.generateTexture('frame_default', 128, 128);
+    gFrame.destroy();
+
+    // 3. The Rider Sprite Sheet (1024x128 canvas -> 8 frames of 128x128)
+    const gRider = this.make.graphics({ x: 0, y: 0 }, false);
+    for (let i = 0; i < 8; i++) {
+      const offsetX = i * 128; // Shift over for each frame
+      const bbX = offsetX + 64; // The bottom bracket X for this frame
+      const bbY = 96;           // The bottom bracket Y for this frame
+
+      // Draw static torso and head
+      gRider.fillStyle(0x4444ff);
+      gRider.fillRect(bbX - 10, bbY - 50, 20, 30);
+      gRider.fillCircle(bbX, bbY - 60, 10);
+
+      // Draw the spinning leg/crank based on the frame index
+      const angle = (i / 8) * Math.PI * 2;
+      const footX = bbX + Math.cos(angle) * 15;
+      const footY = bbY + Math.sin(angle) * 15;
+
+      gRider.lineStyle(4, 0xffaa00);
+      gRider.beginPath();
+      gRider.moveTo(bbX, bbY - 20); // Connect from hip
+      gRider.lineTo(footX, footY);  // Down to pedal
+      gRider.strokePath();
+    }
+    gRider.generateTexture('rider_pedaling', 1024, 128);
+    gRider.destroy();
+
+    // Add frames to the texture to make it a sprite sheet
+    const riderTexture = this.textures.get('rider_pedaling');
+    for (let i = 0; i < 8; i++) {
+      riderTexture.add(i, 0, i * 128, 0, 128, 128);
     }
   }
 
-  private drawCyclist(): void {
-    const g  = this.cyclistGraphics;
-    g.clear();
+  private buildCyclist(): void {
+    // Add AFTER all parallax layers so the cyclist renders on top
+    this.cyclistContainer = this.add.container(0, 0);
+    this.worldContainer.add(this.cyclistContainer);
 
-    const gY   = this.cycGroundY;
-    const wR   = GameScene.WHEEL_R;
-    const axleY = gY - wR;  // = 132 in container space
+    const gY = this.cycGroundY;
+    const wR = 18; // wheel radius
+    const axleY = gY - wR;
 
-    // ── Key bike coordinates (worldContainer space, x=0 is screen centre) ──
-    const rearX   = -22;     // rear axle x
-    const frontX  =  26;     // front axle x
-    const crankX  =   0;     // bottom bracket x
-    const crankY  = axleY;   // bottom bracket at axle height
-    const crankLen =  9;     // crank arm length (px)
+    // Layer order is important: Rear Wheel -> Frame -> Front Wheel -> Rider
+    this.sprRearWheel = this.add.sprite(-22, axleY, 'wheel_default');
+    this.sprFrame = this.add.sprite(0, axleY - 15, 'frame_default');
+    this.sprFrontWheel = this.add.sprite(26, axleY, 'wheel_default');
+    this.sprRider = this.add.sprite(0, axleY - 30, 'rider_pedaling');
 
-    // Frame geometry
-    const seatX  = -5;  const seatY  = axleY - 35;  // saddle top
-    const hbarX  = 22;  const hbarY  = axleY - 33;  // handlebar grip
+    this.cyclistContainer.add([
+      this.sprRearWheel,
+      this.sprFrame,
+      this.sprFrontWheel,
+      this.sprRider
+    ]);
 
-    // Rider body
-    const hipX      = -2;  const hipY      = axleY - 30;  // hip joint
-    const shoulderX = 14;  const shoulderY = axleY - 43;  // shoulder
-    const headX     = 22;  const headY     = axleY - 53;  // head centre
-    const headR     =  7;
+    // Flip cyclist if traveling backwards
+    if (this.isBackwards) {
+      this.cyclistContainer.setScale(-1, 1);
+    }
+  }
 
-    // Leg segment lengths
-    const upperLen = 22;
-    const lowerLen = 19;
+  private updateCyclistAnimation(): void {
+    // 1. Rotate the wheels based on distance traveled
+    const wheelCircumferenceMeters = 2.1;
+    const wheelRotations = this.distanceM / wheelCircumferenceMeters;
+    // Rotate positively (CW) if moving forward, negatively if backwards.
+    // distanceM increases as we move forward.
+    const dir = this.isBackwards ? -1 : 1;
+    const currentRotationRad = wheelRotations * Math.PI * 2 * dir;
 
-    // ── Foot positions (pedal endpoints rotate with crankAngle) ─────────────
-    const rA  = this.crankAngle;
-    const lA  = this.crankAngle + Math.PI;
-    const rFX = crankX + Math.cos(rA) * crankLen;
-    const rFY = crankY + Math.sin(rA) * crankLen;
-    const lFX = crankX + Math.cos(lA) * crankLen;
-    const lFY = crankY + Math.sin(lA) * crankLen;
+    this.sprRearWheel.rotation = currentRotationRad;
+    this.sprFrontWheel.rotation = currentRotationRad;
 
-    // ── Knee positions via two-bone IK ───────────────────────────────────────
-    // Both knees always bend forward (toward the front wheel) — legs are
-    // 180° out of phase but the hinge direction is the same for both.
-    const [rKX, rKY] = computeKnee(hipX, hipY, rFX, rFY, upperLen, lowerLen, -1);
-    const [lKX, lKY] = computeKnee(hipX, hipY, lFX, lFY, upperLen, lowerLen, -1);
+    // 2. Sync rider animation to the crank angle
+    let normalizedAngle = this.crankAngle % (Math.PI * 2);
+    if (normalizedAngle < 0) normalizedAngle += Math.PI * 2;
 
-    // ── Palette (paper-cutout aesthetic matching the game) ───────────────────
-    const BIKE   = 0x2a2018;   // charcoal for frame & wheels
-    const JERSEY = 0x5a3a1a;   // dark kraft brown for torso & helmet
-    const SKIN   = 0xc49a6a;   // warm paper tone for head & arms
+    const totalFrames = 8;
+    const currentFrame = Math.floor((normalizedAngle / (Math.PI * 2)) * totalFrames);
 
-    // ════════════════════════════════════════════════════════════════════════
-    // Draw order: far leg → wheels/frame → near leg → body → head
-    // ════════════════════════════════════════════════════════════════════════
+    this.sprRider.setFrame(currentFrame);
+  }
 
-    // ── Far leg (left, behind bike) ──────────────────────────────────────────
-    g.lineStyle(4, BIKE, 0.38);
-    g.beginPath();
-    g.moveTo(hipX, hipY);
-    g.lineTo(lKX, lKY);
-    g.lineTo(lFX, lFY);
-    g.strokePath();
-    g.fillStyle(BIKE, 0.38);
-    g.fillRect(lFX - 5, lFY - 1.5, 10, 3);  // far pedal
-
-    // ── Rear wheel ───────────────────────────────────────────────────────────
-    g.lineStyle(3, BIKE, 1);
-    g.strokeCircle(rearX, axleY, wR);
-    g.lineStyle(1.5, BIKE, 0.45);
-    g.strokeCircle(rearX, axleY, wR * 0.55);  // inner rim
-    g.fillStyle(BIKE, 1);
-    g.fillCircle(rearX, axleY, 2.5);           // hub
-
-    // ── Frame ────────────────────────────────────────────────────────────────
-    g.lineStyle(3, BIKE, 1);
-    // Chain stay: rear axle → bottom bracket
-    g.beginPath(); g.moveTo(rearX, axleY); g.lineTo(crankX, crankY + 2); g.strokePath();
-    // Seat tube: BB → saddle
-    g.beginPath(); g.moveTo(crankX, crankY); g.lineTo(seatX, seatY); g.strokePath();
-    // Top tube: saddle → handlebars
-    g.beginPath(); g.moveTo(seatX, seatY); g.lineTo(hbarX, hbarY); g.strokePath();
-    // Down tube: head-tube area → BB
-    g.beginPath(); g.moveTo(hbarX - 2, hbarY + 8); g.lineTo(crankX, crankY); g.strokePath();
-    // Fork: handlebars → front axle
-    g.beginPath(); g.moveTo(hbarX, hbarY); g.lineTo(frontX, axleY); g.strokePath();
-    // Saddle rail
-    g.lineStyle(4, BIKE, 1);
-    g.beginPath(); g.moveTo(seatX - 6, seatY); g.lineTo(seatX + 8, seatY); g.strokePath();
-
-    // ── Front wheel ──────────────────────────────────────────────────────────
-    g.lineStyle(3, BIKE, 1);
-    g.strokeCircle(frontX, axleY, wR);
-    g.lineStyle(1.5, BIKE, 0.45);
-    g.strokeCircle(frontX, axleY, wR * 0.55);
-    g.fillStyle(BIKE, 1);
-    g.fillCircle(frontX, axleY, 2.5);
-
-    // ── Crank arms ───────────────────────────────────────────────────────────
-    g.lineStyle(3, BIKE, 1);
-    g.beginPath(); g.moveTo(crankX, crankY); g.lineTo(rFX, rFY); g.strokePath();
-    g.lineStyle(2.5, BIKE, 0.5);
-    g.beginPath(); g.moveTo(crankX, crankY); g.lineTo(lFX, lFY); g.strokePath();
-    // Chainring
-    g.lineStyle(2, BIKE, 0.7);
-    g.strokeCircle(crankX, crankY, 6);
-
-    // ── Near leg (right, in front of bike) ───────────────────────────────────
-    g.lineStyle(5, BIKE, 1);
-    g.beginPath();
-    g.moveTo(hipX, hipY);
-    g.lineTo(rKX, rKY);
-    g.lineTo(rFX, rFY);
-    g.strokePath();
-    g.fillStyle(BIKE, 1);
-    g.fillRect(rFX - 5, rFY - 1.5, 10, 3);  // near pedal
-
-    // ── Rider body ───────────────────────────────────────────────────────────
-    // Torso (filled quad)
-    g.fillStyle(JERSEY, 1);
-    g.fillPoints([
-      { x: hipX - 2,      y: hipY },
-      { x: hipX + 5,      y: hipY - 2 },
-      { x: shoulderX,     y: shoulderY },
-      { x: shoulderX - 5, y: shoulderY + 4 },
-    ], true);
-
-    // Arms reaching to handlebars
-    g.lineStyle(3, SKIN, 1);
-    g.beginPath();
-    g.moveTo(shoulderX - 1, shoulderY + 2);
-    g.lineTo(hbarX, hbarY + 1);
-    g.strokePath();
-
-    // Head
-    g.fillStyle(SKIN, 1);
-    g.fillCircle(headX, headY, headR);
-
-    // Helmet cap
-    g.fillStyle(JERSEY, 1);
-    g.fillPoints([
-      { x: headX - headR + 1, y: headY },
-      { x: headX - headR + 1, y: headY - headR * 0.5 },
-      { x: headX,             y: headY - headR - 2 },
-      { x: headX + headR,     y: headY - headR * 0.5 },
-      { x: headX + headR,     y: headY },
-    ], true);
+  public equipItem(slot: 'frame' | 'wheels', textureKey: string): void {
+      if (slot === 'frame') {
+          this.sprFrame.setTexture(textureKey);
+      } else if (slot === 'wheels') {
+          this.sprFrontWheel.setTexture(textureKey);
+          this.sprRearWheel.setTexture(textureKey);
+      }
   }
 
   // ── HUD (top strip – 5 metrics) ───────────────────────────────────────────
