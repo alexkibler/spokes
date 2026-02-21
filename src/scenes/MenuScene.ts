@@ -982,7 +982,7 @@ export class MenuScene extends Phaser.Scene {
 
       // Second click: confirmed — wipe save and start fresh
       confirmPending = false;
-      const floors = Math.max(4, Math.min(20, Math.round(this.distanceKm / 5)));
+      const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
       RunStateManager.startNewRun(
         floors,
         this.distanceKm,
@@ -1032,7 +1032,7 @@ export class MenuScene extends Phaser.Scene {
         return;
       }
 
-      const floors = Math.max(4, Math.min(20, Math.round(this.distanceKm / 5)));
+      const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
       RunStateManager.startNewRun(
         floors,
         this.distanceKm,

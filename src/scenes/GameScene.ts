@@ -24,7 +24,7 @@ import type { ITrainerService, TrainerData } from '../services/ITrainerService';
 import { MockTrainerService } from '../services/MockTrainerService';
 import { HeartRateService } from '../services/HeartRateService';
 import type { HeartRateData } from '../services/HeartRateService';
-import { RunStateManager } from '../roguelike/RunState';
+import { RunStateManager, type RunModifiers } from '../roguelike/RunState';
 import { evaluateChallenge, grantChallengeReward, type EliteChallenge } from '../roguelike/EliteChallenge';
 import {
   calculateAcceleration,
@@ -183,6 +183,7 @@ export class GameScene extends Phaser.Scene {
   // Effect / powerup state
   private activeEffect: ActiveEffect | null = null;
   private rawPower     = DEMO_POWER_WATTS; // unmodified power from trainer
+  private runModifiers: RunModifiers = { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 };
 
   // Effect indicator UI (unused or repurposed for status)
   private effectContainer!:   Phaser.GameObjects.Container;
@@ -244,8 +245,9 @@ export class GameScene extends Phaser.Scene {
   private rideComplete = false;
   private overlayVisible = false;
   // Running sums for overlay stats (updated each recorded sample)
-  private recordedPowerSum = 0;
-  private recordedSpeedSum = 0;
+  private recordedPowerSum   = 0;
+  private recordedSpeedSum   = 0;
+  private recordedCadenceSum = 0;
   private peakPowerW = 0;
   private challengeEverStopped = false;
   private challengeStartMs = 0;
@@ -437,6 +439,7 @@ export class GameScene extends Phaser.Scene {
     this.lastRecordMs       = 0;
     this.recordedPowerSum      = 0;
     this.recordedSpeedSum      = 0;
+    this.recordedCadenceSum    = 0;
     this.peakPowerW               = 0;
     this.challengeEverStopped     = false;
     this.challengeStartMs         = 0;
@@ -578,6 +581,7 @@ export class GameScene extends Phaser.Scene {
       if (run && run.inventory.includes('tailwind')) {
         this.triggerEffect('tailwind');
       }
+      this.runModifiers = RunStateManager.getModifiers();
     }
   }
 
@@ -662,7 +666,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // ── Physics ─────────────────────────────────────────────────────────────
-    const acceleration = calculateAcceleration(this.latestPower, this.smoothVelocityMs, this.physicsConfig);
+    const acceleration = calculateAcceleration(this.latestPower, this.smoothVelocityMs, this.physicsConfig, this.runModifiers);
 
     this.smoothVelocityMs += acceleration * dt;
 
@@ -1679,8 +1683,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updatePowerDisplay(): void {
-    const multiplier = this.activeEffect ? EFFECT_META[this.activeEffect.type].multiplier : 1;
-    const net        = Math.round(this.rawPower * multiplier);
+    const effectMult = this.activeEffect ? EFFECT_META[this.activeEffect.type].multiplier : 1;
+    const net        = Math.round(this.rawPower * effectMult * this.runModifiers.powerMult);
     this.latestPower = net;
 
     if (this.activeEffect) {
@@ -1708,8 +1712,9 @@ export class GameScene extends Phaser.Scene {
       altitudeM:    this.getCurrentAltitude(),
     };
     this.fitWriter.addRecord(rec);
-    this.recordedPowerSum += this.latestPower;
-    this.recordedSpeedSum += rec.speedMs;
+    this.recordedPowerSum   += this.latestPower;
+    this.recordedSpeedSum   += rec.speedMs;
+    this.recordedCadenceSum += rec.cadenceRpm;
     if (this.latestPower > this.peakPowerW) this.peakPowerW = this.latestPower;
     if (rec.speedMs <= 0) this.challengeEverStopped = true;
   }
@@ -1802,6 +1807,7 @@ export class GameScene extends Phaser.Scene {
     if (this.isRoguelike && completed) {
       // Mark the edge as cleared. Returns true if this is the first time.
       const isFirstClear = RunStateManager.completeActiveEdge();
+      RunStateManager.recordSegmentStats(this.distanceM, recs, this.recordedPowerSum, this.recordedCadenceSum);
       
       if (isFirstClear) {
         let gradeSum = 0;

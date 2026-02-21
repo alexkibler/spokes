@@ -30,3 +30,4 @@ export function formatFixed(val: number, decimals = 1): string {
   }
   return val.toFixed(decimals);
 }
+

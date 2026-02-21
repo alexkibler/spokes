@@ -66,14 +66,20 @@ export class MapScene extends Phaser.Scene {
   private mapContainer!: Phaser.GameObjects.Container;
   private graphics!: Phaser.GameObjects.Graphics;
   private nodeObjects = new Map<string, Phaser.GameObjects.Container>();
-  
+
   private tooltipContainer!: Phaser.GameObjects.Container;
   private tooltipText!: Phaser.GameObjects.Text;
-  private legendContainer!: Phaser.GameObjects.Container;
+  private statsContainer!: Phaser.GameObjects.Container;
   private goldText!: Phaser.GameObjects.Text;
 
   private isTeleportMode = false;
   private teleportBtn: Phaser.GameObjects.Container | null = null;
+
+  // Scrollable map
+  private static readonly FLOOR_SPACING = 80; // px between floors
+  private isDragging = false;
+  private dragStartY = 0;
+  private dragStartScrollY = 0;
 
   constructor() {
     super({ key: 'MapScene' });
@@ -103,35 +109,86 @@ export class MapScene extends Phaser.Scene {
     }
   }
 
+  private get virtualHeight(): number {
+    const run = RunStateManager.getRun();
+    const floors = run?.runLength ?? 0;
+    return Math.max(this.scale.height, (floors + 2) * MapScene.FLOOR_SPACING);
+  }
+
   create(): void {
     this.nodeObjects.clear();
     this.cameras.main.setBackgroundColor('#e8dcc8');
-    
-    // Main container for map elements
+
+    // Main container for map elements (world space — scrolls with camera)
     this.mapContainer = this.add.container(0, 0);
     this.graphics = this.add.graphics();
     this.mapContainer.add(this.graphics);
 
     this.drawMap();
 
-    // UI Elements
+    // ── HUD elements — pinned to screen (scrollFactor 0) ──────────────────
     this.add.text(this.scale.width / 2, 30, 'ROGUELIKE RUN', {
       fontFamily: 'monospace',
       fontSize: '28px',
       color: '#2a2018',
       fontStyle: 'bold',
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
 
     const run = RunStateManager.getRun();
     this.goldText = this.add.text(this.scale.width - 20, 20, `GOLD: ${run?.gold ?? 0}`, {
       fontFamily: 'monospace', fontSize: '20px', color: '#8b5a00', fontStyle: 'bold',
-    }).setOrigin(1, 0);
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(20);
 
-    this.buildLegend();
+    this.buildStatsPanel();
     this.createTooltip();
+    this.setupScrolling();
 
     this.scale.on('resize', this.onResize, this);
     this.onResize();
+  }
+
+  private setupScrolling(): void {
+    const cam = this.cameras.main;
+
+    // Mouse wheel
+    this.input.on('wheel', (_ptr: unknown, _objs: unknown, _dx: number, dy: number) => {
+      const maxScroll = Math.max(0, this.virtualHeight - this.scale.height);
+      cam.scrollY = Phaser.Math.Clamp(cam.scrollY + dy * 0.8, 0, maxScroll);
+    });
+
+    // Touch / mouse drag
+    this.input.on('pointerdown', (ptr: Phaser.Input.Pointer) => {
+      this.isDragging = true;
+      this.dragStartY = ptr.y;
+      this.dragStartScrollY = cam.scrollY;
+    });
+    this.input.on('pointermove', (ptr: Phaser.Input.Pointer) => {
+      if (!this.isDragging) return;
+      const delta = this.dragStartY - ptr.y;
+      const maxScroll = Math.max(0, this.virtualHeight - this.scale.height);
+      cam.scrollY = Phaser.Math.Clamp(this.dragStartScrollY + delta, 0, maxScroll);
+    });
+    this.input.on('pointerup', () => { this.isDragging = false; });
+  }
+
+  /** Scroll camera so the current node (or start area) is centered in view. */
+  private scrollToCurrentNode(): void {
+    const run = RunStateManager.getRun();
+    const cam = this.cameras.main;
+    const vh = this.virtualHeight;
+    const sh = this.scale.height;
+    const maxScroll = Math.max(0, vh - sh);
+
+    if (run?.currentNodeId) {
+      const node = run.nodes.find(n => n.id === run.currentNodeId);
+      if (node) {
+        const worldY = node.y * vh;
+        cam.scrollY = Phaser.Math.Clamp(worldY - sh / 2, 0, maxScroll);
+        return;
+      }
+    }
+    // Default: scroll to bottom to show start nodes
+    cam.scrollY = maxScroll;
   }
 
   private updateGoldUI(): void {
@@ -146,14 +203,15 @@ export class MapScene extends Phaser.Scene {
     
     if (teleCount > 0) {
       if (!this.teleportBtn) {
-        this.teleportBtn = this.add.container(this.scale.width - 20, 60);
-        
+        this.teleportBtn = this.add.container(this.scale.width - 20, 60)
+          .setScrollFactor(0).setDepth(20);
+
         const bg = this.add.rectangle(0, 0, 140, 30, 0x442244)
           .setInteractive({ useHandCursor: true });
         const txt = this.add.text(0, 0, `TELEPORT (${teleCount})`, {
           fontFamily: 'monospace', fontSize: '12px', color: '#ff88ff', fontStyle: 'bold'
         }).setOrigin(0.5);
-        
+
         this.teleportBtn.add([bg, txt]);
 
         bg.on('pointerdown', () => {
@@ -186,15 +244,17 @@ export class MapScene extends Phaser.Scene {
   private onResize(): void {
     if (!this.sys.isActive()) return;
     this.mapContainer.setPosition(0, 0);
+    // Update camera bounds for new virtual height
+    const vh = this.virtualHeight;
+    this.cameras.main.setBounds(0, 0, this.scale.width, vh);
     this.drawMap();
     this.updateGoldUI();
-    // Rebuild legend to position correctly
-    this.buildLegend();
+    this.buildStatsPanel();
+    this.scrollToCurrentNode();
   }
 
   private generateMap(run: any): void {
     const totalFloors = run.runLength;
-    const segmentKm = Math.max(0.2, run.totalDistanceKm / totalFloors); // Minimum 200m per segment
     const numCols = 7;
     const nodes: MapNode[] = [];
     const edges: MapEdge[] = [];
@@ -265,6 +325,7 @@ export class MapScene extends Phaser.Scene {
     nodes.forEach(fromNode => {
       fromNode.connectedTo.forEach(toId => {
         const toNode = nodes.find(n => n.id === toId)!;
+        const segmentKm = 1.0 + Math.random(); // 1.0–2.0 km per edge
         edges.push({
           from: fromNode.id,
           to: toNode.id,
@@ -313,7 +374,7 @@ export class MapScene extends Phaser.Scene {
 
     this.graphics.clear();
     const w = this.scale.width;
-    const h = this.scale.height;
+    const h = this.virtualHeight;
 
     // Remove any containers that aren't in the run anymore (cleanup)
     for (const [id, container] of this.nodeObjects.entries()) {
@@ -409,48 +470,60 @@ export class MapScene extends Phaser.Scene {
     }
   }
 
-  private buildLegend(): void {
-    if (this.legendContainer) this.legendContainer.destroy();
+  private buildStatsPanel(): void {
+    if (this.statsContainer) this.statsContainer.destroy();
 
-    const w = 150;
-    const h = Object.keys(NODE_ICONS).length * 28 + 20;
+    const run = RunStateManager.getRun();
+    const stats = run?.stats;
+
+    const recs = stats?.totalRecordCount ?? 0;
+    const avgPowW = recs > 0 ? Math.round(stats!.totalPowerSum / recs) : 0;
+    const avgCadRpm = recs > 0 ? Math.round(stats!.totalCadenceSum / recs) : 0;
+    const distM = stats?.totalRiddenDistanceM ?? 0;
+    const distStr = this.units === 'imperial'
+      ? `${(distM / 1609.344).toFixed(2)} mi`
+      : `${(distM / 1000).toFixed(2)} km`;
+
+    const currentFloor = run?.nodes.find(n => n.id === run.currentNodeId)?.floor ?? 0;
+    const totalFloors = run?.runLength ?? 0;
+
+    const rows: [string, string][] = [
+      ['DISTANCE',  distM > 0 ? distStr : '—'],
+      ['AVG POWER', avgPowW > 0 ? `${avgPowW} W` : '—'],
+      ['AVG CADENCE', avgCadRpm > 0 ? `${avgCadRpm} rpm` : '—'],
+      ['FLOOR', totalFloors > 0 ? `${currentFloor} / ${totalFloors}` : '—'],
+    ];
+
+    const panW = 190;
+    const rowH = 26;
+    const padV = 12;
+    const padH = 10;
+    const titleH = 22;
+    const panH = padV + titleH + rows.length * rowH + padV;
     const x = 20;
-    const y = this.scale.height - h - 20;
+    const y = this.scale.height - panH - 20;
 
-    this.legendContainer = this.add.container(x, y).setScrollFactor(0);
-    
-    // Legend Background
+    this.statsContainer = this.add.container(x, y).setScrollFactor(0).setDepth(10);
+
     const bg = this.add.graphics();
     bg.fillStyle(0x000000, 0.7);
-    bg.fillRoundedRect(0, 0, w, h, 8);
-    bg.lineStyle(2, 0x2a2018, 1);
-    bg.strokeRoundedRect(0, 0, w, h, 8);
-    this.legendContainer.add(bg);
+    bg.fillRoundedRect(0, 0, panW, panH, 8);
+    bg.lineStyle(1, 0x2a2018, 1);
+    bg.strokeRoundedRect(0, 0, panW, panH, 8);
+    this.statsContainer.add(bg);
 
-    // Title
-    this.legendContainer.add(this.add.text(w/2, 10, "LEGEND", {
-        fontFamily: 'monospace', fontSize: '12px', color: '#aaaaaa', fontStyle: 'bold'
+    this.statsContainer.add(this.add.text(panW / 2, padV - 2, 'RUN STATS', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#aaaaaa', fontStyle: 'bold',
     }).setOrigin(0.5, 0));
 
-    let yOff = 35;
-    (Object.keys(NODE_ICONS) as NodeType[]).forEach(type => {
-      const color = NODE_COLORS[type];
-      
-      // Node Circle
-      const circle = this.add.arc(25, yOff, 10, 0, 360, false, color);
-      
-      // Icon
-      const icon = this.add.text(25, yOff, NODE_ICONS[type], {
-        fontFamily: 'monospace', fontSize: '12px', color: '#ffffff', fontStyle: 'bold'
-      }).setOrigin(0.5);
-
-      // Label
-      const label = this.add.text(45, yOff, NODE_DESCRIPTIONS[type], {
-        fontFamily: 'monospace', fontSize: '12px', color: '#ffffff'
-      }).setOrigin(0, 0.5);
-      
-      this.legendContainer.add([circle, icon, label]);
-      yOff += 28;
+    rows.forEach(([label, value], i) => {
+      const ry = padV + titleH + i * rowH;
+      this.statsContainer.add(this.add.text(padH, ry, label, {
+        fontFamily: 'monospace', fontSize: '11px', color: '#888888',
+      }).setOrigin(0, 0));
+      this.statsContainer.add(this.add.text(panW - padH, ry, value, {
+        fontFamily: 'monospace', fontSize: '11px', color: '#e8dcc8', fontStyle: 'bold',
+      }).setOrigin(1, 0));
     });
   }
 
@@ -668,9 +741,34 @@ export class MapScene extends Phaser.Scene {
     const run = RunStateManager.getRun();
     if (!run) return;
 
+    // ── Item catalog ────────────────────────────────────────────────────────
+    interface ShopItem {
+      id: string;
+      label: string;
+      description: string;
+      basePrice: number;
+      color: number;
+      hoverColor: number;
+      /** false = one per run (tailwind), true = stackable with scaling price */
+      stackable: boolean;
+    }
+    const CATALOG: ShopItem[] = [
+      { id: 'tailwind',        label: 'TAILWIND',          description: '2× power toggle during ride',   basePrice: 100, color: 0x2a2a44, hoverColor: 0x3a3a5a, stackable: false },
+      { id: 'teleport',        label: 'TELEPORT SCROLL',   description: 'Warp to any visited node',       basePrice: 10,  color: 0x442244, hoverColor: 0x553355, stackable: true  },
+      { id: 'aero_helmet',     label: 'AERO HELMET',       description: '+5% drag reduction (stacks)',    basePrice: 80,  color: 0x1a2a3a, hoverColor: 0x2a3a4a, stackable: true  },
+      { id: 'gold_crank',      label: 'SOLID GOLD CRANK',  description: '×2.0 permanent power (stacks)', basePrice: 200, color: 0x3a2a00, hoverColor: 0x4a3a00, stackable: true  },
+      { id: 'antigrav_pedals', label: 'ANTIGRAV PEDALS',   description: '×0.5 rider weight (stacks)',     basePrice: 150, color: 0x1a3a1a, hoverColor: 0x2a4a2a, stackable: true  },
+    ];
+
+    const itemPrice = (item: ShopItem): number => {
+      const count = run.inventory.filter(i => i === item.id).length;
+      return Math.round(item.basePrice * Math.pow(1.5, count));
+    };
+
+    // ── Layout ──────────────────────────────────────────────────────────────
     const w = this.scale.width;
     const h = this.scale.height;
-    const overlay = this.add.container(0, 0).setDepth(2000); // Top of everything
+    const overlay = this.add.container(0, 0).setDepth(2000);
 
     const bg = this.add.graphics();
     bg.fillStyle(0x000000, 0.85);
@@ -678,9 +776,12 @@ export class MapScene extends Phaser.Scene {
     bg.setInteractive(new Phaser.Geom.Rectangle(0, 0, w, h), Phaser.Geom.Rectangle.Contains);
     overlay.add(bg);
 
-    const pw = 400, ph = 300;
-    const px = (w - pw) / 2, py = (h - ph) / 2;
-    
+    const ITEM_H = 52;
+    const pw = 420;
+    const ph = 90 + CATALOG.length * (ITEM_H + 8) + 50;
+    const px = (w - pw) / 2;
+    const py = (h - ph) / 2;
+
     const panel = this.add.graphics();
     panel.fillStyle(0x1a1a2a, 1);
     panel.fillRoundedRect(px, py, pw, ph, 12);
@@ -688,99 +789,117 @@ export class MapScene extends Phaser.Scene {
     panel.strokeRoundedRect(px, py, pw, ph, 12);
     overlay.add(panel);
 
-    overlay.add(this.add.text(w / 2, py + 30, 'TRAIL SHOP', {
-      fontFamily: 'monospace', fontSize: '26px', color: '#ffcc00', fontStyle: 'bold'
+    overlay.add(this.add.text(w / 2, py + 24, 'TRAIL SHOP', {
+      fontFamily: 'monospace', fontSize: '22px', color: '#ffcc00', fontStyle: 'bold',
     }).setOrigin(0.5));
 
-    const goldTxt = this.add.text(w / 2, py + 70, `GOLD: ${run.gold}`, {
-      fontFamily: 'monospace', fontSize: '18px', color: '#ffffff'
+    const goldTxt = this.add.text(w / 2, py + 58, `GOLD: ${run.gold}`, {
+      fontFamily: 'monospace', fontSize: '15px', color: '#ffffff',
     }).setOrigin(0.5);
     overlay.add(goldTxt);
 
     const itemX = w / 2;
-    const itemY = py + 120; // Moved up slightly
-    const priceTailwind = 100;
-    const priceTeleport = 10;
+    let firstItemY = py + 82;
 
-    // ── Item 1: Tailwind ──
-    const btnTailwind = this.add.rectangle(itemX, itemY, 320, 50, 0x2a2a44).setInteractive({ useHandCursor: true });
-    const txtTailwind = this.add.text(itemX, itemY, `TAILWIND (2x POWER)\nPrice: ${priceTailwind} GOLD`, {
-      fontFamily: 'monospace', fontSize: '14px', color: '#ffffff', align: 'center'
-    }).setOrigin(0.5);
-    overlay.add([btnTailwind, txtTailwind]);
+    // ── Build rows ──────────────────────────────────────────────────────────
+    const btns:  Phaser.GameObjects.Rectangle[] = [];
+    const txts:  Phaser.GameObjects.Text[]      = [];
 
-    // ── Item 2: Teleport ──
-    const itemY2 = itemY + 60;
-    const btnTeleport = this.add.rectangle(itemX, itemY2, 320, 50, 0x442244).setInteractive({ useHandCursor: true });
-    const txtTeleport = this.add.text(itemX, itemY2, `TELEPORT SCROLL\nPrice: ${priceTeleport} GOLD`, {
-      fontFamily: 'monospace', fontSize: '14px', color: '#ff88ff', align: 'center'
-    }).setOrigin(0.5);
-    overlay.add([btnTeleport, txtTeleport]);
+    for (let i = 0; i < CATALOG.length; i++) {
+      const item = CATALOG[i];
+      const iy = firstItemY + i * (ITEM_H + 8);
 
+      const btn = this.add.rectangle(itemX, iy, pw - 20, ITEM_H, item.color).setInteractive({ useHandCursor: true });
+      const txt = this.add.text(itemX, iy, '', {
+        fontFamily: 'monospace', fontSize: '12px', color: '#ffffff', align: 'center',
+      }).setOrigin(0.5);
+
+      overlay.add([btn, txt]);
+      btns.push(btn);
+      txts.push(txt);
+    }
+
+    // ── Refresh state ───────────────────────────────────────────────────────
     const refreshShop = () => {
       goldTxt.setText(`GOLD: ${run.gold}`);
 
-      // Update Tailwind
-      if (run.inventory.includes('tailwind')) {
-        txtTailwind.setText('TAILWIND - OWNED');
-        btnTailwind.setFillStyle(0x1a5a3a);
-        btnTailwind.disableInteractive();
-      } else if (run.gold < priceTailwind) {
-        btnTailwind.setFillStyle(0x442222);
-        btnTailwind.disableInteractive();
-        txtTailwind.setAlpha(0.5);
-      } else {
-        btnTailwind.setFillStyle(0x2a2a44);
-        btnTailwind.setInteractive();
-        txtTailwind.setAlpha(1);
-      }
+      for (let i = 0; i < CATALOG.length; i++) {
+        const item = CATALOG[i];
+        const btn  = btns[i];
+        const txt  = txts[i];
+        const price = itemPrice(item);
+        const owned = run.inventory.filter(i2 => i2 === item.id).length;
+        const soldOut = !item.stackable && owned > 0;
+        const canAfford = run.gold >= price;
 
-      // Update Teleport (Consumable, so always buyable if afforded)
-      if (run.gold < priceTeleport) {
-        btnTeleport.setFillStyle(0x332222);
-        btnTeleport.disableInteractive();
-        txtTeleport.setAlpha(0.5);
-      } else {
-        btnTeleport.setFillStyle(0x442244);
-        btnTeleport.setInteractive();
-        txtTeleport.setAlpha(1);
+        if (soldOut) {
+          txt.setText(`${item.label}\n✓ OWNED`);
+          btn.setFillStyle(0x1a5a3a);
+          btn.disableInteractive();
+          txt.setAlpha(0.7);
+        } else if (!canAfford) {
+          const ownedStr = owned > 0 ? ` (×${owned})` : '';
+          txt.setText(`${item.label}${ownedStr}\n${item.description} — ${price} GOLD`);
+          btn.setFillStyle(0x3a2222);
+          btn.disableInteractive();
+          txt.setAlpha(0.45);
+        } else {
+          const ownedStr = owned > 0 ? ` (×${owned})` : '';
+          txt.setText(`${item.label}${ownedStr}\n${item.description} — ${price} GOLD`);
+          btn.setFillStyle(item.color);
+          btn.setInteractive({ useHandCursor: true });
+          txt.setAlpha(1);
+        }
       }
     };
 
-    btnTailwind.on('pointerdown', () => {
-      if (RunStateManager.spendGold(priceTailwind)) {
-        RunStateManager.addToInventory('tailwind');
-        refreshShop();
-        this.updateGoldUI();
-      }
-    });
-    
-    btnTeleport.on('pointerdown', () => {
-      if (RunStateManager.spendGold(priceTeleport)) {
-        RunStateManager.addToInventory('teleport');
-        refreshShop();
-        this.updateGoldUI();
-      }
-    });
+    // ── Purchase handlers ───────────────────────────────────────────────────
+    for (let i = 0; i < CATALOG.length; i++) {
+      const item = CATALOG[i];
+      const btn  = btns[i];
 
-    // Hover effects
-    btnTailwind.on('pointerover', () => { if (btnTailwind.input!.enabled) btnTailwind.setFillStyle(0x3a3a5a); });
-    btnTailwind.on('pointerout', () => { if (btnTailwind.input!.enabled) btnTailwind.setFillStyle(0x2a2a44); });
-    
-    btnTeleport.on('pointerover', () => { if (btnTeleport.input!.enabled) btnTeleport.setFillStyle(0x553355); });
-    btnTeleport.on('pointerout', () => { if (btnTeleport.input!.enabled) btnTeleport.setFillStyle(0x442244); });
+      btn.on('pointerdown', () => {
+        const price = itemPrice(item);
+        if (!RunStateManager.spendGold(price)) return;
+
+        switch (item.id) {
+          case 'tailwind':
+          case 'teleport':
+            RunStateManager.addToInventory(item.id);
+            break;
+          case 'aero_helmet':
+            RunStateManager.addToInventory(item.id);
+            RunStateManager.applyModifier({ dragReduction: 0.05 });
+            break;
+          case 'gold_crank':
+            RunStateManager.addToInventory(item.id);
+            RunStateManager.applyModifier({ powerMult: 2.0 });
+            break;
+          case 'antigrav_pedals':
+            RunStateManager.addToInventory(item.id);
+            RunStateManager.applyModifier({ weightMult: 0.5 });
+            break;
+        }
+        refreshShop();
+        this.updateGoldUI();
+      });
+
+      btn.on('pointerover', () => { if (btn.input?.enabled) btn.setFillStyle(item.hoverColor); });
+      btn.on('pointerout',  () => { if (btn.input?.enabled) btn.setFillStyle(item.color); });
+    }
 
     refreshShop();
 
-    const closeBtn = this.add.rectangle(w / 2, py + ph - 40, 120, 36, 0x444444).setInteractive({ useHandCursor: true });
+    // ── Close button ────────────────────────────────────────────────────────
+    const closeBtnY = py + ph - 28;
+    const closeBtn = this.add.rectangle(w / 2, closeBtnY, 120, 34, 0x444444).setInteractive({ useHandCursor: true });
     overlay.add(closeBtn);
-    overlay.add(this.add.text(w / 2, py + ph - 40, 'CLOSE', {
-      fontFamily: 'monospace', fontSize: '14px', color: '#ffffff', fontStyle: 'bold'
+    overlay.add(this.add.text(w / 2, closeBtnY, 'CLOSE', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#ffffff', fontStyle: 'bold',
     }).setOrigin(0.5));
-
     closeBtn.on('pointerdown', () => overlay.destroy());
     closeBtn.on('pointerover', () => closeBtn.setFillStyle(0x666666));
-    closeBtn.on('pointerout', () => closeBtn.setFillStyle(0x444444));
+    closeBtn.on('pointerout',  () => closeBtn.setFillStyle(0x444444));
   }
 
   private openEliteChallenge(node: MapNode): void {
@@ -1142,7 +1261,7 @@ export class MapScene extends Phaser.Scene {
     this.teleportBtn = null;
     this.isTeleportMode = false;
     this.nodeObjects.clear();
-    if (this.legendContainer) this.legendContainer.destroy();
+    if (this.statsContainer) this.statsContainer.destroy();
     if (this.tooltipContainer) this.tooltipContainer.destroy();
   }
 }

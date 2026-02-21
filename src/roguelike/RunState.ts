@@ -31,9 +31,19 @@ export interface MapEdge {
   isCleared?: boolean; // True if the player has successfully traversed this edge at least once
 }
 
+export interface RunModifiers {
+  /** Multiplicative power bonus. 1.0 = no bonus. Stacks multiplicatively. */
+  powerMult: number;
+  /** Additive drag reduction fraction. 0.0 = none, 0.99 = near vacuum. Capped at 0.99. */
+  dragReduction: number;
+  /** Multiplicative weight factor. 1.0 = normal, 0.01 = near weightless. Stacks multiplicatively, floored at 0.01. */
+  weightMult: number;
+}
+
 export interface RunData {
   gold: number;
   inventory: string[];
+  modifiers: RunModifiers;
   currentNodeId: string;
   visitedNodeIds: string[]; // Track all nodes the player has visited
   activeEdge: MapEdge | null; // The edge currently being traversed (or just finished)
@@ -46,6 +56,13 @@ export interface RunData {
   weightKg: number; // Rider weight in kg (stored for save/load)
   units: Units; // Display preference (stored for save/load)
   fitWriter: FitWriter;
+  // Cumulative ride stats across all completed segments
+  stats: {
+    totalRiddenDistanceM: number;
+    totalRecordCount: number;
+    totalPowerSum: number;
+    totalCadenceSum: number;
+  };
 }
 
 /** Global singleton or context-managed state for the current run */
@@ -57,6 +74,7 @@ export class RunStateManager {
     this.instance = {
       gold: 0,
       inventory: [],
+      modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 },
       currentNodeId: '', // Set by map generator
       visitedNodeIds: [],
       activeEdge: null,
@@ -69,6 +87,7 @@ export class RunStateManager {
       weightKg,
       units,
       fitWriter: new FitWriter(Date.now()),
+      stats: { totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
     };
     this.persist();
     return this.instance;
@@ -76,6 +95,8 @@ export class RunStateManager {
 
   static loadFromSave(saved: import('../services/SaveService').SavedRun): RunData {
     this.instance = {
+      modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 }, // default for old saves
+      stats: { totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
       ...saved.runData,
       activeEdge: null,
       fitWriter: new FitWriter(Date.now()),
@@ -170,6 +191,34 @@ export class RunStateManager {
       this.instance.inventory.push(item);
       this.persist();
     }
+  }
+
+  static getModifiers(): RunModifiers {
+    return this.instance?.modifiers ?? { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 };
+  }
+
+  /**
+   * Applies a modifier delta to the run's stacking bonuses.
+   * - powerMult / weightMult: multiplicative
+   * - dragReduction: additive, capped at 0.99
+   */
+  static applyModifier(delta: Partial<RunModifiers>): void {
+    if (!this.instance) return;
+    const m = this.instance.modifiers;
+    if (delta.powerMult !== undefined)    m.powerMult     = m.powerMult * delta.powerMult;
+    if (delta.dragReduction !== undefined) m.dragReduction = Math.min(0.99, m.dragReduction + delta.dragReduction);
+    if (delta.weightMult !== undefined)   m.weightMult    = Math.max(0.01, m.weightMult * delta.weightMult);
+    this.persist();
+  }
+
+  static recordSegmentStats(distanceM: number, recordCount: number, powerSum: number, cadenceSum: number): void {
+    if (!this.instance) return;
+    const s = this.instance.stats;
+    s.totalRiddenDistanceM += distanceM;
+    s.totalRecordCount     += recordCount;
+    s.totalPowerSum        += powerSum;
+    s.totalCadenceSum      += cadenceSum;
+    this.persist();
   }
 
   /** Saves current run state to localStorage. Called after every meaningful state change. */

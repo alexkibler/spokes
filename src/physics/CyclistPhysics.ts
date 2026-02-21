@@ -32,38 +32,48 @@ export const DEFAULT_PHYSICS: PhysicsConfig = {
 
 const G = 9.80665; // m/s²
 
+/** Subset of RunModifiers needed by the physics engine (avoids a circular import). */
+export interface PhysicsModifiers {
+  powerMult: number;
+  dragReduction: number;
+  weightMult: number;
+}
+
 /**
  * Compute the forces and resulting acceleration (m/s²) for a given power and velocity.
+ * Pass optional modifiers to apply stacking run bonuses (power mult, drag reduction, weight mult).
  */
 export function calculateAcceleration(
   powerW: number,
   currentVelocityMs: number,
   config: PhysicsConfig = DEFAULT_PHYSICS,
+  modifiers?: PhysicsModifiers,
 ): number {
-  const { massKg, cdA, rhoAir, crr, grade } = config;
+  const { cdA, rhoAir, crr, grade } = config; // massKg accessed via effectiveMass below
+  const effectivePower = powerW * (modifiers?.powerMult ?? 1);
+  const effectiveCdA   = cdA * (1 - (modifiers?.dragReduction ?? 0));
+  const effectiveMass  = config.massKg * (modifiers?.weightMult ?? 1);
   const theta = Math.atan(grade);
   const cosTheta = Math.cos(theta);
   const sinTheta = Math.sin(theta);
 
   // F_propulsion = P / v
   // Avoid division by zero at standstill.
-  // When starting from 0, we assume some minimal velocity or static torque,
-  // but for simplicity, we'll gate v.
   const v = Math.max(currentVelocityMs, 0.1);
-  const propulsionForce = powerW / v;
+  const propulsionForce = effectivePower / v;
 
   // Resistance forces:
   // Drag = ½ρCdA·v²
-  const aeroForce = 0.5 * rhoAir * cdA * currentVelocityMs * currentVelocityMs;
+  const aeroForce = 0.5 * rhoAir * effectiveCdA * currentVelocityMs * currentVelocityMs;
   // Rolling resistance = Crr·m·g·cosθ
-  const rollingForce = crr * massKg * G * cosTheta;
+  const rollingForce = crr * effectiveMass * G * cosTheta;
   // Gravity = m·g·sinθ
-  const gradeForce = massKg * G * sinTheta;
+  const gradeForce = effectiveMass * G * sinTheta;
 
   // F_net = F_propulsion - (F_aero + F_rolling + F_grade)
   const netForce = propulsionForce - (aeroForce + rollingForce + gradeForce);
 
-  return netForce / massKg;
+  return netForce / effectiveMass;
 }
 
 /** Convert m/s to km/h */
