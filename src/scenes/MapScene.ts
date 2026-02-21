@@ -144,7 +144,12 @@ export class MapScene extends Phaser.Scene {
     this.setupScrolling();
 
     this.scale.on('resize', this.onResize, this);
-    this.onResize();
+
+    // Set camera bounds and initial scroll position now that everything is ready.
+    // (Can't go through onResize here — isActive() is false during create().)
+    const vh = this.virtualHeight;
+    this.cameras.main.setBounds(0, 0, this.scale.width, vh);
+    this.scrollToCurrentNode();
   }
 
   private setupScrolling(): void {
