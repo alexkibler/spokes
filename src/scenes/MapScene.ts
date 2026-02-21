@@ -24,6 +24,13 @@ const SURFACE_FILL_COLORS: Record<SurfaceType, number> = {
   mud:     0x226622, // Darker green
 };
 
+const SURFACE_LABELS: Record<SurfaceType, string> = {
+  asphalt: 'ASPHALT',
+  gravel:  'GRAVEL',
+  dirt:    'DIRT',
+  mud:     'MUD',
+};
+
 const NODE_COLORS: Record<NodeType, number> = {
   start:    0x333333,
   standard: 0x008872,
@@ -66,6 +73,7 @@ export class MapScene extends Phaser.Scene {
   private mapContainer!: Phaser.GameObjects.Container;
   private graphics!: Phaser.GameObjects.Graphics;
   private nodeObjects = new Map<string, Phaser.GameObjects.Container>();
+  private edgeObjects = new Map<string, Phaser.GameObjects.Rectangle>();
 
   private tooltipContainer!: Phaser.GameObjects.Container;
   private tooltipText!: Phaser.GameObjects.Text;
@@ -364,16 +372,25 @@ export class MapScene extends Phaser.Scene {
       fromNode.connectedTo.forEach(toId => {
         const toNode = nodes.find(n => n.id === toId)!;
         const segmentKm = 1.0 + Math.random(); // 1.0–2.0 km per edge
+        const surface = this.getRandomSurface();
         edges.push({
           from: fromNode.id,
           to: toNode.id,
-          profile: generateCourseProfile(segmentKm, this.getMaxGrade(run.difficulty, toNode.type))
+          profile: generateCourseProfile(segmentKm, this.getMaxGrade(run.difficulty, toNode.type), surface)
         });
       });
     });
 
     run.nodes = nodes;
     run.edges = edges;
+  }
+
+  private getRandomSurface(): SurfaceType {
+    const r = Math.random();
+    if (r < 0.70) return 'asphalt';
+    if (r < 0.85) return 'gravel';
+    if (r < 0.95) return 'dirt';
+    return 'mud';
   }
 
   private getRandomNodeType(floor: number, total: number): NodeType {
@@ -414,11 +431,19 @@ export class MapScene extends Phaser.Scene {
     const w = this.scale.width;
     const h = this.virtualHeight;
 
-    // Remove any containers that aren't in the run anymore (cleanup)
+    // Cleanup node objects
     for (const [id, container] of this.nodeObjects.entries()) {
       if (!run.nodes.find(n => n.id === id)) {
         container.destroy();
         this.nodeObjects.delete(id);
+      }
+    }
+    // Cleanup edge objects
+    for (const [id, rect] of this.edgeObjects.entries()) {
+      const parts = id.split('_to_');
+      if (!run.edges.find(e => e.from === parts[0] && e.to === parts[1])) {
+        rect.destroy();
+        this.edgeObjects.delete(id);
       }
     }
 
@@ -449,6 +474,34 @@ export class MapScene extends Phaser.Scene {
       }
       
       this.drawDottedLine(fx, fy, tx, ty, gap, dotSize);
+
+      // ── Create/Update Interactive Edge Hitbox ────────────────────────────
+      const edgeId = `${edge.from}_to_${edge.to}`;
+      const dist = Phaser.Math.Distance.Between(fx, fy, tx, ty);
+      const angle = Phaser.Math.Angle.Between(fx, fy, tx, ty);
+      let rect = this.edgeObjects.get(edgeId);
+      if (!rect) {
+        rect = this.add.rectangle((fx + tx) / 2, (fy + ty) / 2, dist, 24, 0x000000, 0);
+        rect.setRotation(angle);
+        rect.setInteractive();
+        this.edgeObjects.set(edgeId, rect);
+        this.mapContainer.add(rect);
+      } else {
+        rect.setPosition((fx + tx) / 2, (fy + ty) / 2);
+        rect.setSize(dist, 24);
+        rect.setRotation(angle);
+      }
+
+      const distM = edge.profile.totalDistanceM;
+      const distStr = this.units === 'imperial'
+        ? `${(distM / 1609.344).toFixed(1)} mi`
+        : `${(distM / 1000).toFixed(1)} km`;
+      const tipText = `${SURFACE_LABELS[surface]}\n${distStr}`;
+
+      rect.off('pointerover').on('pointerover', () => {
+        this.showTooltip((fx + tx) / 2, (fy + ty) / 2, tipText);
+      });
+      rect.off('pointerout').on('pointerout', () => this.hideTooltip());
     });
 
     // Draw Nodes
@@ -1311,6 +1364,7 @@ export class MapScene extends Phaser.Scene {
     this.isTeleportMode = false;
     this.overlayActive = false;
     this.nodeObjects.clear();
+    this.edgeObjects.clear();
     if (this.statsContainer) this.statsContainer.destroy();
     if (this.tooltipContainer) this.tooltipContainer.destroy();
   }
