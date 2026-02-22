@@ -10,6 +10,18 @@ import type { RunData, MapNode, MapEdge } from '../roguelike/RunState';
 import type { Units } from '../scenes/MenuScene';
 
 const SAVE_KEY = 'paperPeloton_runSave';
+
+/**
+ * Increment this whenever SerializedRunData gains a required field or its
+ * shape changes in a backwards-incompatible way.  Old saves with a different
+ * version are discarded and the player must start a fresh run.
+ *
+ * Future: replace the discard with a migration table keyed by (from, to) so
+ * old saves can be transformed rather than thrown away. (see IDEAS.md)
+ *
+ * Version history:
+ *   1 – initial schema
+ */
 const SCHEMA_VERSION = 1;
 
 /** RunData fields that are safe to JSON-serialize (excludes fitWriter) */
@@ -67,19 +79,31 @@ export class SaveService {
   }
 
   static load(): SavedRun | null {
+    return SaveService.loadResult().save;
+  }
+
+  /**
+   * Like load(), but also reports whether a save existed but was discarded
+   * due to a schema version mismatch.  Use this when the caller needs to
+   * surface a "your save was incompatible" message to the player.
+   */
+  static loadResult(): { save: SavedRun | null; wasIncompatible: boolean } {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
-      if (!raw) return null;
+      if (!raw) return { save: null, wasIncompatible: false };
 
       const parsed = JSON.parse(raw) as SavedRun;
-      if (parsed.version !== SCHEMA_VERSION) {
-        console.warn('[SaveService] Save schema mismatch, discarding save.');
-        return null;
+      if (typeof parsed.version !== 'number' || parsed.version !== SCHEMA_VERSION) {
+        console.warn(
+          `[SaveService] Save schema mismatch (saved v${parsed.version}, current v${SCHEMA_VERSION}). Discarding.`,
+        );
+        SaveService.clear(); // remove the stale save so it doesn't surface again
+        return { save: null, wasIncompatible: true };
       }
 
-      return parsed;
+      return { save: parsed, wasIncompatible: false };
     } catch {
-      return null;
+      return { save: null, wasIncompatible: false };
     }
   }
 

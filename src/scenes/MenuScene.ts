@@ -155,9 +155,11 @@ export class MenuScene extends Phaser.Scene {
     this.buildDevToggle();
 
     // Check for an existing save and build the save banner if one exists
-    const existingSave = SaveService.load();
+    const { save: existingSave, wasIncompatible } = SaveService.loadResult();
     if (existingSave) {
       this.buildSaveBanner(existingSave);
+    } else if (wasIncompatible) {
+      this.buildIncompatibleSaveNotice();
     }
 
     // Delay check slightly to allow BleClient polyfill to populate navigator.bluetooth
@@ -908,6 +910,26 @@ export class MenuScene extends Phaser.Scene {
       fontSize: '10px',
       color: '#44aa66',
     }).setOrigin(1, 0.5));
+  }
+
+  /** Shown in place of the save banner when a save exists but has a stale schema version. */
+  private buildIncompatibleSaveNotice(): void {
+    const BANNER_W = 620;
+    const bg = this.add.graphics();
+    bg.fillStyle(0x2a1a00, 0.85);
+    bg.fillRoundedRect(-BANNER_W / 2, -18, BANNER_W, 36, 6);
+    bg.lineStyle(1, 0x886600, 0.8);
+    bg.strokeRoundedRect(-BANNER_W / 2, -18, BANNER_W, 36, 6);
+
+    const notice = this.add.container(0, 0);
+    notice.add(bg);
+    notice.add(this.add.text(0, 0,
+      'SAVE INCOMPATIBLE  ·  Game was updated  ·  Previous run discarded  ·  Start a fresh run',
+      { fontFamily: 'monospace', fontSize: '11px', color: '#ffcc44', letterSpacing: 1 },
+    ).setOrigin(0.5, 0.5));
+
+    // saveBannerContainer is used by onResize to position the banner
+    this.saveBannerContainer = notice;
   }
 
   private buildDevToggle(): void {
