@@ -10,18 +10,33 @@
         padding: 0;
         box-sizing: border-box;
       }
-      body {
-        background: #0a0a0a;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
+      html {
+        /* Prevent iOS Safari from treating touches as scroll gestures
+           before they reach the Phaser canvas. */
         overflow: hidden;
         touch-action: none;
+        height: 100%;
+      }
+      body {
+        background: #0a0a0a;
+        overflow: hidden;
+        touch-action: none;
+        /* Give the body an explicit size so Phaser's RESIZE mode can
+           read a non-zero parent dimension on initial load, avoiding
+           the circular-dependency where the canvas size depends on the
+           parent whose size depends on the canvas. */
+        width: 100%;
+        height: 100%;
       }
       #game-container {
+        /* Explicit 100% fill breaks the circular dependency: Phaser reads
+           clientWidth/clientHeight here and gets the real viewport size,
+           then sizes (and scales) the canvas to match on every device
+           orientation. Without this, on portrait mobile the canvas can
+           remain stuck at the configured 960×540 landscape default. */
         display: block;
+        width: 100%;
+        height: 100%;
       }
       #unsupported-banner {
         display: none;
