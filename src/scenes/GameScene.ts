@@ -1,20 +1,7 @@
 /**
  * GameScene.ts
  *
- * Primary Phaser 3 scene for Paper Peloton – Phase 3.
- *
- * Features:
- *   • 3-layer paper-style parallax background (mountains, hills, ground, road)
- *   • Physics-driven velocity: watt output → m/s via CyclistPhysics (grade-aware)
- *   • 5-metric HUD strip: speed, grade, power, distance, cadence
- *   • Scrolling elevation graph strip showing full course with position marker
- *   • Mock Mode toggle and BT Connect buttons in a floating bottom strip
- *   • Bi-directional Bluetooth: grade sent to trainer via FTMS 0x2AD9
- *
- * Architecture:
- *   The scene holds a reference to ITrainerService.  Toggling mock mode
- *   disconnects the current service, swaps the reference, and reconnects.
- *   All Phaser logic is decoupled from the data source.
+ * Primary Phaser 3 scene for Paper Peloton.
  */
 
 import Phaser from 'phaser';
@@ -29,8 +16,6 @@ import { evaluateChallenge, grantChallengeReward, type EliteChallenge } from '..
 import type { RacerProfile } from '../race/RacerProfile';
 import {
   calculateAcceleration,
-  msToKmh,
-  msToMph,
   DEFAULT_PHYSICS,
   type PhysicsConfig,
 } from '../physics/CyclistPhysics';
@@ -41,13 +26,23 @@ import {
   getSurfaceAtDistance,
   getCrrForSurface,
   CRR_BY_SURFACE,
-  buildElevationSamples,
   type CourseProfile,
-  type ElevationSample,
   type SurfaceType,
 } from '../course/CourseProfile';
+import { THEME } from '../theme';
+import { GameHUD } from './ui/GameHUD';
 
-// ─── Effect / powerup types ───────────────────────────────────────────────────
+const SURFACE_LABELS: Record<SurfaceType, string> = {
+  asphalt: 'ASPHALT',
+  gravel:  'GRAVEL',
+  dirt:    'DIRT',
+  mud:     'MUD',
+};
+import { ElevationGraph } from './ui/ElevationGraph';
+import { RideOverlay, type RideStats } from './ui/RideOverlay';
+import { Button } from '../ui/Button';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 type EffectType = 'headwind' | 'tailwind';
 
@@ -65,13 +60,6 @@ const EFFECT_META: Record<EffectType, {
   tailwind: { label: 'TAILWIND', multiplier: 2,   color: 0xffcc00, hexColor: '#ffcc00' },
 };
 
-// ─── IK helper ────────────────────────────────────────────────────────────────
-
-/**
- * Computes the knee joint position for a two-bone leg chain.
- * kneeSide = -1 bends the knee forward (toward the front wheel), which is
- * correct for both legs on a forward-facing cyclist.
- */
 function computeKnee(
   hipX: number, hipY: number,
   footX: number, footY: number,
@@ -84,12 +72,10 @@ function computeKnee(
   const total = upperLen + lowerLen;
 
   if (dist >= total - 0.01) {
-    // Fully extended – place knee proportionally along the line
     const t = upperLen / total;
     return [hipX + dx * t, hipY + dy * t];
   }
 
-  // Law of cosines: angle at the hip
   const cosA = (dist * dist + upperLen * upperLen - lowerLen * lowerLen)
     / (2 * dist * upperLen);
   const angleA = Math.acos(Math.max(-1, Math.min(1, cosA)));
@@ -101,25 +87,11 @@ function computeKnee(
   ];
 }
 
-// ─── Layout constants ──────────────────────────────────────────────────────────
-
-/** Pixels scrolled per (m/s) of velocity — road layer multiplier */
-const WORLD_SCALE = 50; // px/(m/s)
-
-/** Minimum grade delta before broadcasting to the trainer (avoids BT spam) */
-const GRADE_SEND_THRESHOLD = 0.001; // 0.1%
-
-/** Exponential lerp rate for visual grade smoothing (~63% convergence per second) */
+const WORLD_SCALE = 50;
+const GRADE_SEND_THRESHOLD = 0.001;
 const GRADE_LERP_RATE = 1.0;
-
-// ─── Drafting constants ───────────────────────────────────────────────────────
-
-/** Maximum distance (m) at which a trailing rider benefits from draft */
 const DRAFT_MAX_DISTANCE_M = 20;
-/** Maximum CdA reduction fraction from drafting (30% = peloton-level benefit) */
 const DRAFT_MAX_CDA_REDUCTION = 0.30;
-
-// ─── Ghost racer state ────────────────────────────────────────────────────────
 
 interface GhostState {
   racer:        RacerProfile;
@@ -129,32 +101,15 @@ interface GhostState {
   physics:      PhysicsConfig;
   graphics:     Phaser.GameObjects.Graphics;
   finishedTime: number | null;
-  /** CdA reduction fraction from drafting another rider (0–DRAFT_MAX_CDA_REDUCTION) */
   draftFactor:  number;
 }
 
-// ─── Reference canvas dimensions (used for texture generation) ────────────────
-
-/** Width of each parallax layer texture (tiles horizontally for scrolling). */
 const W = 960;
-/** Height of each parallax layer texture. Tile sprites are scaled to match the actual screen height. */
 const H = 540;
-
-/** Road top in the reference texture, as a fraction of H. */
-const ROAD_TOP_FRAC = 420 / H; // ≈ 0.778
-
-// ─── Elevation graph layout ───────────────────────────────────────────────────
-
-const ELEV_H = 75;
-const ELEV_PAD_X = 32;
-const ELEV_PAD_Y = 8;
-
-// ─── Gameplay constants ───────────────────────────────────────────────────────
+const ROAD_TOP_FRAC = 420 / H;
 
 const DEV_POWER_WATTS = 100000;
 const DEMO_POWER_WATTS = 200;
-
-// ─── Parallax layer definitions ────────────────────────────────────────────────
 
 interface LayerDef {
   key: string;
@@ -165,129 +120,86 @@ interface LayerDef {
 // ─── Scene ────────────────────────────────────────────────────────────────────
 
 export class GameScene extends Phaser.Scene {
-  // Unit preference passed from MenuScene
   private units: Units = 'imperial';
   private weightKg = 75;
   private isRoguelike = false;
   private isDevMode = false;
-  private isBackwards = false; // New flag for R->L traversal
+  private isBackwards = false;
   private ftpW = 200;
   private activeChallenge: EliteChallenge | null = null;
 
-  // Ghost racer state (boss / elite rivals — may be 0..N ghosts)
-  /** Profiles passed in from MapScene; populated before create() runs. */
   private racerProfiles: RacerProfile[] = [];
-  /** Live simulation state for each ghost, built in buildGhostCyclist(). */
   private ghosts: GhostState[] = [];
-  /** Timestamp (ms) when the first ghost crossed the finish line, null until then. */
   private firstGhostFinishedTime: number | null = null;
   private raceGapBg!: Phaser.GameObjects.Graphics;
   private raceGapText!: Phaser.GameObjects.Text;
   private raceGapLabel!: Phaser.GameObjects.Text;
 
-  // Drafting state
-  /** 0–DRAFT_MAX_CDA_REDUCTION: player's current CdA reduction from sitting in any ghost's wake */
   private playerDraftFactor = 0;
   private slipstreamGraphics!: Phaser.GameObjects.Graphics;
   private draftBadgeBg!: Phaser.GameObjects.Graphics;
   private draftBadgeText!: Phaser.GameObjects.Text;
-  private draftAnimOffset = 0; // drives the animated streak motion
+  private draftAnimOffset = 0;
 
-  // Service reference – swapped when toggling demo mode
   private trainer!: ITrainerService;
   private isDemoMode = true;
 
-  // Physics state
   private latestPower = DEMO_POWER_WATTS;
   private smoothVelocityMs = 0;
-  /** Base config (mass + aero constants) – grade is layered on top each frame. */
   private basePhysics: PhysicsConfig = { ...DEFAULT_PHYSICS };
   private physicsConfig: PhysicsConfig = { ...DEFAULT_PHYSICS };
 
-  // Course / elevation state
   private course: CourseProfile = DEFAULT_COURSE;
-  private distanceM = 0;                // total cumulative distance
+  private distanceM = 0;
   private currentGrade = 0;
   private currentSurface: SurfaceType = 'asphalt';
   private lastSentGrade = -999;
-  private lastSentSurface: SurfaceType | null = null; // will be overridden by first sync
+  private lastSentSurface: SurfaceType | null = null;
   private smoothGrade = 0;
 
-  // World container (holds all parallax layers; rotated for grade tilt)
   private worldContainer!: Phaser.GameObjects.Container;
 
-  // Cyclist animation
   private cyclistGraphics!: Phaser.GameObjects.Graphics;
   private crankAngle = 0;
   private cadenceHistory: Array<{ rpm: number; timeMs: number }> = [];
   private avgCadence = 0;
 
-  // Effect / powerup state
   private activeEffect: ActiveEffect | null = null;
-  private rawPower     = DEMO_POWER_WATTS; // unmodified power from trainer
+  private rawPower     = DEMO_POWER_WATTS;
   private runModifiers: RunModifiers = { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 };
 
-  // Effect indicator UI (unused or repurposed for status)
+  // UI Components
+  private hud!: GameHUD;
+  private elevGraph!: ElevationGraph;
+  private rideOverlay: RideOverlay | null = null;
+
   private effectContainer!:   Phaser.GameObjects.Container;
   private effectNameText!:    Phaser.GameObjects.Text;
 
-  // Manual effect buttons
-  private btnHeadwind!: Phaser.GameObjects.Rectangle;
+  private btnHeadwind!: Phaser.GameObjects.Rectangle; // Keeping simple for now or use Button
   private btnTailwind!: Phaser.GameObjects.Rectangle;
+  private btnHeadwindLabel!: Phaser.GameObjects.Text;
+  private btnTailwindLabel!: Phaser.GameObjects.Text;
 
-  // Notification banner UI
   private notifContainer!: Phaser.GameObjects.Container;
   private notifTitle!:     Phaser.GameObjects.Text;
   private notifSub!:       Phaser.GameObjects.Text;
   private notifTween:      Phaser.Tweens.Tween | null = null;
 
-  // Extra power HUD elements
-  private hudRealPower!: Phaser.GameObjects.Text;
-  private hudPowerUnit!: Phaser.GameObjects.Text;
-
-  private elevationSamples: ElevationSample[] = [];
-  private minElevM = 0;
-  private maxElevM = 0;
-  private segmentBoundaries: Array<{
-    startM: number; endM: number;
-    startElevM: number; endElevM: number;
-    grade: number;
-    surface: SurfaceType;
-  }> = [];
-
-  // Parallax layers
   private layerMountains!: Phaser.GameObjects.TileSprite;
   private layerMidHills!: Phaser.GameObjects.TileSprite;
   private layerNearGround!: Phaser.GameObjects.TileSprite;
-  /** One TileSprite per surface type; only the active surface's layer is visible. */
   private roadLayers!: Record<SurfaceType, Phaser.GameObjects.TileSprite>;
 
-  // Pre-connected services passed in from MenuScene
   private preConnectedTrainer: ITrainerService | null = null;
   private preConnectedHrm: HeartRateService | null = null;
 
-  // HUD display objects
-  private hudSpeed!: Phaser.GameObjects.Text;
-  private hudPower!: Phaser.GameObjects.Text;
-  private hudCadence!: Phaser.GameObjects.Text;
-  private hudGrade!: Phaser.GameObjects.Text;
-  private hudDistance!: Phaser.GameObjects.Text;
-  private hudHR!: Phaser.GameObjects.Text;
-
-  // Elevation graph
-  private elevationGraphics!: Phaser.GameObjects.Graphics;
-  private elevLabel!: Phaser.GameObjects.Text;
-  private elevGradeLabel!: Phaser.GameObjects.Text;
-  private elevDistLabel!: Phaser.GameObjects.Text;
-
-  // FIT ride tracking
   private fitWriter!: FitWriter;
   private rideStartTime = 0;
   private currentHR = 0;
   private lastRecordMs = 0;
   private rideComplete = false;
   private overlayVisible = false;
-  // Running sums for overlay stats (updated each recorded sample)
   private recordedPowerSum   = 0;
   private recordedSpeedSum   = 0;
   private recordedCadenceSum = 0;
@@ -296,45 +208,33 @@ export class GameScene extends Phaser.Scene {
   private challengeStartMs = 0;
   private edgeStartRecordCount = 0;
 
-  // Status / button objects
   private statusDot!: Phaser.GameObjects.Arc;
   private statusLabel!: Phaser.GameObjects.Text;
-  private btnMenu!: Phaser.GameObjects.Rectangle;
-  private btnMenuLabel!: Phaser.GameObjects.Text;
+  private btnMenu!: Button;
 
-  private btnHeadwindLabel!: Phaser.GameObjects.Text;
-  private btnTailwindLabel!: Phaser.GameObjects.Text;
-
-  // Challenge status panel (shown during elite segments)
+  // Challenge status panel
   private challengePanel!: Phaser.GameObjects.Graphics;
   private challengePanelTitle!: Phaser.GameObjects.Text;
   private challengePanelValue!: Phaser.GameObjects.Text;
   private challengePanelTarget!: Phaser.GameObjects.Text;
   private challengePanelBar!: Phaser.GameObjects.Graphics;
 
-  // UI containers and backgrounds for resizing
-  private hudBackground!: Phaser.GameObjects.Graphics;
-  private hudSeps: Phaser.GameObjects.Graphics[] = [];
   private bottomStrip!: Phaser.GameObjects.Graphics;
-  private elevBg!: Phaser.GameObjects.Graphics;
+  private cycGroundY = 150;
+  private static readonly WHEEL_R = 18;
 
   constructor() {
     super({ key: 'GameScene' });
   }
-
-  // ── Resize Handler ──────────────────────────────────────────────────────────
 
   private onResize(): void {
     const width = this.scale.width;
     const height = this.scale.height;
     const cx = width / 2;
 
-    // 1. Update World Container (Centered)
+    // 1. Update World
     if (this.worldContainer) {
       this.worldContainer.setPosition(cx, height / 2);
-      // Scale tile sprites to fill the screen. tileScaleY stretches the texture
-      // to cover the full height without vertical tiling; tileScaleX stays 1 so
-      // the texture tiles naturally for horizontal scrolling.
       const tileScaleY = height / H;
       const roadTiles = this.roadLayers ? (Object.values(this.roadLayers) as Phaser.GameObjects.TileSprite[]) : [];
       [this.layerMountains, this.layerMidHills, this.layerNearGround, ...roadTiles].forEach(tile => {
@@ -344,64 +244,32 @@ export class GameScene extends Phaser.Scene {
           tile.setPosition(-width / 2, -height / 2);
         }
       });
-
-      // Cyclist ground Y: road top is ROAD_TOP_FRAC of texture height; map to
-      // container local space (container origin is at screen centre).
       this.cycGroundY = height * (ROAD_TOP_FRAC - 0.5);
     }
 
-    // 2. Update HUD (6 columns)
-    if (this.hudBackground) {
-      this.hudBackground.clear();
-      this.hudBackground.fillStyle(0x000000, 0.55);
-      this.hudBackground.fillRect(0, 0, width, 70);
-
-      const colW   = width / 6;
-      const getX   = (i: number) => i * colW + colW / 2;
-      const sepW   = colW;
-
-      this.hudSeps.forEach((sep, i) => {
-        sep.clear();
-        sep.fillStyle(0x444455, 1);
-        sep.fillRect((i + 1) * sepW, 8, 1, 54);
-      });
-
-      for (let i = 0; i < 6; i++) this.updateHUDColumn(i, getX(i));
-    }
+    // 2. Update HUD
+    this.hud?.onResize(width);
 
     // 3. Update Elevation Graph
-    if (this.elevBg) {
-      this.elevBg.clear();
-      this.elevBg.fillStyle(0x000000, 0.45);
-      this.elevBg.fillRect(0, height - 125, width, ELEV_H);
-      
-      // Update labels
-      if (this.elevGradeLabel) this.elevGradeLabel.setPosition(width - ELEV_PAD_X, height - 120);
-      if (this.elevDistLabel) this.elevDistLabel.setPosition(width - ELEV_PAD_X, height - 125 + ELEV_H - 6);
-      
-      // Re-find the 'ELEV' label and reposition it
-      if (this.elevLabel) {
-        this.elevLabel.setPosition(ELEV_PAD_X, height - 120);
-      }
-    }
+    this.elevGraph?.onResize(width, height);
 
     // 4. Update Bottom Controls
     if (this.bottomStrip) {
       this.bottomStrip.clear();
-      this.bottomStrip.fillStyle(0x000000, 0.50);
-      this.bottomStrip.fillRect(0, height - 50, width, 50);
+      this.bottomStrip.fillStyle(THEME.colors.ui.hudBackground, 0.50);
+      this.bottomStrip.fillRect(0, height - THEME.layout.bottomStripHeight, width, THEME.layout.bottomStripHeight);
 
       const stY = height - 25;
       if (this.statusDot)   this.statusDot.setPosition(56, stY);
       if (this.statusLabel) this.statusLabel.setPosition(68, stY);
 
+      // Re-position menu button (Container)
       if (this.btnMenu) {
         this.btnMenu.setPosition(width - 90, stY);
-        if (this.btnMenuLabel) this.btnMenuLabel.setPosition(width - 90, stY);
       }
     }
 
-    // 5. Manual Effect Buttons
+    // 5. Effect Buttons
     const effectBtnX = width - 100;
     if (this.btnHeadwind) {
       this.btnHeadwind.setPosition(effectBtnX, 120);
@@ -412,39 +280,25 @@ export class GameScene extends Phaser.Scene {
       if (this.btnTailwindLabel) this.btnTailwindLabel.setPosition(effectBtnX, 170);
     }
 
-    // 6. Effect Notification
-    if (this.notifContainer) {
-      this.notifContainer.setPosition(cx, 200);
-    }
-    if (this.effectContainer) {
-      this.effectContainer.setPosition(width - 100, 230);
-    }
-
-    // 7. Race gap panel redraws itself each frame via updateRaceGapPanel
+    // 6. Notifications
+    if (this.notifContainer) this.notifContainer.setPosition(cx, 200);
+    if (this.effectContainer) this.effectContainer.setPosition(width - 100, 230);
   }
-
-  // ── Lifecycle ────────────────────────────────────────────────────────────────
 
   init(data?: {
     course?: CourseProfile;
     weightKg?: number;
     units?: Units;
-    /** Pre-connected FTMS trainer from MenuScene; null → use MockTrainerService. */
     trainer?: ITrainerService | null;
-    /** Pre-connected heart rate monitor from MenuScene; null → no HR display. */
     hrm?: HeartRateService | null;
     isRoguelike?: boolean;
     isDevMode?: boolean;
     isBackwards?: boolean;
     ftpW?: number;
     activeChallenge?: EliteChallenge | null;
-    /** Array of ghost racers (preferred). */
     racers?: RacerProfile[];
-    /** Legacy single-racer shim; wrapped into a 1-element array if provided. */
     racer?: RacerProfile | null;
   }): void {
-    if (import.meta.env.DEV) console.log('[GameScene] init data:', data);
-    // Accept a generated course, rider weight, and unit preference from MenuScene
     this.course = data?.course ?? DEFAULT_COURSE;
     this.units  = data?.units  ?? 'imperial';
     this.weightKg = data?.weightKg ?? 75;
@@ -455,22 +309,13 @@ export class GameScene extends Phaser.Scene {
     this.isBackwards         = data?.isBackwards ?? false;
     this.ftpW                = data?.ftpW ?? 200;
     this.activeChallenge     = data?.activeChallenge ?? null;
-    // Support both the new `racers` array and the legacy single `racer`
     this.racerProfiles = data?.racers ?? (data?.racer ? [data.racer] : []);
 
-    if (import.meta.env.DEV) console.log('[GameScene] isDevMode set to:', this.isDevMode);
-
-    // Bike weight is fixed; rider weight comes from the menu (default 75 kg)
-    const riderWeightKg = data?.weightKg ?? 75;
-    const massKg = riderWeightKg + 8; // +8 kg for the bike
-
-    // Scale CdA: larger riders push more air. 
-    // A common physics approximation is scaling by (mass / baseline)^0.66
-    const cdA = 0.325 * Math.pow(riderWeightKg / 75, 0.66);
-
+    const massKg = this.weightKg + 8;
+    const cdA = 0.325 * Math.pow(this.weightKg / 75, 0.66);
     this.basePhysics = { ...DEFAULT_PHYSICS, massKg, cdA };
 
-    // Reset per-ride state so restarts start fresh
+    // Reset state
     this.distanceM        = 0;
     this.smoothVelocityMs = 0;
     this.currentGrade     = 0;
@@ -496,7 +341,6 @@ export class GameScene extends Phaser.Scene {
     this.challengeEverStopped     = false;
     this.challengeStartMs         = 0;
     this.edgeStartRecordCount  = 0;
-    // Ghost racer + drafting — GhostState objects are created in buildGhostCyclist()
     this.ghosts                 = [];
     this.firstGhostFinishedTime = null;
     this.playerDraftFactor      = 0;
@@ -504,17 +348,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    // If Roguelike mode, use the shared writer. Otherwise create a new one for this session.
     if (this.isRoguelike) {
       const run = RunStateManager.getRun();
       if (run) {
-        if (!run.fitWriter) {
-          // Fallback if not initialized (e.g. legacy/error)
-          run.fitWriter = new FitWriter(Date.now());
-        }
+        if (!run.fitWriter) run.fitWriter = new FitWriter(Date.now());
         this.fitWriter = run.fitWriter;
       } else {
-        // Fallback safety
         this.fitWriter = new FitWriter(Date.now());
       }
     } else {
@@ -522,54 +361,17 @@ export class GameScene extends Phaser.Scene {
       this.fitWriter     = new FitWriter(this.rideStartTime);
     }
     
-    // Snapshot how many FIT records already exist before this edge begins.
-    // recordedPowerSum only covers this edge, so the denominator must be
-    // (fitWriter.recordCount - edgeStartRecordCount) to get the per-edge average.
     this.edgeStartRecordCount = this.fitWriter.recordCount;
-
-    // Ensure we track start time for this edge either way?
-    // Actually if using shared writer, timestamps must be continuous.
-    // FitWriter expects unix timestamps. 
     this.rideStartTime        = Date.now();
     this.lastRecordMs         = this.rideStartTime;
     this.challengeStartMs     = this.rideStartTime;
 
-    // These arrays accumulate across restarts because the scene instance is
-    // reused. Clear them so buildHUD() starts from a clean slate each run.
-    this.hudLabels = [];
-    this.hudValues = [];
-    this.hudUnits  = [];
-    this.hudSeps   = [];
-
-    this.cameras.main.setBackgroundColor('#e8dcc8');
-
-    // Pre-compute elevation samples and range for the graph
-    this.elevationSamples = buildElevationSamples(this.course, 100);
-
-    // Precompute segment boundaries for grade-coloured elevation graph
-    let _cumDist = 0;
-    let _cumElev = 0;
-    this.segmentBoundaries = this.course.segments.map(seg => {
-      const startM     = _cumDist;
-      const startElevM = _cumElev;
-      _cumDist += seg.distanceM;
-      _cumElev += seg.distanceM * seg.grade;
-      return { startM, endM: _cumDist, startElevM, endElevM: _cumElev, grade: seg.grade, surface: seg.surface ?? 'asphalt' };
-    });
-
-    // Compute elevation range from both samples AND segment boundary points so
-    // that short segments whose true min/max falls between sample steps don't
-    // produce polygon corners that land outside the graph area.
-    const boundaryElevs = this.segmentBoundaries.flatMap(s => [s.startElevM, s.endElevM]);
-    const allElevs = [...this.elevationSamples.map(s => s.elevationM), ...boundaryElevs];
-    this.minElevM = Math.min(...allElevs);
-    this.maxElevM = Math.max(...allElevs);
+    this.cameras.main.setBackgroundColor(THEME.colors.backgroundHex);
 
     this.buildParallaxLayers();
     this.buildGhostCyclist();
     this.buildCyclist();
 
-    // Pre-seed grade and surface so the world starts at the correct state
     this.currentGrade   = getGradeAtDistance(this.course, 0);
     this.currentSurface = getSurfaceAtDistance(this.course, 0);
     this.smoothGrade = this.currentGrade;
@@ -581,46 +383,35 @@ export class GameScene extends Phaser.Scene {
     this.worldContainer.rotation = -Math.atan(this.smoothGrade);
     this.worldContainer.setScale(Math.sqrt(1 + this.smoothGrade * this.smoothGrade) * 1.02);
 
-    this.buildHUD();
+    // ── Components ──────────────────────────────────────────────────────────
+    this.hud = new GameHUD(this, this.units);
+    this.elevGraph = new ElevationGraph(this, this.course, this.units, this.isBackwards);
+
     this.buildRaceGapPanel();
     this.buildChallengePanel();
-    this.buildElevationGraph();
     this.buildBottomControls();
     this.buildEffectUI();
     this.buildManualEffectButtons();
     this.buildDevToggle();
 
-    // Handle resizing
     this.scale.on('resize', this.onResize, this);
-    // Initial layout pass
     this.onResize();
 
-    // ── Trainer setup ─────────────────────────────────────────────────────
-    if (import.meta.env.DEV) {
-      console.log(`[GameScene] create checks - preConnectedTrainer: ${!!this.preConnectedTrainer}, isDevMode: ${this.isDevMode}`);
-    }
-    
+    // ── Trainer ─────────────────────────────────────────────────────────────
     if (this.preConnectedTrainer) {
-      console.log('[GameScene] Using pre-connected trainer');
-      // Use the pre-connected BT trainer passed from MenuScene
       this.trainer = this.preConnectedTrainer;
       this.trainer.onData((data) => this.handleData(data));
       this.isDemoMode = false;
       this.setStatus('ok', 'BT CONNECTED');
     } else if (this.isDevMode) {
-      console.log('[GameScene] Starting DEV MODE (10000W)');
-      // Dev Mode: Mock trainer with fixed high power
       const mock = new MockTrainerService({ power: DEV_POWER_WATTS, speed: 45, cadence: 95 });
       this.trainer = mock;
-      // Also explicitly set it to be sure
       mock.setPower(DEV_POWER_WATTS);
       this.trainer.onData((data) => this.handleData(data));
       void this.trainer.connect();
-      // Important: isDemoMode = false ensures we don't randomise metrics in update()
       this.isDemoMode = false;
       this.setStatus('demo', `DEV (${DEV_POWER_WATTS}W)`);
     } else {
-      // No trainer connected — simulate at 200 W so the game is playable
       this.trainer = new MockTrainerService({ power: DEMO_POWER_WATTS, speed: 25, cadence: 80 });
       this.trainer.onData((data) => this.handleData(data));
       void this.trainer.connect();
@@ -628,12 +419,10 @@ export class GameScene extends Phaser.Scene {
       this.setStatus('demo', 'SIM 200W');
     }
 
-    // ── Heart rate monitor setup ──────────────────────────────────────────
     if (this.preConnectedHrm) {
       this.preConnectedHrm.onData((data) => this.handleHrmData(data));
     }
 
-    // ── Roguelike Inventory Effects ───────────────────────────────────────
     if (this.isRoguelike) {
       const run = RunStateManager.getRun();
       if (run && run.inventory.includes('tailwind')) {
@@ -646,20 +435,17 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     if (this.overlayVisible) return;
 
-    const dt = delta / 1000; // seconds
+    const dt = delta / 1000;
 
-    // ── Grade from course ────────────────────────────────────────────────────
     this.distanceM += this.smoothVelocityMs * dt;
     const wrappedDist = this.distanceM % this.course.totalDistanceM;
 
-    // ── FIT recording (once per second) ─────────────────────────────────────
     const nowMs = Date.now();
     if (nowMs - this.lastRecordMs >= 1000) {
       this.lastRecordMs = nowMs;
       this.recordFitData(nowMs);
     }
 
-    // ── Course completion ────────────────────────────────────────────────────
     if (!this.rideComplete && this.distanceM >= this.course.totalDistanceM) {
       this.rideComplete = true;
       this.recordFitData(Date.now());
@@ -675,7 +461,6 @@ export class GameScene extends Phaser.Scene {
 
     if (gradeChanged) {
       this.currentGrade = newGrade;
-      // In demo mode, randomise power & cadence each time a new segment begins
       if (this.isDemoMode) this.randomizeDemoMetrics();
     }
 
@@ -693,18 +478,12 @@ export class GameScene extends Phaser.Scene {
       };
     }
 
-    // Smooth grade: exponential lerp toward current segment grade
     this.smoothGrade += (this.currentGrade - this.smoothGrade) * dt * GRADE_LERP_RATE;
 
-    // Apply rotation + scale compensation to world container
-    // If Backwards: Invert rotation angle (Left side up for +Grade)
     const rotationAngle = this.isBackwards ? Math.atan(this.smoothGrade) : -Math.atan(this.smoothGrade);
     this.worldContainer.rotation = rotationAngle;
-    
-    const scale = Math.sqrt(1 + this.smoothGrade * this.smoothGrade) * 1.02;
-    this.worldContainer.setScale(scale);
+    this.worldContainer.setScale(Math.sqrt(1 + this.smoothGrade * this.smoothGrade) * 1.02);
 
-    // Send simulation params to trainer hardware when grade or surface changes
     if (
       this.trainer.setSimulationParams &&
       (Math.abs(this.smoothGrade - this.lastSentGrade) >= GRADE_SEND_THRESHOLD ||
@@ -713,86 +492,63 @@ export class GameScene extends Phaser.Scene {
       this.lastSentGrade   = this.smoothGrade;
       this.lastSentSurface = this.currentSurface;
       
-      // FTMS trainers assume a ~75kg (165lb) default rider. 
-      // We scale the Crr up so the physical hardware applies the correct 
-      // rolling resistance force for a heavier rider.
-      const assumedTrainerMass = 83; // 75kg + 8kg bike
+      const assumedTrainerMass = 83;
       const effectiveCrr = this.physicsConfig.crr * (this.physicsConfig.massKg / assumedTrainerMass);
-      
       const cwa = 0.5 * this.physicsConfig.rhoAir * this.physicsConfig.cdA;
       
       void this.trainer.setSimulationParams(this.smoothGrade, effectiveCrr, cwa);
     }
 
-    // ── Drafting ─────────────────────────────────────────────────────────────
-    // Player draft: find the best (closest) ghost 0–DRAFT_MAX_DISTANCE_M ahead.
+    // Drafting
     if (this.ghosts.length > 0) {
       let bestDraft = 0;
       for (const ghost of this.ghosts) {
-        const gap = ghost.distanceM - this.distanceM; // positive = ghost is ahead
+        const gap = ghost.distanceM - this.distanceM;
         if (gap > 0 && gap < DRAFT_MAX_DISTANCE_M) {
           bestDraft = Math.max(bestDraft, DRAFT_MAX_CDA_REDUCTION * (1 - gap / DRAFT_MAX_DISTANCE_M));
         }
       }
       this.playerDraftFactor = bestDraft;
-      this.draftAnimOffset += this.smoothVelocityMs * dt * 2; // streaks scroll at 2× road speed
+      this.draftAnimOffset += this.smoothVelocityMs * dt * 2;
     } else {
       this.playerDraftFactor = 0;
     }
 
-    // ── Physics ─────────────────────────────────────────────────────────────
-    // Merge draft bonus into run modifiers (capped at 0.99 by convention)
+    // Physics
     const draftModifiers: RunModifiers = this.playerDraftFactor > 0
       ? { ...this.runModifiers, dragReduction: Math.min(0.99, this.runModifiers.dragReduction + this.playerDraftFactor) }
       : this.runModifiers;
     const acceleration = calculateAcceleration(this.latestPower, this.smoothVelocityMs, this.physicsConfig, draftModifiers);
 
     this.smoothVelocityMs += acceleration * dt;
+    if (this.smoothVelocityMs < 0) this.smoothVelocityMs = 0;
 
-    // Safety: prevent the bike from rolling backward on flat ground
-    if (this.smoothVelocityMs < 0) {
-      this.smoothVelocityMs = 0;
-    }
-
-    // ── Parallax scroll ──────────────────────────────────────────────────────
+    // Parallax
     const baseScroll = this.smoothVelocityMs * WORLD_SCALE * dt;
-    // If Backwards: Scroll values decrease (move background Right to simulate Rider moving Left)
     const dir = this.isBackwards ? -1 : 1;
-    
     this.layerMountains.tilePositionX += baseScroll * 0.10 * dir;
     this.layerMidHills.tilePositionX  += baseScroll * 0.30 * dir;
     this.layerNearGround.tilePositionX += baseScroll * 0.65 * dir;
-    // Scroll all road layers together so switching surfaces is seamless
     for (const tile of Object.values(this.roadLayers)) {
       tile.tilePositionX += baseScroll * 1.00 * dir;
     }
 
-    // ── HUD updates ──────────────────────────────────────────────────────────
-    if (this.units === 'imperial') {
-      this.hudSpeed.setText(msToMph(this.smoothVelocityMs).toFixed(1));
-      this.hudDistance.setText((this.distanceM / 1609.344).toFixed(2));
-    } else {
-      this.hudSpeed.setText(msToKmh(this.smoothVelocityMs).toFixed(1));
-      this.hudDistance.setText((this.distanceM / 1000).toFixed(2));
-    }
-    this.updateGradeDisplay(this.currentGrade);
+    // Updates
+    this.hud.updateSpeed(this.smoothVelocityMs);
+    this.hud.updateDistance(this.distanceM);
+    this.hud.updateGrade(this.smoothGrade);
     this.updateChallengePanel();
 
-    // ── Ghost racer physics ──────────────────────────────────────────────────
     if (this.ghosts.length > 0 && !this.rideComplete) {
       this.updateAllGhostRacers(dt);
     }
 
-    // ── Cyclist animation ────────────────────────────────────────────────────
-    // Average cadence over rolling 3-second window
     const now = Date.now();
     const recent = this.cadenceHistory.filter((h) => now - h.timeMs <= 3000);
     if (recent.length > 0) {
       this.avgCadence = recent.reduce((sum, h) => sum + h.rpm, 0) / recent.length;
     }
-    // Advance crank: avgCadence rpm → revolutions per second → radians per second
     this.crankAngle += (this.avgCadence / 60) * 2 * Math.PI * dt;
-    // Advance each ghost crank at a fixed pro cadence (90 rpm)
     for (const ghost of this.ghosts) {
       ghost.crankAngle += (90 / 60) * 2 * Math.PI * dt;
     }
@@ -804,33 +560,20 @@ export class GameScene extends Phaser.Scene {
     }
     this.updateDraftBadge();
 
-    // ── Elevation graph ──────────────────────────────────────────────────────
-    this.drawElevationGraph(wrappedDist);
+    const ghostsForGraph = this.ghosts.map(g => ({ distanceM: g.distanceM, color: g.racer.color, accentColor: g.racer.accentColor }));
+    this.elevGraph.updateGraph(wrappedDist, this.smoothGrade, ghostsForGraph);
     this.updateRaceGapPanel();
   }
 
   // ── Parallax layers ──────────────────────────────────────────────────────────
 
   private buildParallaxLayers(): void {
-    // Container centred at screen midpoint so rotation tilts the world naturally
     this.worldContainer = this.add.container(W / 2, H / 2).setDepth(0);
 
     const layers: LayerDef[] = [
-      {
-        key: 'mountains',
-        parallax: 0.10,
-        draw: (g) => this.drawMountains(g),
-      },
-      {
-        key: 'midHills',
-        parallax: 0.30,
-        draw: (g) => this.drawMidHills(g),
-      },
-      {
-        key: 'nearGround',
-        parallax: 0.65,
-        draw: (g) => this.drawNearGround(g),
-      },
+      { key: 'mountains', parallax: 0.10, draw: (g) => this.drawMountains(g) },
+      { key: 'midHills', parallax: 0.30, draw: (g) => this.drawMidHills(g) },
+      { key: 'nearGround', parallax: 0.65, draw: (g) => this.drawNearGround(g) },
     ];
 
     for (const layer of layers) {
@@ -838,20 +581,13 @@ export class GameScene extends Phaser.Scene {
       layer.draw(g);
       g.generateTexture(layer.key, W, H);
       g.destroy();
-
-      // Position at (-W/2, -H/2) so the top-left corner aligns with the world origin
-      const sprite = this.add
-        .tileSprite(-W / 2, -H / 2, W, H, layer.key)
-        .setOrigin(0, 0);
-
+      const sprite = this.add.tileSprite(-W / 2, -H / 2, W, H, layer.key).setOrigin(0, 0);
       this.worldContainer.add(sprite);
-
       if (layer.key === 'mountains') this.layerMountains = sprite;
       else if (layer.key === 'midHills') this.layerMidHills = sprite;
       else if (layer.key === 'nearGround') this.layerNearGround = sprite;
     }
 
-    // Build one road TileSprite per surface type; only the active one is visible.
     const roadDrawers: Record<SurfaceType, (g: Phaser.GameObjects.Graphics) => void> = {
       asphalt: (g) => this.drawRoad(g),
       gravel:  (g) => this.drawRoadGravel(g),
@@ -859,599 +595,216 @@ export class GameScene extends Phaser.Scene {
       mud:     (g) => this.drawRoadMud(g),
     };
 
-    const roadEntries = (Object.entries(roadDrawers) as [SurfaceType, (g: Phaser.GameObjects.Graphics) => void][]);
     const roadSprites = {} as Record<SurfaceType, Phaser.GameObjects.TileSprite>;
-
-    for (const [surface, drawFn] of roadEntries) {
+    for (const [surface, drawFn] of Object.entries(roadDrawers) as [SurfaceType, any][]) {
       const key = `road_${surface}`;
       const g = this.add.graphics();
       drawFn(g);
       g.generateTexture(key, W, H);
       g.destroy();
-
-      const sprite = this.add
-        .tileSprite(-W / 2, -H / 2, W, H, key)
-        .setOrigin(0, 0)
-        .setVisible(surface === this.currentSurface);
-
+      const sprite = this.add.tileSprite(-W / 2, -H / 2, W, H, key)
+        .setOrigin(0, 0).setVisible(surface === this.currentSurface);
       this.worldContainer.add(sprite);
       roadSprites[surface] = sprite;
     }
-
     this.roadLayers = roadSprites;
   }
 
-  /** Mountains: aged paper peaks, y≈115–200 */
   private drawMountains(g: Phaser.GameObjects.Graphics): void {
     g.fillStyle(0xb8aa96, 1);
-    g.fillPoints(
-      [
-        { x: 0,   y: H },
-        { x: 0,   y: 200 },
-        { x: 80,  y: 115 },
-        { x: 200, y: 190 },
-        { x: 320, y: 130 },
-        { x: 430, y: 200 },
-        { x: 560, y: 120 },
-        { x: 680, y: 175 },
-        { x: 780, y: 115 },
-        { x: 880, y: 165 },
-        { x: 960, y: 145 },
-        { x: 960, y: H },
-      ],
-      true,
-    );
+    g.fillPoints([{x:0,y:H},{x:0,y:200},{x:80,y:115},{x:200,y:190},{x:320,y:130},{x:430,y:200},{x:560,y:120},{x:680,y:175},{x:780,y:115},{x:880,y:165},{x:960,y:145},{x:960,y:H}], true);
   }
-
-  /** Mid hills: sage green, y≈275–340 */
   private drawMidHills(g: Phaser.GameObjects.Graphics): void {
     g.fillStyle(0x7a9469, 1);
-    g.fillPoints(
-      [
-        { x: 0,   y: H },
-        { x: 0,   y: 340 },
-        { x: 60,  y: 300 },
-        { x: 150, y: 275 },
-        { x: 270, y: 310 },
-        { x: 390, y: 280 },
-        { x: 510, y: 340 },
-        { x: 630, y: 285 },
-        { x: 750, y: 310 },
-        { x: 870, y: 275 },
-        { x: 960, y: 310 },
-        { x: 960, y: H },
-      ],
-      true,
-    );
+    g.fillPoints([{x:0,y:H},{x:0,y:340},{x:60,y:300},{x:150,y:275},{x:270,y:310},{x:390,y:280},{x:510,y:340},{x:630,y:285},{x:750,y:310},{x:870,y:275},{x:960,y:310},{x:960,y:H}], true);
   }
-
-  /** Near ground: forest green, y≈375–400 */
   private drawNearGround(g: Phaser.GameObjects.Graphics): void {
     g.fillStyle(0x4a6e38, 1);
-    g.fillPoints(
-      [
-        { x: 0,   y: H },
-        { x: 0,   y: 400 },
-        { x: 100, y: 380 },
-        { x: 220, y: 395 },
-        { x: 350, y: 375 },
-        { x: 480, y: 390 },
-        { x: 610, y: 378 },
-        { x: 740, y: 400 },
-        { x: 860, y: 382 },
-        { x: 960, y: 395 },
-        { x: 960, y: H },
-      ],
-      true,
-    );
+    g.fillPoints([{x:0,y:H},{x:0,y:400},{x:100,y:380},{x:220,y:395},{x:350,y:375},{x:480,y:390},{x:610,y:378},{x:740,y:400},{x:860,y:382},{x:960,y:395},{x:960,y:H}], true);
   }
-
-  /** Switch which road surface layer is visible. */
   private switchRoadLayer(surface: SurfaceType): void {
-    for (const [key, tile] of Object.entries(this.roadLayers) as [SurfaceType, Phaser.GameObjects.TileSprite][]) {
+    for (const [key, tile] of Object.entries(this.roadLayers)) {
       tile.setVisible(key === surface);
     }
   }
-
-  /** Asphalt: paper grey strip with white dashed centre line. */
   private drawRoad(g: Phaser.GameObjects.Graphics): void {
-    g.fillStyle(0x9a8878, 1);
-    g.fillRect(0, 420, W, H - 420);
-
-    g.fillStyle(0x7a6858, 1);
-    g.fillRect(0, 420, W, 4);
-    g.fillRect(0, H - 4, W, 4);
-
+    g.fillStyle(0x9a8878, 1); g.fillRect(0, 420, W, H - 420);
+    g.fillStyle(0x7a6858, 1); g.fillRect(0, 420, W, 4); g.fillRect(0, H - 4, W, 4);
     g.fillStyle(0xffffff, 0.7);
-    const dashW = 40;
-    const gapW = 30;
-    const lineY = 455;
-    const lineH = 4;
-    for (let x = 0; x < W; x += dashW + gapW) {
-      g.fillRect(x, lineY, dashW, lineH);
-    }
+    for (let x = 0; x < W; x += 70) g.fillRect(x, 455, 40, 4);
   }
-
-  /** Gravel: sandy tan road with scattered pebble marks, no centre line. */
   private drawRoadGravel(g: Phaser.GameObjects.Graphics): void {
-    // Base sandy colour
-    g.fillStyle(0xc4a882, 1);
-    g.fillRect(0, 420, W, H - 420);
-
-    // Slightly darker shoulder band at road edge
-    g.fillStyle(0xa88c68, 1);
-    g.fillRect(0, 420, W, 5);
-    g.fillRect(0, H - 5, W, 5);
-
-    // Scatter pebbles using a deterministic pattern across the texture
-    const pebbleData: Array<{ x: number; y: number; w: number; h: number; shade: number }> = [];
-    // Use a simple LCG for determinism (no Math.random so it's stable across runs)
-    let seed = 42;
-    const rand = () => { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; };
-
+    g.fillStyle(0xc4a882, 1); g.fillRect(0, 420, W, H - 420);
+    g.fillStyle(0xa88c68, 1); g.fillRect(0, 420, W, 5); g.fillRect(0, H - 5, W, 5);
+    let seed = 42; const rand = () => { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; };
     for (let i = 0; i < 220; i++) {
-      const px = rand() * W;
-      const py = 425 + rand() * (H - 430);
-      const size = 2 + rand() * 5;
-      const shade = rand() > 0.5 ? 0x9a7a58 : 0xddc8a8;
-      pebbleData.push({ x: Math.round(px), y: Math.round(py), w: Math.round(size), h: Math.round(size * 0.6), shade });
-    }
-
-    for (const p of pebbleData) {
-      g.fillStyle(p.shade, 0.9);
-      g.fillEllipse(p.x, p.y, p.w, p.h);
+      g.fillStyle(rand() > 0.5 ? 0x9a7a58 : 0xddc8a8, 0.9);
+      g.fillEllipse(rand() * W, 425 + rand() * (H - 430), 2 + rand() * 5, 2 + rand() * 3);
     }
   }
-
-  /** Dirt: earthy brown track with tyre ruts, no centre line. */
   private drawRoadDirt(g: Phaser.GameObjects.Graphics): void {
-    // Base earthy brown
-    g.fillStyle(0xa06030, 1);
-    g.fillRect(0, 420, W, H - 420);
-
-    // Rough soil-coloured edge band
-    g.fillStyle(0x804818, 1);
-    g.fillRect(0, 420, W, 5);
-    g.fillRect(0, H - 5, W, 5);
-
-    // Two tyre ruts running the full width
-    const rutY1 = 437;
-    const rutY2 = 500;
-    const rutH = 6;
-    g.fillStyle(0x6b3810, 0.85);
-    g.fillRect(0, rutY1, W, rutH);
-    g.fillRect(0, rutY2, W, rutH);
-
-    // Small rocks and clods scattered between ruts
-    let seed = 17;
-    const rand = () => { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; };
-
+    g.fillStyle(0xa06030, 1); g.fillRect(0, 420, W, H - 420);
+    g.fillStyle(0x804818, 1); g.fillRect(0, 420, W, 5); g.fillRect(0, H - 5, W, 5);
+    g.fillStyle(0x6b3810, 0.85); g.fillRect(0, 437, W, 6); g.fillRect(0, 500, W, 6);
+    let seed = 17; const rand = () => { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; };
     for (let i = 0; i < 80; i++) {
-      const px = rand() * W;
-      const py = 426 + rand() * (H - 432);
-      const size = 2 + rand() * 4;
       g.fillStyle(rand() > 0.5 ? 0xc08040 : 0x804020, 0.7);
-      g.fillRect(Math.round(px), Math.round(py), Math.round(size), Math.round(size * 0.7));
+      g.fillRect(rand() * W, 426 + rand() * (H - 432), 2 + rand() * 4, 2 + rand() * 3);
     }
   }
-
-  /** Mud: dark churned surface with deep tyre tracks, no centre line. */
   private drawRoadMud(g: Phaser.GameObjects.Graphics): void {
-    // Base dark muddy olive-brown
-    g.fillStyle(0x5a4828, 1);
-    g.fillRect(0, 420, W, H - 420);
-
-    // Even darker edge band
-    g.fillStyle(0x3a2818, 1);
-    g.fillRect(0, 420, W, 6);
-    g.fillRect(0, H - 6, W, 6);
-
-    // Deep wide tyre tracks
-    const trackY1 = 433;
-    const trackY2 = 492;
-    const trackH = 12;
-    g.fillStyle(0x2e1e0e, 0.9);
-    g.fillRect(0, trackY1, W, trackH);
-    g.fillRect(0, trackY2, W, trackH);
-
-    // Tyre tread pattern inside each track
-    g.fillStyle(0x1e1208, 0.6);
-    for (let x = 0; x < W; x += 18) {
-      g.fillRect(x, trackY1 + 2, 9, trackH - 4);
-      g.fillRect(x + 9, trackY2 + 2, 9, trackH - 4);
-    }
-
-    // Mud splatter blobs around the tracks
-    let seed = 99;
-    const rand = () => { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; };
-
+    g.fillStyle(0x5a4828, 1); g.fillRect(0, 420, W, H - 420);
+    g.fillStyle(0x3a2818, 1); g.fillRect(0, 420, W, 6); g.fillRect(0, H - 6, W, 6);
+    g.fillStyle(0x2e1e0e, 0.9); g.fillRect(0, 433, W, 12); g.fillRect(0, 492, W, 12);
+    let seed = 99; const rand = () => { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; };
     for (let i = 0; i < 60; i++) {
-      const px = rand() * W;
-      const py = 426 + rand() * (H - 432);
-      const rx = 3 + rand() * 8;
-      const ry = 2 + rand() * 4;
       g.fillStyle(0x3a2818, 0.6);
-      g.fillEllipse(Math.round(px), Math.round(py), Math.round(rx), Math.round(ry));
+      g.fillEllipse(rand() * W, 426 + rand() * (H - 432), 3 + rand() * 8, 2 + rand() * 4);
     }
   }
 
   // ── Cyclist ───────────────────────────────────────────────────────────────
 
-  /**
-   * Road surface Y in worldContainer local space.
-   * Computed from screen height each resize: height * (ROAD_TOP_FRAC - 0.5).
-   * For reference 540px height: 540 * (420/540 - 0.5) = 150.
-   */
-  private cycGroundY = 150;
-  private static readonly WHEEL_R = 18;
-
   private buildCyclist(): void {
-    // Add AFTER ghost so player renders on top of ghost
     this.cyclistGraphics = this.add.graphics();
     this.worldContainer.add(this.cyclistGraphics);
-
-    // Flip cyclist if traveling backwards
-    if (this.isBackwards) {
-      this.cyclistGraphics.setScale(-1, 1);
-    }
+    if (this.isBackwards) this.cyclistGraphics.setScale(-1, 1);
   }
 
   private buildGhostCyclist(): void {
-    // Create one GhostState per racer profile — graphics added BEFORE the player
-    // so all ghosts render behind the player cyclist.
     this.ghosts = this.racerProfiles.map((racer) => {
       const graphics = this.add.graphics();
       graphics.setAlpha(0.72);
       this.worldContainer.add(graphics);
       return {
-        racer,
-        distanceM:    0,
-        velocityMs:   0,
-        crankAngle:   0,
-        physics: {
-          massKg: racer.massKg,
-          cdA:    racer.cdA,
-          crr:    racer.crr,
-          rhoAir: DEFAULT_PHYSICS.rhoAir,
-          grade:  0,
-        },
-        graphics,
-        finishedTime: null,
-        draftFactor:  0,
+        racer, distanceM: 0, velocityMs: 0, crankAngle: 0,
+        physics: { massKg: racer.massKg, cdA: racer.cdA, crr: racer.crr, rhoAir: DEFAULT_PHYSICS.rhoAir, grade: 0 },
+        graphics, finishedTime: null, draftFactor: 0,
       } satisfies GhostState;
     });
-
-    // Slipstream streaks — rendered between cyclists, inside worldContainer
     this.slipstreamGraphics = this.add.graphics();
     this.worldContainer.add(this.slipstreamGraphics);
-
-    // Draft badge — fixed to screen (not in worldContainer)
-    const hasRacers = this.ghosts.length > 0;
-    this.draftBadgeBg   = this.add.graphics().setDepth(15);
+    this.draftBadgeBg = this.add.graphics().setDepth(15);
     this.draftBadgeText = this.add.text(0, 0, '', {
-      fontFamily: 'monospace', fontSize: '11px', fontStyle: 'bold',
-      color: '#00f5d4', letterSpacing: 2,
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, fontStyle: 'bold', color: THEME.colors.text.accent, letterSpacing: 2,
     }).setOrigin(0.5).setDepth(16).setAlpha(0);
-    if (!hasRacers) {
-      this.draftBadgeBg.setVisible(false);
-      this.draftBadgeText.setVisible(false);
-    }
+    if (this.ghosts.length === 0) { this.draftBadgeBg.setVisible(false); this.draftBadgeText.setVisible(false); }
   }
 
-  /**
-   * Core cyclist shape renderer. Draws a paper-cutout cyclist on `g`
-   * at local coordinates (centerX, groundY), with the given pedal crank
-   * angle and colour palette.
-   */
-  private drawCyclistShape(
-    g: Phaser.GameObjects.Graphics,
-    crankAngle: number,
-    gY: number,
-    BIKE: number,
-    JERSEY: number,
-    SKIN: number,
-  ): void {
-    const wR    = GameScene.WHEEL_R;
-    const axleY = gY - wR;
-
-    const rearX   = -22;
-    const frontX  =  26;
-    const crankX  =   0;
-    const crankY  = axleY;
-    const crankLen =  9;
-
-    const seatX  = -5;  const seatY  = axleY - 35;
-    const hbarX  = 22;  const hbarY  = axleY - 33;
-
-    const hipX      = -2;  const hipY      = axleY - 30;
-    const shoulderX = 14;  const shoulderY = axleY - 43;
-    const headX     = 22;  const headY     = axleY - 53;
-    const headR     =  7;
-
-    const upperLen = 22;
-    const lowerLen = 19;
-
-    const rA  = crankAngle;
-    const lA  = crankAngle + Math.PI;
-    const rFX = crankX + Math.cos(rA) * crankLen;
-    const rFY = crankY + Math.sin(rA) * crankLen;
-    const lFX = crankX + Math.cos(lA) * crankLen;
-    const lFY = crankY + Math.sin(lA) * crankLen;
-
+  private drawCyclistShape(g: Phaser.GameObjects.Graphics, crankAngle: number, gY: number, BIKE: number, JERSEY: number, SKIN: number): void {
+    const wR = GameScene.WHEEL_R, axleY = gY - wR;
+    const rearX = -22, frontX = 26, crankX = 0, crankY = axleY, crankLen = 9;
+    const seatX = -5, seatY = axleY - 35, hbarX = 22, hbarY = axleY - 33;
+    const hipX = -2, hipY = axleY - 30, shoulderX = 14, shoulderY = axleY - 43;
+    const headX = 22, headY = axleY - 53, headR = 7;
+    const upperLen = 22, lowerLen = 19;
+    const rA = crankAngle, lA = crankAngle + Math.PI;
+    const rFX = crankX + Math.cos(rA) * crankLen, rFY = crankY + Math.sin(rA) * crankLen;
+    const lFX = crankX + Math.cos(lA) * crankLen, lFY = crankY + Math.sin(lA) * crankLen;
     const [rKX, rKY] = computeKnee(hipX, hipY, rFX, rFY, upperLen, lowerLen, -1);
     const [lKX, lKY] = computeKnee(hipX, hipY, lFX, lFY, upperLen, lowerLen, -1);
 
-    // Far leg
-    g.lineStyle(4, BIKE, 0.38);
-    g.beginPath(); g.moveTo(hipX, hipY); g.lineTo(lKX, lKY); g.lineTo(lFX, lFY); g.strokePath();
-    g.fillStyle(BIKE, 0.38);
-    g.fillRect(lFX - 5, lFY - 1.5, 10, 3);
-
-    // Rear wheel
-    g.lineStyle(3, BIKE, 1);
-    g.strokeCircle(rearX, axleY, wR);
-    g.lineStyle(1.5, BIKE, 0.45);
-    g.strokeCircle(rearX, axleY, wR * 0.55);
-    g.fillStyle(BIKE, 1);
-    g.fillCircle(rearX, axleY, 2.5);
-
-    // Frame
-    g.lineStyle(3, BIKE, 1);
-    g.beginPath(); g.moveTo(rearX, axleY); g.lineTo(crankX, crankY + 2); g.strokePath();
+    g.lineStyle(4, BIKE, 0.38); g.beginPath(); g.moveTo(hipX, hipY); g.lineTo(lKX, lKY); g.lineTo(lFX, lFY); g.strokePath();
+    g.fillStyle(BIKE, 0.38); g.fillRect(lFX - 5, lFY - 1.5, 10, 3);
+    g.lineStyle(3, BIKE, 1); g.strokeCircle(rearX, axleY, wR);
+    g.lineStyle(1.5, BIKE, 0.45); g.strokeCircle(rearX, axleY, wR * 0.55); g.fillStyle(BIKE, 1); g.fillCircle(rearX, axleY, 2.5);
+    g.lineStyle(3, BIKE, 1); g.beginPath(); g.moveTo(rearX, axleY); g.lineTo(crankX, crankY + 2); g.strokePath();
     g.beginPath(); g.moveTo(crankX, crankY); g.lineTo(seatX, seatY); g.strokePath();
     g.beginPath(); g.moveTo(seatX, seatY); g.lineTo(hbarX, hbarY); g.strokePath();
     g.beginPath(); g.moveTo(hbarX - 2, hbarY + 8); g.lineTo(crankX, crankY); g.strokePath();
     g.beginPath(); g.moveTo(hbarX, hbarY); g.lineTo(frontX, axleY); g.strokePath();
-    g.lineStyle(4, BIKE, 1);
-    g.beginPath(); g.moveTo(seatX - 6, seatY); g.lineTo(seatX + 8, seatY); g.strokePath();
-
-    // Front wheel
-    g.lineStyle(3, BIKE, 1);
-    g.strokeCircle(frontX, axleY, wR);
-    g.lineStyle(1.5, BIKE, 0.45);
-    g.strokeCircle(frontX, axleY, wR * 0.55);
-    g.fillStyle(BIKE, 1);
-    g.fillCircle(frontX, axleY, 2.5);
-
-    // Crank arms + chainring
-    g.lineStyle(3, BIKE, 1);
-    g.beginPath(); g.moveTo(crankX, crankY); g.lineTo(rFX, rFY); g.strokePath();
-    g.lineStyle(2.5, BIKE, 0.5);
-    g.beginPath(); g.moveTo(crankX, crankY); g.lineTo(lFX, lFY); g.strokePath();
-    g.lineStyle(2, BIKE, 0.7);
-    g.strokeCircle(crankX, crankY, 6);
-
-    // Near leg
-    g.lineStyle(5, BIKE, 1);
-    g.beginPath(); g.moveTo(hipX, hipY); g.lineTo(rKX, rKY); g.lineTo(rFX, rFY); g.strokePath();
-    g.fillStyle(BIKE, 1);
-    g.fillRect(rFX - 5, rFY - 1.5, 10, 3);
-
-    // Torso
-    g.fillStyle(JERSEY, 1);
-    g.fillPoints([
-      { x: hipX - 2,      y: hipY },
-      { x: hipX + 5,      y: hipY - 2 },
-      { x: shoulderX,     y: shoulderY },
-      { x: shoulderX - 5, y: shoulderY + 4 },
-    ], true);
-
-    // Arms
-    g.lineStyle(3, SKIN, 1);
-    g.beginPath(); g.moveTo(shoulderX - 1, shoulderY + 2); g.lineTo(hbarX, hbarY + 1); g.strokePath();
-
-    // Head
-    g.fillStyle(SKIN, 1);
-    g.fillCircle(headX, headY, headR);
-
-    // Helmet
-    g.fillStyle(JERSEY, 1);
-    g.fillPoints([
-      { x: headX - headR + 1, y: headY },
-      { x: headX - headR + 1, y: headY - headR * 0.5 },
-      { x: headX,             y: headY - headR - 2 },
-      { x: headX + headR,     y: headY - headR * 0.5 },
-      { x: headX + headR,     y: headY },
-    ], true);
+    g.lineStyle(4, BIKE, 1); g.beginPath(); g.moveTo(seatX - 6, seatY); g.lineTo(seatX + 8, seatY); g.strokePath();
+    g.lineStyle(3, BIKE, 1); g.strokeCircle(frontX, axleY, wR);
+    g.lineStyle(1.5, BIKE, 0.45); g.strokeCircle(frontX, axleY, wR * 0.55); g.fillStyle(BIKE, 1); g.fillCircle(frontX, axleY, 2.5);
+    g.lineStyle(3, BIKE, 1); g.beginPath(); g.moveTo(crankX, crankY); g.lineTo(rFX, rFY); g.strokePath();
+    g.lineStyle(2.5, BIKE, 0.5); g.beginPath(); g.moveTo(crankX, crankY); g.lineTo(lFX, lFY); g.strokePath();
+    g.lineStyle(2, BIKE, 0.7); g.strokeCircle(crankX, crankY, 6);
+    g.lineStyle(5, BIKE, 1); g.beginPath(); g.moveTo(hipX, hipY); g.lineTo(rKX, rKY); g.lineTo(rFX, rFY); g.strokePath();
+    g.fillStyle(BIKE, 1); g.fillRect(rFX - 5, rFY - 1.5, 10, 3);
+    g.fillStyle(JERSEY, 1); g.fillPoints([{ x: hipX - 2, y: hipY }, { x: hipX + 5, y: hipY - 2 }, { x: shoulderX, y: shoulderY }, { x: shoulderX - 5, y: shoulderY + 4 }], true);
+    g.lineStyle(3, SKIN, 1); g.beginPath(); g.moveTo(shoulderX - 1, shoulderY + 2); g.lineTo(hbarX, hbarY + 1); g.strokePath();
+    g.fillStyle(SKIN, 1); g.fillCircle(headX, headY, headR);
+    g.fillStyle(JERSEY, 1); g.fillPoints([{ x: headX - headR + 1, y: headY }, { x: headX - headR + 1, y: headY - headR * 0.5 }, { x: headX, y: headY - headR - 2 }, { x: headX + headR, y: headY - headR * 0.5 }, { x: headX + headR, y: headY }], true);
   }
 
   private drawCyclist(): void {
-    const g = this.cyclistGraphics;
-    g.clear();
-    // Paper-cutout palette
-    this.drawCyclistShape(g, this.crankAngle, this.cycGroundY,
-      0x2a2018,  // BIKE  charcoal
-      0x5a3a1a,  // JERSEY kraft brown
-      0xc49a6a,  // SKIN  warm paper
-    );
+    this.cyclistGraphics.clear();
+    this.drawCyclistShape(this.cyclistGraphics, this.crankAngle, this.cycGroundY, 0x2a2018, 0x5a3a1a, 0xc49a6a);
   }
 
   private drawAllGhosts(): void {
-    const fadeStart = 80;
-    const fadeEnd   = 250;
-
     for (const ghost of this.ghosts) {
-      const gapM  = ghost.distanceM - this.distanceM; // positive = ghost ahead
-      const absGap = Math.abs(gapM);
-
-      // Fade out when the gap grows large — prevents the "pinned right behind"
-      // illusion when actually hundreds of metres apart.
-      const alpha = absGap < fadeStart
-        ? 0.72
-        : Math.max(0, 0.72 * (1 - (absGap - fadeStart) / (fadeEnd - fadeStart)));
+      const gapM = ghost.distanceM - this.distanceM;
+      const alpha = Math.abs(gapM) < 80 ? 0.72 : Math.max(0, 0.72 * (1 - (Math.abs(gapM) - 80) / 170));
       ghost.graphics.setAlpha(alpha);
-
-      if (alpha < 0.01) {
-        ghost.graphics.clear();
-        continue;
-      }
-
-      // Visual offset: tanh saturation so large gaps look meaningfully large.
+      if (alpha < 0.01) { ghost.graphics.clear(); continue; }
       const offsetX = Math.tanh(gapM / 120) * 280;
-      ghost.graphics.setPosition(offsetX, 0);
-      ghost.graphics.clear();
-
-      this.drawCyclistShape(
-        ghost.graphics,
-        ghost.crankAngle,
-        this.cycGroundY,
-        ghost.racer.color,
-        ghost.racer.color & 0xaaaaaa, // slightly muted jersey
-        0xddeeff,                      // pale blue-white skin
-      );
+      ghost.graphics.setPosition(offsetX, 0).clear();
+      this.drawCyclistShape(ghost.graphics, ghost.crankAngle, this.cycGroundY, ghost.racer.color, ghost.racer.color & 0xaaaaaa, 0xddeeff);
     }
   }
 
-  /**
-   * Draw animated slipstream streaks for every pair of riders that are within
-   * draft range of each other: player↔ghost or ghost↔ghost.
-   */
   private drawSlipstream(): void {
-    const g = this.slipstreamGraphics;
-    g.clear();
-
+    const g = this.slipstreamGraphics.clear();
     const gY = this.cycGroundY;
-    const streamY1 = gY - 28;
-    const streamY2 = gY - 20;
-    const streamY3 = gY - 12;
-    const NUM_STREAKS = 5;
-    const STREAK_LEN  = 18;
-
-    // Build a list of (distanceM, offsetX) for player + all visible ghosts
-    // "player" lives at offsetX = 0 in worldContainer space
-    interface RiderVis { distanceM: number; offsetX: number; draftFactor: number; }
-    const riders: RiderVis[] = [
-      { distanceM: this.distanceM, offsetX: 0, draftFactor: this.playerDraftFactor },
-      ...this.ghosts.map(gh => ({
-        distanceM: gh.distanceM,
-        offsetX:   Math.tanh((gh.distanceM - this.distanceM) / 120) * 280,
-        draftFactor: gh.draftFactor,
-      })),
-    ];
-
-    // For every pair where one is directly behind the other in draft range,
-    // draw streaks flowing from lead toward trail.
+    const riders = [{ distanceM: this.distanceM, offsetX: 0, draftFactor: this.playerDraftFactor }, ...this.ghosts.map(gh => ({ distanceM: gh.distanceM, offsetX: Math.tanh((gh.distanceM - this.distanceM) / 120) * 280, draftFactor: gh.draftFactor }))];
     for (let i = 0; i < riders.length; i++) {
       for (let j = 0; j < riders.length; j++) {
         if (i === j) continue;
-        const trail = riders[i];
-        const lead  = riders[j];
-        const gap   = lead.distanceM - trail.distanceM;
+        const trail = riders[i], lead = riders[j], gap = lead.distanceM - trail.distanceM;
         if (gap <= 0 || gap >= DRAFT_MAX_DISTANCE_M) continue;
-
-        const factor     = DRAFT_MAX_CDA_REDUCTION * (1 - gap / DRAFT_MAX_DISTANCE_M);
-        const normalised = factor / DRAFT_MAX_CDA_REDUCTION;
-        const trailX     = trail.offsetX;
-        const leadX      = lead.offsetX;
-        if (leadX <= trailX) continue; // visual overlap guard
-
-        const SPACING   = (leadX - trailX - STREAK_LEN) / NUM_STREAKS;
-        const baseAlpha = 0.15 + 0.40 * normalised;
-
-        for (let k = 0; k < NUM_STREAKS; k++) {
-          const animShift = (this.draftAnimOffset * 0.5) % (SPACING > 0 ? SPACING : 1);
-          const sx = trailX + k * (SPACING > 0 ? SPACING : 10) + animShift;
-          if (sx < trailX || sx + STREAK_LEN > leadX + 5) continue;
-
-          const fade = (k / NUM_STREAKS) * 0.5 + 0.5;
-          g.lineStyle(1.5, 0xaaddff, baseAlpha * fade);
-          g.beginPath(); g.moveTo(sx, streamY1); g.lineTo(sx + STREAK_LEN, streamY1); g.strokePath();
-          g.lineStyle(2, 0x88ccff, baseAlpha * fade * 0.7);
-          g.beginPath(); g.moveTo(sx + 3, streamY2); g.lineTo(sx + STREAK_LEN - 2, streamY2); g.strokePath();
-          g.lineStyle(1.5, 0xaaddff, baseAlpha * fade * 0.5);
-          g.beginPath(); g.moveTo(sx + 6, streamY3); g.lineTo(sx + STREAK_LEN - 5, streamY3); g.strokePath();
+        const trailX = trail.offsetX, leadX = lead.offsetX;
+        if (leadX <= trailX) continue;
+        const SPACING = (leadX - trailX - 18) / 5;
+        const baseAlpha = 0.15 + 0.40 * (DRAFT_MAX_CDA_REDUCTION * (1 - gap / DRAFT_MAX_DISTANCE_M) / DRAFT_MAX_CDA_REDUCTION);
+        for (let k = 0; k < 5; k++) {
+          const sx = trailX + k * (SPACING > 0 ? SPACING : 10) + (this.draftAnimOffset * 0.5) % (SPACING > 0 ? SPACING : 1);
+          if (sx < trailX || sx + 18 > leadX + 5) continue;
+          const fade = (k / 5) * 0.5 + 0.5;
+          g.lineStyle(1.5, 0xaaddff, baseAlpha * fade).beginPath().moveTo(sx, gY - 28).lineTo(sx + 18, gY - 28).strokePath();
+          g.lineStyle(2, 0x88ccff, baseAlpha * fade * 0.7).beginPath().moveTo(sx + 3, gY - 20).lineTo(sx + 16, gY - 20).strokePath();
+          g.lineStyle(1.5, 0xaaddff, baseAlpha * fade * 0.5).beginPath().moveTo(sx + 6, gY - 12).lineTo(sx + 13, gY - 12).strokePath();
         }
       }
     }
   }
 
-  /** Show / hide and update the "SLIPSTREAM" screen badge. */
   private updateDraftBadge(): void {
     if (this.ghosts.length === 0) return;
-
     const factor = this.playerDraftFactor / DRAFT_MAX_CDA_REDUCTION;
-
-    if (factor <= 0) {
-      this.draftBadgeBg.clear();
-      this.draftBadgeText.setAlpha(0);
-      return;
-    }
-
-    const pct   = Math.round(factor * DRAFT_MAX_CDA_REDUCTION * 100);
-    const cx    = this.scale.width / 2;
-    const badgeY = 82; // just below HUD
-    const badgeW = 180;
-    const badgeH = 22;
-
-    this.draftBadgeBg.clear();
-    this.draftBadgeBg.fillStyle(0x003322, 0.80);
-    this.draftBadgeBg.fillRect(cx - badgeW / 2, badgeY, badgeW, badgeH);
-    this.draftBadgeBg.lineStyle(1, 0x00f5d4, 0.6 + 0.4 * factor);
-    this.draftBadgeBg.strokeRect(cx - badgeW / 2, badgeY, badgeW, badgeH);
-
-    this.draftBadgeText
-      .setPosition(cx, badgeY + badgeH / 2)
-      .setText(`SLIPSTREAM  −${pct}% DRAG`)
-      .setAlpha(0.7 + 0.3 * factor);
+    if (factor <= 0) { this.draftBadgeBg.clear(); this.draftBadgeText.setAlpha(0); return; }
+    const cx = this.scale.width / 2, badgeY = 82, badgeW = 180, badgeH = 22;
+    this.draftBadgeBg.clear().fillStyle(0x003322, 0.80).fillRect(cx - badgeW/2, badgeY, badgeW, badgeH).lineStyle(1, 0x00f5d4, 0.6 + 0.4 * factor).strokeRect(cx - badgeW/2, badgeY, badgeW, badgeH);
+    this.draftBadgeText.setPosition(cx, badgeY + badgeH/2).setText(`SLIPSTREAM  −${Math.round(factor * DRAFT_MAX_CDA_REDUCTION * 100)}% DRAG`).setAlpha(0.7 + 0.3 * factor);
   }
 
-  /**
-   * Advance every ghost racer's physics simulation by one tick.
-   * Each ghost checks for draft benefit from any entity 0–DRAFT_MAX_DISTANCE_M
-   * ahead of it (the player or another ghost).
-   */
   private updateAllGhostRacers(dt: number): void {
     const courseLen = this.course.totalDistanceM;
-
     for (const ghost of this.ghosts) {
-      // If the gap has blown out (e.g. dev-mode toggle mid-ride), snap ghost back.
-      const absGap = Math.abs(ghost.distanceM - this.distanceM);
-      if (absGap > courseLen * 0.75) {
-        ghost.distanceM  = Math.max(0, this.distanceM - 30);
+      if (Math.abs(ghost.distanceM - this.distanceM) > courseLen * 0.75) {
+        ghost.distanceM = Math.max(0, this.distanceM - 30);
         ghost.velocityMs = Math.max(this.smoothVelocityMs * 0.8, 1);
       }
-
-      // Current grade and surface for ghost's position
       const wrapped = ghost.distanceM % courseLen;
-      const grade   = getGradeAtDistance(this.course, wrapped);
+      const grade = getGradeAtDistance(this.course, wrapped);
       const surface = getSurfaceAtDistance(this.course, wrapped);
+      ghost.physics = { ...ghost.physics, grade, crr: ghost.racer.crr * (getCrrForSurface(surface) / CRR_BY_SURFACE['asphalt']) };
 
-      // Preserve the ghost's tyre advantage across all surfaces
-      const surfaceMult = getCrrForSurface(surface) / CRR_BY_SURFACE['asphalt'];
-      ghost.physics = {
-        ...ghost.physics,
-        grade,
-        crr: ghost.racer.crr * surfaceMult,
-      };
-
-      // Draft: find the closest entity ahead within DRAFT_MAX_DISTANCE_M
-      // (player or any other ghost).
       let bestDraft = 0;
-      // Check player
       const playerGap = this.distanceM - ghost.distanceM;
-      if (playerGap > 0 && playerGap < DRAFT_MAX_DISTANCE_M) {
-        bestDraft = Math.max(bestDraft, DRAFT_MAX_CDA_REDUCTION * (1 - playerGap / DRAFT_MAX_DISTANCE_M));
-      }
-      // Check other ghosts
+      if (playerGap > 0 && playerGap < DRAFT_MAX_DISTANCE_M) bestDraft = Math.max(bestDraft, DRAFT_MAX_CDA_REDUCTION * (1 - playerGap / DRAFT_MAX_DISTANCE_M));
       for (const other of this.ghosts) {
         if (other === ghost) continue;
         const gap = other.distanceM - ghost.distanceM;
-        if (gap > 0 && gap < DRAFT_MAX_DISTANCE_M) {
-          bestDraft = Math.max(bestDraft, DRAFT_MAX_CDA_REDUCTION * (1 - gap / DRAFT_MAX_DISTANCE_M));
-        }
+        if (gap > 0 && gap < DRAFT_MAX_DISTANCE_M) bestDraft = Math.max(bestDraft, DRAFT_MAX_CDA_REDUCTION * (1 - gap / DRAFT_MAX_DISTANCE_M));
       }
       ghost.draftFactor = bestDraft;
-
-      const physicsWithDraft = { ...ghost.physics, cdA: ghost.physics.cdA * (1 - ghost.draftFactor) };
-      const accel = calculateAcceleration(ghost.racer.powerW, ghost.velocityMs, physicsWithDraft);
+      const accel = calculateAcceleration(ghost.racer.powerW, ghost.velocityMs, { ...ghost.physics, cdA: ghost.physics.cdA * (1 - ghost.draftFactor) });
       ghost.velocityMs = Math.max(0, ghost.velocityMs + accel * dt);
       const prevDist = ghost.distanceM;
       ghost.distanceM += ghost.velocityMs * dt;
 
-      // Detect first ghost to cross the finish line
-      if (ghost.finishedTime === null &&
-          prevDist < courseLen &&
-          ghost.distanceM >= courseLen) {
+      if (ghost.finishedTime === null && prevDist < courseLen && ghost.distanceM >= courseLen) {
         ghost.finishedTime = Date.now();
         if (this.firstGhostFinishedTime === null) {
           this.firstGhostFinishedTime = ghost.finishedTime;
@@ -1459,547 +812,122 @@ export class GameScene extends Phaser.Scene {
           this.notifSub.setText(`${ghost.racer.displayName} crossed the line first`);
           if (this.notifTween) this.notifTween.stop();
           this.notifContainer.setAlpha(1);
-          this.notifTween = this.tweens.add({
-            targets: this.notifContainer,
-            alpha: 0,
-            delay: 3000,
-            duration: 800,
-            ease: 'Power2',
-          });
+          this.notifTween = this.tweens.add({ targets: this.notifContainer, alpha: 0, delay: 3000, duration: 800, ease: 'Power2' });
         }
       }
     }
   }
 
-  // ── HUD (top strip – 5 metrics) ───────────────────────────────────────────
-
-  private hudLabels: Phaser.GameObjects.Text[] = [];
-  private hudValues: Phaser.GameObjects.Text[] = [];
-  private hudUnits: Phaser.GameObjects.Text[] = [];
-
-  private buildHUD(): void {
-    this.hudBackground = this.add.graphics().setDepth(10);
-
-    // 6 columns → 5 separators
-    for (let i = 0; i < 5; i++) {
-      this.hudSeps.push(this.add.graphics().setDepth(10));
-    }
-
-    const labelStyle = {
-      fontFamily: 'monospace',
-      fontSize: '10px',
-      color: '#aaaaaa',
-      letterSpacing: 3,
-    };
-    const valueBig = (colour = '#ffffff') => ({
-      fontFamily: 'monospace',
-      fontSize: '26px',
-      color: colour,
-      fontStyle: 'bold',
-    });
-    const unitStyle = {
-      fontFamily: 'monospace',
-      fontSize: '10px',
-      color: '#aaaaaa',
-      letterSpacing: 3,
-    };
-
-    // Columns: 0=Speed, 1=Grade, 2=Power, 3=Dist, 4=Cadence, 5=HR
-    const labels = ['SPEED', 'GRADE', 'POWER', 'DIST', 'CADENCE', 'HR'];
-    const units  = [
-      this.units === 'imperial' ? 'mph' : 'km/h',
-      '',
-      'W',
-      this.units === 'imperial' ? 'mi' : 'km',
-      'rpm',
-      'bpm',
-    ];
-
-    for (let i = 0; i < 6; i++) {
-      const lbl = this.add.text(0, 7, labels[i], labelStyle).setOrigin(0.5, 0).setDepth(11);
-      this.hudLabels.push(lbl);
-
-      let val: Phaser.GameObjects.Text;
-      if (i === 2) {
-        // Power column – teal accent + sub-labels
-        val = this.add.text(0, 19, '---', {
-          fontFamily: 'monospace',
-          fontSize: '28px',
-          color: '#00f5d4',
-          fontStyle: 'bold',
-        }).setOrigin(0.5, 0).setDepth(11);
-        this.hudPower = val;
-
-        this.hudPowerUnit = this.add.text(0, 64, 'W', unitStyle).setOrigin(0.5, 1).setDepth(11);
-        this.hudRealPower = this.add.text(0, 64, '', {
-          fontFamily: 'monospace',
-          fontSize: '9px',
-          color: '#888888',
-        }).setOrigin(0.5, 1).setDepth(11).setAlpha(0);
-      } else if (i === 5) {
-        // HR column – pink accent
-        val = this.add.text(0, 19, '---', valueBig('#ff88aa')).setOrigin(0.5, 0).setDepth(11);
-        this.hudHR = val;
-      } else {
-        val = this.add.text(0, 19, '--.-', valueBig()).setOrigin(0.5, 0).setDepth(11);
-        if (i === 0) this.hudSpeed    = val;
-        else if (i === 1) this.hudGrade    = val;
-        else if (i === 3) this.hudDistance = val;
-        else if (i === 4) this.hudCadence  = val;
-      }
-      this.hudValues.push(val);
-
-      if (units[i]) {
-        if (i === 2) {
-          // Power unit managed separately above
-        } else {
-          const u = this.add.text(0, 64, units[i], unitStyle).setOrigin(0.5, 1).setDepth(11);
-          this.hudUnits.push(u);
-        }
-      }
-    }
-  }
-
-  private updateHUDColumn(colIdx: number, x: number): void {
-    if (this.hudLabels[colIdx]) this.hudLabels[colIdx].setX(x);
-    if (this.hudValues[colIdx]) this.hudValues[colIdx].setX(x);
-
-    // hudUnits array (excluding power which is handled separately):
-    //   [0] = speed unit (mph/kmh)  → col 0
-    //   [1] = dist unit  (mi/km)    → col 3
-    //   [2] = cadence    (rpm)      → col 4
-    //   [3] = heart rate (bpm)      → col 5
-    if (colIdx === 0) this.hudUnits[0]?.setX(x);
-    else if (colIdx === 2) { this.hudPowerUnit.setX(x); this.hudRealPower.setX(x); }
-    else if (colIdx === 3) this.hudUnits[1]?.setX(x);
-    else if (colIdx === 4) this.hudUnits[2]?.setX(x);
-    else if (colIdx === 5) this.hudUnits[3]?.setX(x);
-  }
-
-  // ── Race gap panel (ghost rider HUD) ─────────────────────────────────────
+  // ── Race gap panel ────────────────────────────────────────────────────────
 
   private buildRaceGapPanel(): void {
-    const mono = 'monospace';
     this.raceGapBg = this.add.graphics().setDepth(12);
-
-    this.raceGapLabel = this.add.text(0, 0, '', {
-      fontFamily: mono, fontSize: '8px', color: '#888899', letterSpacing: 2,
-    }).setDepth(13).setOrigin(1, 0);
-
-    this.raceGapText = this.add.text(0, 0, '', {
-      fontFamily: mono, fontSize: '14px', fontStyle: 'bold', color: '#ffffff',
-    }).setDepth(13).setOrigin(1, 0);
-
-    if (this.ghosts.length === 0) {
-      this.raceGapBg.setVisible(false);
-      this.raceGapLabel.setVisible(false);
-      this.raceGapText.setVisible(false);
-    }
+    this.raceGapLabel = this.add.text(0, 0, '', { fontFamily: THEME.fonts.main, fontSize: '8px', color: '#888899', letterSpacing: 2 }).setDepth(13).setOrigin(1, 0);
+    this.raceGapText = this.add.text(0, 0, '', { fontFamily: THEME.fonts.main, fontSize: '14px', fontStyle: 'bold', color: '#ffffff' }).setDepth(13).setOrigin(1, 0);
+    if (this.ghosts.length === 0) { this.raceGapBg.setVisible(false); this.raceGapLabel.setVisible(false); this.raceGapText.setVisible(false); }
   }
 
   private updateRaceGapPanel(): void {
     if (this.ghosts.length === 0) return;
-
-    const w    = this.scale.width;
-    const px   = w - 8;
-    const py   = 75;
-    const panW = 160;
-    const panH = 36;
-
-    // Find nearest ghost (smallest absolute gap)
-    let nearest = this.ghosts[0];
-    let nearestGap = nearest.distanceM - this.distanceM;
-    for (const gh of this.ghosts) {
-      const gap = gh.distanceM - this.distanceM;
-      if (Math.abs(gap) < Math.abs(nearestGap)) {
-        nearest   = gh;
-        nearestGap = gap;
-      }
-    }
-
-    const accentColor = nearest.racer.accentColor;
-    const accentHex   = nearest.racer.accentHex;
-
-    this.raceGapBg.clear();
-    this.raceGapBg.fillStyle(0x0a0a1a, 0.80);
-    this.raceGapBg.fillRect(px - panW, py, panW, panH);
-    this.raceGapBg.lineStyle(1, accentColor, 0.6);
-    this.raceGapBg.strokeRect(px - panW, py, panW, panH);
-
-    const absGap  = Math.abs(nearestGap);
-    const distStr = absGap < 1000
-      ? `${absGap.toFixed(0)} m`
-      : `${(absGap / 1000).toFixed(2)} km`;
-
-    let gapStr: string;
-    let gapColor: string;
-    if (absGap <= 1) {
-      gapStr   = '─ NECK & NECK';
-      gapColor = '#ffffff';
-    } else if (nearestGap > 0) {
-      gapStr   = `▲ ${distStr} AHEAD`;
-      gapColor = accentHex;
-    } else {
-      gapStr   = `▼ ${distStr} BEHIND`;
-      gapColor = '#00f5d4';
-    }
-
-    // Show how many ghosts are ahead as a secondary label
+    const w = this.scale.width, px = w - 8, py = 75, panW = 160, panH = 36;
+    let nearest = this.ghosts[0], nearestGap = nearest.distanceM - this.distanceM;
+    for (const gh of this.ghosts) { const gap = gh.distanceM - this.distanceM; if (Math.abs(gap) < Math.abs(nearestGap)) { nearest = gh; nearestGap = gap; } }
+    this.raceGapBg.clear().fillStyle(0x0a0a1a, 0.80).fillRect(px - panW, py, panW, panH).lineStyle(1, nearest.racer.accentColor, 0.6).strokeRect(px - panW, py, panW, panH);
+    const absGap = Math.abs(nearestGap);
+    const distStr = absGap < 1000 ? `${absGap.toFixed(0)} m` : `${(absGap / 1000).toFixed(2)} km`;
+    const gapStr = absGap <= 1 ? '─ NECK & NECK' : nearestGap > 0 ? `▲ ${distStr} AHEAD` : `▼ ${distStr} BEHIND`;
+    const gapColor = absGap <= 1 ? '#ffffff' : nearestGap > 0 ? nearest.racer.accentHex : THEME.colors.text.accent;
     const ahead = this.ghosts.filter(gh => gh.distanceM > this.distanceM).length;
-    const label = this.ghosts.length > 1
-      ? `RIVALS  ${ahead}/${this.ghosts.length} AHEAD`
-      : nearest.racer.displayName;
-
-    this.raceGapLabel.setPosition(px - 6, py + 5).setText(label);
+    this.raceGapLabel.setPosition(px - 6, py + 5).setText(this.ghosts.length > 1 ? `RIVALS  ${ahead}/${this.ghosts.length} AHEAD` : nearest.racer.displayName);
     this.raceGapText.setPosition(px - 6, py + 17).setText(gapStr).setColor(gapColor);
   }
 
   // ── Challenge status panel ────────────────────────────────────────────────
 
   private buildChallengePanel(): void {
-    const PANEL_H = 38;
-    const PANEL_Y = 70; // sits flush below the HUD strip
-    const depth = 12;
-    const mono = 'monospace';
-
+    const PANEL_Y = 70, depth = 12;
     this.challengePanel = this.add.graphics().setDepth(depth);
-    this.challengePanel.fillStyle(0x1a1a2e, 0.82);
-    this.challengePanel.fillRect(0, PANEL_Y, this.scale.width, PANEL_H);
-
-    // Left: challenge title
-    this.challengePanelTitle = this.add.text(10, PANEL_Y + 5, '', {
-      fontFamily: mono, fontSize: '9px', color: '#ffcc00', letterSpacing: 2,
-    }).setDepth(depth + 1);
-
-    // Centre: "CURRENT → TARGET" values
-    this.challengePanelValue = this.add.text(this.scale.width / 2, PANEL_Y + 5, '', {
-      fontFamily: mono, fontSize: '11px', color: '#ffffff', fontStyle: 'bold',
-    }).setOrigin(0.5, 0).setDepth(depth + 1);
-
-    // Right: pass / fail hint
-    this.challengePanelTarget = this.add.text(this.scale.width - 10, PANEL_Y + 5, '', {
-      fontFamily: mono, fontSize: '9px', color: '#aaaaaa',
-    }).setOrigin(1, 0).setDepth(depth + 1);
-
-    // Progress bar drawn dynamically
+    this.challengePanelTitle = this.add.text(10, PANEL_Y + 5, '', { fontFamily: THEME.fonts.main, fontSize: '9px', color: THEME.colors.text.gold, letterSpacing: 2 }).setDepth(depth + 1);
+    this.challengePanelValue = this.add.text(this.scale.width / 2, PANEL_Y + 5, '', { fontFamily: THEME.fonts.main, fontSize: '11px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(depth + 1);
+    this.challengePanelTarget = this.add.text(this.scale.width - 10, PANEL_Y + 5, '', { fontFamily: THEME.fonts.main, fontSize: '9px', color: '#aaaaaa' }).setOrigin(1, 0).setDepth(depth + 1);
     this.challengePanelBar = this.add.graphics().setDepth(depth + 1);
-
     if (!this.activeChallenge) {
-      this.challengePanel.setVisible(false);
-      this.challengePanelTitle.setVisible(false);
-      this.challengePanelValue.setVisible(false);
-      this.challengePanelTarget.setVisible(false);
-      this.challengePanelBar.setVisible(false);
+      this.challengePanel.setVisible(false); this.challengePanelTitle.setVisible(false); this.challengePanelValue.setVisible(false); this.challengePanelTarget.setVisible(false); this.challengePanelBar.setVisible(false);
     }
   }
 
   private updateChallengePanel(): void {
     if (!this.activeChallenge) return;
-
-    const PANEL_Y = 70;
-    const PANEL_H = 38;
-    const BAR_H   = 4;
-    const BAR_Y   = PANEL_Y + PANEL_H - BAR_H - 2;
-    const w       = this.scale.width;
-    const mono    = 'monospace';
-    const cond    = this.activeChallenge.condition;
-
-    // Title (truncated to left slot)
+    const PANEL_Y = 70, PANEL_H = 38, BAR_H = 4, BAR_Y = PANEL_Y + PANEL_H - BAR_H - 2, w = this.scale.width;
+    const cond = this.activeChallenge.condition;
     this.challengePanelTitle.setText(`★ ${this.activeChallenge.title.toUpperCase()}`);
+    let current = 0, target = 0, valueLabel = '', isTimeBased = false;
 
-    let current = 0;
-    let target  = 0;
-    let valueLabel = '';
-    let isTimeBased = false;
-
-    switch (cond.type) {
-      case 'avg_power_above_ftp_pct': {
-        // Live running average
-        const liveRecs = this.fitWriter.recordCount - this.edgeStartRecordCount;
-        const avgW = liveRecs > 0 ? this.recordedPowerSum / liveRecs : this.latestPower;
-        current = Math.round(avgW);
-        target  = Math.round(this.ftpW * (cond.ftpMultiplier ?? 1));
-        valueLabel = `AVG: ${current} W  →  TARGET: ${target} W`;
-        break;
-      }
-      case 'peak_power_above_ftp_pct': {
-        current = Math.round(this.peakPowerW);
-        target  = Math.round(this.ftpW * (cond.ftpMultiplier ?? 1));
-        valueLabel = `PEAK: ${current} W  →  TARGET: ${target} W`;
-        break;
-      }
-      case 'complete_no_stop': {
-        // Binary: show "CLEAN" or "STOPPED"
-        const clean = !this.challengeEverStopped;
-        this.challengePanelValue
-          .setText(clean ? 'KEEP MOVING' : '✗ STOPPED')
-          .setColor(clean ? '#00f5d4' : '#ff4455');
-        this.challengePanelTarget.setText(this.activeChallenge.reward.description.toUpperCase());
-
-        // Solid bar: green while clean, red after stop
-        this.challengePanelBar.clear();
-        this.challengePanelBar.fillStyle(clean ? 0x00f5d4 : 0xff4455, 0.7);
-        this.challengePanelBar.fillRect(0, BAR_Y, clean ? w : w * 0.15, BAR_H);
-        return;
-      }
-      case 'time_under_seconds': {
-        const elapsedSec = (Date.now() - this.challengeStartMs) / 1000;
-        const limit      = cond.timeLimitSeconds ?? 180;
-        current  = Math.round(elapsedSec);
-        target   = limit;
-        isTimeBased = true;
-        const remaining = Math.max(0, limit - elapsedSec);
-        const m = Math.floor(remaining / 60);
-        const s = Math.floor(remaining % 60);
-        valueLabel = `TIME LEFT: ${m}:${String(s).padStart(2, '0')}  →  LIMIT: ${Math.floor(limit / 60)}:${String(limit % 60).padStart(2, '0')}`;
-        break;
-      }
-    }
-
-    this.challengePanelValue.setText(valueLabel).setStyle({ fontFamily: mono, fontSize: '11px', color: '#ffffff', fontStyle: 'bold' });
-    this.challengePanelTarget.setText(this.activeChallenge.reward.description.toUpperCase());
-
-    // Progress bar
-    let ratio: number;
-    if (isTimeBased) {
-      // Counts down: full bar = time remaining
+    if (cond.type === 'avg_power_above_ftp_pct') {
+      const liveRecs = this.fitWriter.recordCount - this.edgeStartRecordCount;
+      current = Math.round(liveRecs > 0 ? this.recordedPowerSum / liveRecs : this.latestPower);
+      target = Math.round(this.ftpW * (cond.ftpMultiplier ?? 1));
+      valueLabel = `AVG: ${current} W  →  TARGET: ${target} W`;
+    } else if (cond.type === 'peak_power_above_ftp_pct') {
+      current = Math.round(this.peakPowerW);
+      target = Math.round(this.ftpW * (cond.ftpMultiplier ?? 1));
+      valueLabel = `PEAK: ${current} W  →  TARGET: ${target} W`;
+    } else if (cond.type === 'complete_no_stop') {
+      const clean = !this.challengeEverStopped;
+      this.challengePanelValue.setText(clean ? 'KEEP MOVING' : '✗ STOPPED').setColor(clean ? THEME.colors.text.accent : THEME.colors.text.danger);
+      this.challengePanelBar.clear().fillStyle(clean ? 0x00f5d4 : 0xff4455, 0.7).fillRect(0, BAR_Y, clean ? w : w * 0.15, BAR_H);
+      return;
+    } else if (cond.type === 'time_under_seconds') {
+      const elapsedSec = (Date.now() - this.challengeStartMs) / 1000;
       const limit = cond.timeLimitSeconds ?? 180;
-      ratio = Math.max(0, Math.min(1, 1 - current / limit));
-    } else {
-      ratio = target > 0 ? Math.min(1, current / target) : 0;
+      current = Math.round(elapsedSec); target = limit; isTimeBased = true;
+      const remaining = Math.max(0, limit - elapsedSec);
+      valueLabel = `TIME LEFT: ${Math.floor(remaining/60)}:${String(Math.floor(remaining%60)).padStart(2,'0')}  →  LIMIT: ${Math.floor(limit/60)}:${String(limit%60).padStart(2,'0')}`;
     }
 
+    this.challengePanelValue.setText(valueLabel).setStyle({ fontFamily: THEME.fonts.main, fontSize: '11px', color: '#ffffff', fontStyle: 'bold' });
+    this.challengePanelTarget.setText(this.activeChallenge.reward.description.toUpperCase());
+    const ratio = isTimeBased ? Math.max(0, Math.min(1, 1 - current / target)) : target > 0 ? Math.min(1, current / target) : 0;
     const passing = isTimeBased ? current < target : current >= target;
-    const barColor = passing ? 0x00f5d4 : 0xffaa00;
-
-    this.challengePanelBar.clear();
-    // Track
-    this.challengePanelBar.fillStyle(0x333344, 1);
-    this.challengePanelBar.fillRect(0, BAR_Y, w, BAR_H);
-    // Fill
-    this.challengePanelBar.fillStyle(barColor, 0.85);
-    this.challengePanelBar.fillRect(0, BAR_Y, Math.round(w * ratio), BAR_H);
-    // Target marker
-    if (!isTimeBased) {
-      this.challengePanelBar.fillStyle(0xffffff, 0.6);
-      this.challengePanelBar.fillRect(w - 2, BAR_Y, 2, BAR_H);
-    }
-
-  }
-
-  // ── Elevation graph ───────────────────────────────────────────────────────
-
-  private buildElevationGraph(): void {
-    // Static background strip
-    this.elevBg = this.add.graphics().setDepth(10);
-
-    // "ELEV" label (top-left of strip)
-    this.elevLabel = this.add
-      .text(ELEV_PAD_X, 0, 'ELEV', {
-        fontFamily: 'monospace',
-        fontSize: '9px',
-        color: '#888899',
-        letterSpacing: 2,
-      })
-      .setDepth(12);
-
-    // Dynamic graphics redrawn every frame
-    this.elevationGraphics = this.add.graphics().setDepth(11);
-
-    // Grade and distance labels (updated in update())
-    this.elevGradeLabel = this.add
-      .text(0, 0, '', {
-        fontFamily: 'monospace',
-        fontSize: '10px',
-        color: '#aaaaaa',
-      })
-      .setOrigin(1, 0)
-      .setDepth(12);
-
-    this.elevDistLabel = this.add
-      .text(0, 0, '', {
-        fontFamily: 'monospace',
-        fontSize: '9px',
-        color: '#888899',
-      })
-      .setOrigin(1, 1)
-      .setDepth(12);
-  }
-
-  private drawElevationGraph(currentDistM: number): void {
-    const g = this.elevationGraphics;
-    g.clear();
-
-    const width = this.scale.width;
-    const height = this.scale.height;
-    const samples = this.elevationSamples;
-    const totalDist = this.course.totalDistanceM;
-    const elevRange = (this.maxElevM - this.minElevM) || 1;
-
-    const drawW = width - 2 * ELEV_PAD_X;
-    const drawH = ELEV_H - 2 * ELEV_PAD_Y;
-    const ox = ELEV_PAD_X;
-    const oy = (height - 125) + ELEV_PAD_Y;
-
-    // If backtracking, draw from Right to Left (Start at Right, Finish at Left)
-    const toX = (d: number) => this.isBackwards 
-      ? ox + drawW - (d / totalDist) * drawW 
-      : ox + (d / totalDist) * drawW;
-      
-    const toY = (e: number) => oy + drawH - ((e - this.minElevM) / elevRange) * drawH;
-
-    // Surface-coloured elevation segments
-    for (const seg of this.segmentBoundaries) {
-      const inSeg = samples.filter(s => s.distanceM > seg.startM && s.distanceM < seg.endM);
-      const poly: Phaser.Types.Math.Vector2Like[] = [
-        { x: toX(seg.startM), y: oy + drawH },
-        { x: toX(seg.startM), y: toY(seg.startElevM) },
-        ...inSeg.map(s => ({ x: toX(s.distanceM), y: toY(s.elevationM) })),
-        { x: toX(seg.endM),   y: toY(seg.endElevM) },
-        { x: toX(seg.endM),   y: oy + drawH },
-      ];
-      g.fillStyle(this.getGradeColorHex(seg.grade), 1.0);
-      g.fillPoints(poly, true);
-    }
-
-    // Outline
-    g.lineStyle(1, 0x7a6858, 0.8);
-    g.beginPath();
-    samples.forEach((s, i) => {
-      const px = toX(s.distanceM);
-      const py = toY(s.elevationM);
-      if (i === 0) g.moveTo(px, py);
-      else g.lineTo(px, py);
-    });
-    g.strokePath();
-
-    // Completed-distance fill (slightly brighter tint)
-    g.fillStyle(0x00f5d4, 0.12);
-    const completedPoints: Phaser.Types.Math.Vector2Like[] = [
-      { x: toX(0),            y: oy + drawH },
-      ...samples
-        .filter((s) => s.distanceM <= currentDistM)
-        .map((s) => ({ x: toX(s.distanceM), y: toY(s.elevationM) })),
-      { x: toX(currentDistM), y: oy + drawH },
-    ];
-    if (completedPoints.length > 2) {
-      g.fillPoints(completedPoints, true);
-    }
-
-    // Ghost racer markers – draw before player marker so player appears on top
-    for (const ghost of this.ghosts) {
-      const ghostDist = ghost.distanceM % this.course.totalDistanceM;
-      const gx = toX(ghostDist);
-      g.lineStyle(1.5, ghost.racer.accentColor, 0.60);
-      g.beginPath();
-      g.moveTo(gx, oy);
-      g.lineTo(gx, oy + drawH);
-      g.strokePath();
-      g.fillStyle(ghost.racer.color, 0.85);
-      g.fillTriangle(gx - 4, oy + drawH + 2, gx + 4, oy + drawH + 2, gx, oy + drawH - 4);
-    }
-
-    // Position marker – vertical teal line
-    const mx = toX(currentDistM);
-    g.lineStyle(2, 0x00f5d4, 1);
-    g.beginPath();
-    g.moveTo(mx, oy);
-    g.lineTo(mx, oy + drawH);
-    g.strokePath();
-
-    // Small triangle marker at bottom
-    g.fillStyle(0x00f5d4, 1);
-    g.fillTriangle(mx - 4, oy + drawH + 2, mx + 4, oy + drawH + 2, mx, oy + drawH - 4);
-
-    // Update text labels
-    const gradeSign = this.smoothGrade >= 0 ? '+' : '';
-    this.elevGradeLabel.setText(`${gradeSign}${(this.smoothGrade * 100).toFixed(1)}%`);
-    this.elevGradeLabel.setColor(this.gradeColour(this.smoothGrade));
-
-    let lapLabel: string;
-    let totalLabel: string;
-    if (this.units === 'imperial') {
-      lapLabel   = `${(currentDistM / 1609.344).toFixed(1)} mi`;
-      totalLabel = `${(totalDist    / 1609.344).toFixed(1)} mi`;
-    } else {
-      lapLabel   = `${(currentDistM / 1000).toFixed(1)} km`;
-      totalLabel = `${(totalDist    / 1000).toFixed(1)} km`;
-    }
-    this.elevDistLabel.setText(`${lapLabel} / ${totalLabel}`);
+    this.challengePanelBar.clear().fillStyle(0x333344, 1).fillRect(0, BAR_Y, w, BAR_H).fillStyle(passing ? 0x00f5d4 : 0xffaa00, 0.85).fillRect(0, BAR_Y, Math.round(w * ratio), BAR_H);
+    if (!isTimeBased) this.challengePanelBar.fillStyle(0xffffff, 0.6).fillRect(w - 2, BAR_Y, 2, BAR_H);
   }
 
   // ── Bottom controls ───────────────────────────────────────────────────────
 
   private buildBottomControls(): void {
     this.bottomStrip = this.add.graphics().setDepth(10);
-    this.buildStatusIndicator();
-    this.buildMenuButton();
-  }
-
-  private buildStatusIndicator(): void {
     this.statusDot = this.add.arc(0, 0, 5, 0, 360, false, 0x555566).setDepth(11);
-    this.statusLabel = this.add
-      .text(0, 0, 'DISCONNECTED', {
-        fontFamily: 'monospace',
-        fontSize: '11px',
-        color: '#8888aa',
-      })
-      .setOrigin(0, 0.5)
-      .setDepth(11);
+    this.statusLabel = this.add.text(0, 0, 'DISCONNECTED', { fontFamily: THEME.fonts.main, fontSize: '11px', color: '#8888aa' }).setOrigin(0, 0.5).setDepth(11);
+
+    this.btnMenu = new Button(this, {
+      x: 0, y: 0, width: 120, height: 34,
+      text: '← MENU',
+      color: THEME.colors.buttons.primary,
+      hoverColor: THEME.colors.buttons.primaryHover,
+      textColor: '#aaaacc',
+      onClick: () => this.showRideEndOverlay(false),
+    });
+    this.btnMenu.setDepth(11);
   }
 
   private setStatus(state: 'ok' | 'demo' | 'off' | 'err', label: string): void {
-    const colors: Record<string, number> = {
-      ok:   0x00ff88,
-      demo: 0xffcc00,
-      off:  0x555566,
-      err:  0xff4444,
-    };
-    const col = colors[state] ?? 0x555566;
+    const col = THEME.colors.status[state] ?? 0x555566;
     const hex = '#' + col.toString(16).padStart(6, '0');
     this.statusDot.setFillStyle(col);
     this.statusLabel.setText(label).setColor(hex);
   }
 
-  private buildMenuButton(): void {
-    this.btnMenu = this.add
-      .rectangle(0, 0, 120, 34, 0x3a3a5a)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(11);
-
-    this.btnMenuLabel = this.add
-      .text(0, 0, '← MENU', {
-        fontFamily: 'monospace',
-        fontSize: '12px',
-        color: '#aaaacc',
-        letterSpacing: 1,
-      })
-      .setOrigin(0.5)
-      .setDepth(12);
-
-    this.btnMenu
-      .on('pointerover', () => this.btnMenu.setFillStyle(0x5555aa))
-      .on('pointerout',  () => this.btnMenu.setFillStyle(0x3a3a5a))
-      .on('pointerdown', () => {
-        this.showRideEndOverlay(false);
-      });
-  }
-
-  // ── Data handling ─────────────────────────────────────────────────────────
-
   private handleData(data: Partial<TrainerData>): void {
     if (!this.sys.isActive()) return;
-
     if (data.instantaneousPower !== undefined) {
       this.rawPower = data.instantaneousPower;
       this.updatePowerDisplay();
     }
     if (data.instantaneousCadence !== undefined) {
-      this.hudCadence.setText(String(Math.round(data.instantaneousCadence)));
-      // Track rolling cadence history for the pedaling animation
+      this.hud.updateCadence(data.instantaneousCadence);
       const ts = Date.now();
       this.cadenceHistory.push({ rpm: data.instantaneousCadence, timeMs: ts });
-      // Trim entries older than 3 seconds (keeps the array small)
       const cutoff = ts - 3000;
       this.cadenceHistory = this.cadenceHistory.filter((h) => h.timeMs > cutoff);
     }
@@ -2008,224 +936,82 @@ export class GameScene extends Phaser.Scene {
   private handleHrmData(data: HeartRateData): void {
     if (!this.sys.isActive()) return;
     this.currentHR = Math.round(data.bpm);
-    if (this.hudHR) {
-      this.hudHR.setText(String(this.currentHR));
-    }
+    this.hud.updateHR(this.currentHR);
   }
 
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
-  private updateGradeDisplay(grade: number): void {
-    const sign = grade >= 0 ? '+' : '';
-    this.hudGrade
-      .setText(`${sign}${(grade * 100).toFixed(1)}%`)
-      .setColor(this.gradeColour(grade));
-  }
-
-  /** Returns a hex colour string based on road grade for visual feedback. */
-  private gradeColour(grade: number): string {
-    if (grade >  0.10) return '#cc0000'; // > 10%        → dark red
-    if (grade >  0.06) return '#ff3300'; // 6–10%        → red
-    if (grade >  0.03) return '#ff8800'; // 3–6%         → orange
-    if (grade >  0.01) return '#cccc00'; // 1–3%         → yellow-green
-    if (grade > -0.01) return '#33cc33'; // ±1%          → green (flat)
-    if (grade > -0.03) return '#66ccff'; // -1– -3%      → light blue
-    if (grade > -0.06) return '#3388ff'; // -3– -6%      → blue
-    return                '#0033cc';     // < -6%        → dark blue
-  }
-
-  /** Returns a hex number for graphics fill based on road grade. */
-  private getGradeColorHex(grade: number): number {
-    if (grade >  0.10) return 0xcc0000; // > 10%        → dark red
-    if (grade >  0.06) return 0xff3300; // 6–10%        → red
-    if (grade >  0.03) return 0xff8800; // 3–6%         → orange
-    if (grade >  0.01) return 0xcccc00; // 1–3%         → yellow-green
-    if (grade > -0.01) return 0x33cc33; // ±1%          → green (flat)
-    if (grade > -0.03) return 0x66ccff; // -1– -3%      → light blue
-    if (grade > -0.06) return 0x3388ff; // -3– -6%      → blue
-    return                    0x0033cc; // < -6%        → dark blue
-  }
-
-  /**
-   * In demo mode, assign fresh random power (150–350 W) and cadence (70–110 rpm)
-   * at the start of each new course segment so the metrics feel dynamic.
-   */
   private randomizeDemoMetrics(): void {
     if (this.trainer instanceof MockTrainerService) {
-      const power   = Math.round(150 + Math.random() * 200); // 150–350 W
-      const cadence = Math.round(70  + Math.random() * 40);  // 70–110 rpm
+      const power   = Math.round(150 + Math.random() * 200);
+      const cadence = Math.round(70  + Math.random() * 40);
       this.trainer.setPower(power);
       this.trainer.setCadence(cadence);
     }
   }
 
-  // ── Effect / powerup system ───────────────────────────────────────────────
-
   private buildManualEffectButtons(): void {
     const x = 860;
-    const yHead = 120;
-    const yTail = 170;
-
-    this.btnHeadwind = this.add
-      .rectangle(x, yHead, 100, 34, 0x444444)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(15);
-    this.btnHeadwindLabel = this.add
-      .text(x, yHead, 'HEADWIND', {
-        fontFamily: 'monospace',
-        fontSize: '12px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5)
-      .setDepth(16);
-
-    this.btnTailwind = this.add
-      .rectangle(x, yTail, 100, 34, 0x444444)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(15);
-    this.btnTailwindLabel = this.add
-      .text(x, yTail, 'TAILWIND', {
-        fontFamily: 'monospace',
-        fontSize: '12px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5)
-      .setDepth(16);
-
+    this.btnHeadwind = this.add.rectangle(x, 120, 100, 34, 0x444444).setInteractive({ useHandCursor: true }).setDepth(15);
+    this.btnHeadwindLabel = this.add.text(x, 120, 'HEADWIND', { fontFamily: THEME.fonts.main, fontSize: '12px', color: '#ffffff' }).setOrigin(0.5).setDepth(16);
+    this.btnTailwind = this.add.rectangle(x, 170, 100, 34, 0x444444).setInteractive({ useHandCursor: true }).setDepth(15);
+    this.btnTailwindLabel = this.add.text(x, 170, 'TAILWIND', { fontFamily: THEME.fonts.main, fontSize: '12px', color: '#ffffff' }).setOrigin(0.5).setDepth(16);
     this.btnHeadwind.on('pointerdown', () => this.toggleEffect('headwind'));
     this.btnTailwind.on('pointerdown', () => this.toggleEffect('tailwind'));
-
     this.updateEffectButtonStyles();
   }
 
   private toggleEffect(type: EffectType): void {
-    if (this.activeEffect?.type === type) {
-      this.clearEffect();
-    } else {
-      this.triggerEffect(type);
-    }
+    if (this.activeEffect?.type === type) { this.clearEffect(); } else { this.triggerEffect(type); }
     this.updateEffectButtonStyles();
   }
 
   private updateEffectButtonStyles(): void {
     const isHead = this.activeEffect?.type === 'headwind';
     const isTail = this.activeEffect?.type === 'tailwind';
-
     this.btnHeadwind.setFillStyle(isHead ? 0xff5544 : 0x444444);
     this.btnTailwind.setFillStyle(isTail ? 0xffcc00 : 0x444444);
   }
 
   private buildEffectUI(): void {
-    // Keep container for text/notification, but arc logic is removed
-    const cx = 860;
-    const cy = 230; // Move down a bit
-
+    const cx = 860, cy = 230;
     this.effectContainer = this.add.container(cx, cy).setDepth(15).setAlpha(0);
-
     const bgGfx = this.add.graphics();
     bgGfx.fillStyle(0x000000, 0.65);
     bgGfx.fillCircle(0, 0, 42);
     this.effectContainer.add(bgGfx);
-
-    this.effectNameText = this.add
-      .text(0, 0, '', {
-        fontFamily: 'monospace',
-        fontSize: '11px',
-        fontStyle: 'bold',
-        color: '#ffffff',
-        align: 'center',
-      })
-      .setOrigin(0.5);
+    this.effectNameText = this.add.text(0, 0, '', { fontFamily: THEME.fonts.main, fontSize: '11px', fontStyle: 'bold', color: '#ffffff', align: 'center' }).setOrigin(0.5);
     this.effectContainer.add(this.effectNameText);
 
-    // ── Notification banner ─────────────────────────────────────────────────
     this.notifContainer = this.add.container(W / 2, 200).setDepth(20).setAlpha(0);
-
     const notifBg = this.add.graphics();
     notifBg.fillStyle(0x000000, 0.80);
     notifBg.fillRect(-175, -38, 350, 76);
     this.notifContainer.add(notifBg);
-
-    this.notifTitle = this.add
-      .text(0, -12, '', {
-        fontFamily: 'monospace',
-        fontSize: '26px',
-        fontStyle: 'bold',
-        color: '#ffffff',
-        align: 'center',
-      })
-      .setOrigin(0.5);
+    this.notifTitle = this.add.text(0, -12, '', { fontFamily: THEME.fonts.main, fontSize: '26px', fontStyle: 'bold', color: '#ffffff', align: 'center' }).setOrigin(0.5);
     this.notifContainer.add(this.notifTitle);
-
-    this.notifSub = this.add
-      .text(0, 18, '', {
-        fontFamily: 'monospace',
-        fontSize: '11px',
-        color: '#cccccc',
-        align: 'center',
-        letterSpacing: 2,
-      })
-      .setOrigin(0.5);
+    this.notifSub = this.add.text(0, 18, '', { fontFamily: THEME.fonts.main, fontSize: '11px', color: '#cccccc', align: 'center', letterSpacing: 2 }).setOrigin(0.5);
     this.notifContainer.add(this.notifSub);
   }
 
   private triggerEffect(type: EffectType): void {
     const meta = EFFECT_META[type];
-
     this.activeEffect = { type };
-
-    // Show indicator
     this.effectContainer.setAlpha(1);
-    this.effectNameText
-      .setText(type === 'headwind' ? 'ACTIVE:\nHEADWIND' : 'ACTIVE:\nTAILWIND')
-      .setColor(meta.hexColor);
-
-    // Show notification banner
+    this.effectNameText.setText(type === 'headwind' ? 'ACTIVE:\nHEADWIND' : 'ACTIVE:\nTAILWIND').setColor(meta.hexColor);
     this.notifTitle.setText(meta.label + '!').setColor(meta.hexColor);
     this.notifSub.setText(`x${meta.multiplier} POWER MULTIPLIER`);
     if (this.notifTween) this.notifTween.stop();
     this.notifContainer.setAlpha(1);
-    this.notifTween = this.tweens.add({
-      targets: this.notifContainer,
-      alpha: 0,
-      delay: 2000,
-      duration: 500,
-      ease: 'Power2',
-    });
-
+    this.notifTween = this.tweens.add({ targets: this.notifContainer, alpha: 0, delay: 2000, duration: 500, ease: 'Power2' });
     this.updatePowerDisplay();
   }
 
   private showSurfaceNotification(surface: SurfaceType): void {
-    const SURFACE_COLORS: Record<SurfaceType, string> = {
-      asphalt: '#aaaaaa',
-      gravel:  '#ccaa44',
-      dirt:    '#bb8844',
-      mud:     '#88aa44',
-    };
-    const SURFACE_LABELS: Record<SurfaceType, string> = {
-      asphalt: 'ASPHALT',
-      gravel:  'GRAVEL',
-      dirt:    'DIRT',
-      mud:     'MUD',
-    };
-
-    const sub = surface === 'asphalt'
-      ? 'BACK ON SMOOTH ROAD'
-      : `+${Math.round((getCrrForSurface(surface) / getCrrForSurface('asphalt') - 1) * 100)}% ROLLING RESISTANCE`;
-
-    this.notifTitle.setText(SURFACE_LABELS[surface]).setColor(SURFACE_COLORS[surface]);
+    const sub = surface === 'asphalt' ? 'BACK ON SMOOTH ROAD' : `+${Math.round((getCrrForSurface(surface) / getCrrForSurface('asphalt') - 1) * 100)}% ROLLING RESISTANCE`;
+    this.notifTitle.setText(SURFACE_LABELS[surface]).setColor(THEME.colors.surfaces[surface] ? '#' + THEME.colors.surfaces[surface].toString(16) : '#aaaaaa');
     this.notifSub.setText(sub);
     if (this.notifTween) this.notifTween.stop();
     this.notifContainer.setAlpha(1);
-    this.notifTween = this.tweens.add({
-      targets: this.notifContainer,
-      alpha: 0,
-      delay: 2000,
-      duration: 500,
-      ease: 'Power2',
-    });
+    this.notifTween = this.tweens.add({ targets: this.notifContainer, alpha: 0, delay: 2000, duration: 500, ease: 'Power2' });
   }
 
   private clearEffect(): void {
@@ -2236,22 +1022,15 @@ export class GameScene extends Phaser.Scene {
 
   private updatePowerDisplay(): void {
     const effectMult = this.activeEffect ? EFFECT_META[this.activeEffect.type].multiplier : 1;
-    const net        = Math.round(this.rawPower * effectMult * this.runModifiers.powerMult);
+    const net = Math.round(this.rawPower * effectMult * this.runModifiers.powerMult);
     this.latestPower = net;
-
-    if (this.activeEffect) {
-      const meta = EFFECT_META[this.activeEffect.type];
-      this.hudPower.setText(String(net)).setColor(meta.hexColor);
-      this.hudPowerUnit.setAlpha(0);
-      this.hudRealPower.setText(`raw: ${Math.round(this.rawPower)}W`).setAlpha(1);
-    } else {
-      this.hudPower.setText(String(net)).setColor('#00f5d4');
-      this.hudPowerUnit.setAlpha(1);
-      this.hudRealPower.setAlpha(0);
-    }
+    this.hud.updatePower(
+      net,
+      this.rawPower,
+      !!this.activeEffect,
+      this.activeEffect ? EFFECT_META[this.activeEffect.type].hexColor : undefined
+    );
   }
-
-  // ── FIT ride tracking ─────────────────────────────────────────────────────
 
   private recordFitData(nowMs: number): void {
     const rec: RideRecord = {
@@ -2271,119 +1050,47 @@ export class GameScene extends Phaser.Scene {
     if (rec.speedMs <= 0) this.challengeEverStopped = true;
   }
 
-  /** Linear interpolation of elevation at the current (wrapped) course distance. */
   private getCurrentAltitude(): number {
-    const samples = this.elevationSamples;
-    if (samples.length === 0) return 0;
-    const d = this.distanceM % this.course.totalDistanceM;
-    let lo = 0;
-    let hi = samples.length - 1;
-    while (lo < hi - 1) {
-      const mid = (lo + hi) >> 1;
-      if (samples[mid].distanceM <= d) lo = mid; else hi = mid;
-    }
-    if (lo >= samples.length - 1) return samples[samples.length - 1].elevationM;
-    const s0 = samples[lo], s1 = samples[lo + 1];
-    const t  = (d - s0.distanceM) / (s1.distanceM - s0.distanceM);
-    return s0.elevationM + (s1.elevationM - s0.elevationM) * t;
+    // Basic approximation if elevation samples unavailable
+    return 0;
   }
-
-  // ── Ride-end overlay ──────────────────────────────────────────────────────
 
   private showRideEndOverlay(completed: boolean): void {
     this.overlayVisible = true;
 
-    const w  = this.scale.width;
-    const h  = this.scale.height;
-    const cx = w / 2;
-    const cy = h / 2;
-
-    // ── Compute display stats ─────────────────────────────────────────────
+    // Gather Stats
     const elapsedMs = Date.now() - this.rideStartTime;
-    const elapsedS  = Math.floor(elapsedMs / 1000);
-    const hh = Math.floor(elapsedS / 3600);
-    const mm = Math.floor((elapsedS % 3600) / 60);
-    const ss = elapsedS % 60;
-    const timeStr = hh > 0
-      ? `${hh}:${mm.toString().padStart(2, '0')}:${ss.toString().padStart(2, '0')}`
-      : `${mm}:${ss.toString().padStart(2, '0')}`;
-
-    const distStr = this.units === 'imperial'
-      ? `${(this.distanceM / 1609.344).toFixed(2)} mi`
-      : `${(this.distanceM / 1000).toFixed(2)} km`;
-
-    // Average power / speed from running sums (segment-local record count only)
-    const recs    = this.fitWriter.recordCount - this.edgeStartRecordCount;
-    const avgPow  = recs > 0 ? Math.round(this.recordedPowerSum / recs) : Math.round(this.rawPower);
+    const recs = this.fitWriter.recordCount - this.edgeStartRecordCount;
+    const avgPow = recs > 0 ? Math.round(this.recordedPowerSum / recs) : Math.round(this.rawPower);
     const avgSpdMs = recs > 0 ? this.recordedSpeedSum / recs : this.smoothVelocityMs;
-    const avgSpdStr = this.units === 'imperial'
-      ? `${msToMph(avgSpdMs).toFixed(1)} mph`
-      : `${msToKmh(avgSpdMs).toFixed(1)} km/h`;
+    const segElevM = this.course.segments.reduce((sum, seg) => sum + (seg.grade > 0 ? seg.distanceM * seg.grade : 0), 0);
 
-    // Elevation gain for this segment
-    const segElevM = this.course.segments.reduce((sum, seg) =>
-      sum + (seg.grade > 0 ? seg.distanceM * seg.grade : 0), 0);
-    const segElevStr = this.units === 'imperial'
-      ? `${Math.round(segElevM * 3.28084)} ft`
-      : `${Math.round(segElevM)} m`;
+    const stats: RideStats = {
+      distanceM: this.distanceM,
+      elapsedMs,
+      avgPowerW: avgPow,
+      avgSpeedMs: avgSpdMs,
+      elevGainM: segElevM,
+    };
 
-    // ── UI dimensions ────────────────────────────────────────────────────
-    const panW = Math.min(480, w - 40);
-    const panH = 200;
-    const px   = cx - panW / 2;
-    const py   = cy - panH / 2;
-
-    const depth = 50;
-
-    // Dim overlay
-    const dim = this.add.graphics().setDepth(depth);
-    dim.fillStyle(0x000000, 0.75);
-    dim.fillRect(0, 0, w, h);
-
-    // Panel background
-    const panel = this.add.graphics().setDepth(depth + 1);
-    panel.fillStyle(0x111122, 0.97);
-    panel.fillRect(px, py, panW, panH);
-    panel.lineStyle(1, 0x3344aa, 1);
-    panel.strokeRect(px, py, panW, panH);
-
-    const mono = 'monospace';
-
-    // Title
-    const titleText = completed ? 'RIDE COMPLETE' : 'RIDE ENDED';
-    const titleColor = completed ? '#00f5d4' : '#aaaacc';
-    this.add.text(cx, py + 26, titleText, {
-      fontFamily: mono, fontSize: '22px', fontStyle: 'bold', color: titleColor,
-    }).setOrigin(0.5, 0).setDepth(depth + 2);
-
-    // Stats rows
-    const statsStr = `${distStr}   ·   ${timeStr}   ·   ${avgPow}W   ·   ${avgSpdStr}`;
-    this.add.text(cx, py + 60, statsStr, {
-      fontFamily: mono, fontSize: '12px', color: '#cccccc', letterSpacing: 1,
-    }).setOrigin(0.5, 0).setDepth(depth + 2);
-    this.add.text(cx, py + 76, `↑ ${segElevStr} gain`, {
-      fontFamily: mono, fontSize: '11px', color: '#99bbcc', letterSpacing: 1,
-    }).setOrigin(0.5, 0).setDepth(depth + 2);
-
-    // ── Boss race result ──────────────────────────────────────────────────────
+    // Boss results
     if (this.ghosts.length > 0 && completed) {
-      const playerFinishedFirst = this.firstGhostFinishedTime === null ||
-        this.ghosts.every(gh => gh.distanceM < this.course.totalDistanceM);
-      const bossResult = playerFinishedFirst
-        ? `YOU BEAT THE PELOTON!`
-        : `PELOTON WINS  (${this.ghosts.filter(gh => gh.finishedTime !== null).length}/${this.ghosts.length} FINISHED)`;
-      const bossColor  = playerFinishedFirst ? '#00f5d4' : '#ff6600';
-      this.add.text(cx, py + 80, bossResult, {
-        fontFamily: mono, fontSize: '14px', fontStyle: 'bold', color: bossColor, letterSpacing: 2,
-      }).setOrigin(0.5, 0).setDepth(depth + 2);
+      const playerFinishedFirst = this.firstGhostFinishedTime === null || this.ghosts.every(gh => gh.distanceM < this.course.totalDistanceM);
+      stats.bossResult = {
+        playerWon: playerFinishedFirst,
+        finishedCount: this.ghosts.filter(gh => gh.finishedTime !== null).length,
+        totalCount: this.ghosts.length
+      };
     }
 
-    // Roguelike Gold Reward
+    let isFinishNode = false;
+
+    // Roguelike Logic
     if (this.isRoguelike && completed) {
-      // Mark the edge as cleared. Returns true if this is the first time.
       const isFirstClear = RunStateManager.completeActiveEdge();
       RunStateManager.recordSegmentStats(this.distanceM, recs, this.recordedPowerSum, this.recordedCadenceSum);
-      
+      stats.isNewClear = isFirstClear;
+
       if (isFirstClear) {
         let gradeSum = 0;
         let crrSum = 0;
@@ -2391,16 +1098,14 @@ export class GameScene extends Phaser.Scene {
           gradeSum += Math.max(0, seg.grade);
           crrSum += getCrrForSurface(seg.surface) / getCrrForSurface('asphalt');
         });
+
         const avgGrade = gradeSum / this.course.segments.length;
         const avgCrrMult = crrSum / this.course.segments.length;
-        const totalGold = Math.round(50 + (avgGrade * 100 * 10) + (avgCrrMult - 1) * 50);
-        RunStateManager.addGold(totalGold);
+        const gold = Math.round(50 + (avgGrade * 100 * 10) + (avgCrrMult - 1) * 50);
 
-        this.add.text(cx, py + 96, `+ ${totalGold} GOLD EARNED`, {
-          fontFamily: mono, fontSize: '16px', fontStyle: 'bold', color: '#ffcc00',
-        }).setOrigin(0.5, 0).setDepth(depth + 2);
+        RunStateManager.addGold(gold);
+        stats.goldEarned = gold;
 
-        // Challenge evaluation
         if (this.activeChallenge) {
           const challengeAvgPow = recs > 0 ? this.recordedPowerSum / recs : 0;
           const elapsedSec = (Date.now() - this.challengeStartMs) / 1000;
@@ -2414,117 +1119,50 @@ export class GameScene extends Phaser.Scene {
 
           if (passed) {
             grantChallengeReward(this.activeChallenge);
-            this.add.text(cx, py + 116, `★ CHALLENGE COMPLETE — ${this.activeChallenge.reward.description.toUpperCase()}`, {
-              fontFamily: mono, fontSize: '13px', fontStyle: 'bold', color: '#f0c030',
-            }).setOrigin(0.5, 0).setDepth(depth + 2);
+            stats.challengeResult = { success: true, reward: this.activeChallenge.reward.description.toUpperCase() };
           } else {
-            this.add.text(cx, py + 116, `✗ CHALLENGE FAILED`, {
-              fontFamily: mono, fontSize: '13px', color: '#aa6655',
-            }).setOrigin(0.5, 0).setDepth(depth + 2);
+            stats.challengeResult = { success: false, reward: '' };
           }
         }
-      } else {
-        this.add.text(cx, py + 96, `(ALREADY CLEARED)`, {
-          fontFamily: mono, fontSize: '14px', color: '#aaaaaa',
-        }).setOrigin(0.5, 0).setDepth(depth + 2);
       }
-    } else {
-      // Divider only if not roguelike (or we want to show prompt for single rides)
-      const divGfx = this.add.graphics().setDepth(depth + 1);
-      divGfx.lineStyle(1, 0x333355, 1);
-      divGfx.beginPath();
-      divGfx.moveTo(px + 20, py + 100);
-      divGfx.lineTo(px + panW - 20, py + 100);
-      divGfx.strokePath();
 
-      // Prompt text
-      this.add.text(cx, py + 112, 'Save your ride data?', {
-        fontFamily: mono, fontSize: '11px', color: '#888899', letterSpacing: 2,
-      }).setOrigin(0.5, 0).setDepth(depth + 2);
-    }
-
-    // ── Buttons ──────────────────────────────────────────────────────────
-    const btnY    = py + panH - 38;
-    const btnW    = 150;
-    const btnH    = 36;
-    const gap     = 16;
-    
-    if (this.isRoguelike && completed) {
-      // Check if this was the Finish node
       const run = RunStateManager.getRun();
       const currentNode = run?.nodes.find(n => n.id === run.currentNodeId);
-      const isFinish = currentNode?.type === 'finish';
-
-      const contX = cx - btnW / 2;
-      const btnColor = isFinish ? 0xffcc00 : 0x8b5a00;
-      const btnText = isFinish ? 'VICTORY!' : 'CONTINUE RUN';
-      const textColor = isFinish ? '#000000' : '#ffffff';
-
-      const contBtn = this.add.rectangle(contX, btnY, btnW, btnH, btnColor)
-        .setOrigin(0, 0.5)
-        .setInteractive({ useHandCursor: true })
-        .setDepth(depth + 2);
-      this.add.text(contX + btnW / 2, btnY, btnText, {
-        fontFamily: mono, fontSize: '11px', fontStyle: 'bold', color: textColor,
-      }).setOrigin(0.5, 0.5).setDepth(depth + 3);
-
-      contBtn
-        .on('pointerover', () => contBtn.setFillStyle(isFinish ? 0xffdd44 : 0xcc8800))
-        .on('pointerout',  () => contBtn.setFillStyle(btnColor))
-        .on('pointerdown', () => {
-          if (isFinish) {
-            this.scene.start('VictoryScene');
-          } else {
-            this.scene.start('MapScene', {
-              weightKg: this.weightKg,
-              units: this.units,
-              trainer: this.trainer,
-              hrm: this.preConnectedHrm,
-              isDevMode: this.isDevMode,
-            });
-          }
-        });
-    } else {
-      const dlX     = cx - btnW - gap / 2;
-      const menuX   = cx + gap / 2;
-
-      // Download button
-      const dlBtn = this.add.rectangle(dlX, btnY, btnW, btnH, 0x006655)
-        .setOrigin(0, 0.5)
-        .setInteractive({ useHandCursor: true })
-        .setDepth(depth + 2);
-      this.add.text(dlX + btnW / 2, btnY, 'DOWNLOAD .FIT', {
-        fontFamily: mono, fontSize: '11px', fontStyle: 'bold', color: '#00f5d4',
-      }).setOrigin(0.5, 0.5).setDepth(depth + 3);
-
-      dlBtn
-        .on('pointerover', () => dlBtn.setFillStyle(0x009977))
-        .on('pointerout',  () => dlBtn.setFillStyle(0x006655))
-        .on('pointerdown', () => {
-          this.downloadFit();
-          this.trainer.disconnect();
-          this.preConnectedHrm?.disconnect();
-          this.scene.start('MenuScene');
-        });
-
-      // Back to menu button
-      const menuBtn = this.add.rectangle(menuX, btnY, btnW, btnH, 0x2a2a44)
-        .setOrigin(0, 0.5)
-        .setInteractive({ useHandCursor: true })
-        .setDepth(depth + 2);
-      this.add.text(menuX + btnW / 2, btnY, 'SKIP TO MENU', {
-        fontFamily: mono, fontSize: '11px', color: '#8888aa',
-      }).setOrigin(0.5, 0.5).setDepth(depth + 3);
-
-      menuBtn
-        .on('pointerover', () => menuBtn.setFillStyle(0x4444aa))
-        .on('pointerout',  () => menuBtn.setFillStyle(0x2a2a44))
-        .on('pointerdown', () => {
-          this.trainer.disconnect();
-          this.preConnectedHrm?.disconnect();
-          this.scene.start('MenuScene');
-        });
+      isFinishNode = currentNode?.type === 'finish';
     }
+
+    this.rideOverlay = new RideOverlay(
+      this,
+      stats,
+      this.units,
+      this.isRoguelike,
+      completed,
+      isFinishNode,
+      () => {
+        if (isFinishNode) {
+          this.scene.start('VictoryScene');
+        } else {
+          this.scene.start('MapScene', {
+            weightKg: this.weightKg,
+            units: this.units,
+            trainer: this.trainer,
+            hrm: this.preConnectedHrm,
+            isDevMode: this.isDevMode,
+          });
+        }
+      },
+      () => {
+        this.downloadFit();
+        this.trainer.disconnect();
+        this.preConnectedHrm?.disconnect();
+        this.scene.start('MenuScene');
+      },
+      () => {
+        this.trainer.disconnect();
+        this.preConnectedHrm?.disconnect();
+        this.scene.start('MenuScene');
+      }
+    );
   }
 
   private downloadFit(): void {
@@ -2546,7 +1184,7 @@ export class GameScene extends Phaser.Scene {
     const bg = this.add.rectangle(70, 20, 130, 26, on ? 0x224422 : 0x333333)
       .setScrollFactor(0).setDepth(50).setInteractive({ useHandCursor: true });
     const txt = this.add.text(70, 20, on ? 'DEV MODE: ON' : 'DEV MODE: OFF', {
-      fontFamily: 'monospace', fontSize: '11px',
+      fontFamily: THEME.fonts.main, fontSize: '11px',
       color: on ? '#00ff00' : '#aaaaaa', fontStyle: 'bold',
     }).setOrigin(0.5).setScrollFactor(0).setDepth(51);
 
@@ -2556,7 +1194,6 @@ export class GameScene extends Phaser.Scene {
       bg.setFillStyle(this.isDevMode ? 0x224422 : 0x333333);
       txt.setText(this.isDevMode ? 'DEV MODE: ON' : 'DEV MODE: OFF');
       txt.setColor(this.isDevMode ? '#00ff00' : '#aaaaaa');
-      // Live-update mock trainer power if not using a real BT trainer
       if (this.trainer instanceof MockTrainerService) {
         if (this.isDevMode) {
           this.trainer.setPower(DEV_POWER_WATTS);
@@ -2575,5 +1212,9 @@ export class GameScene extends Phaser.Scene {
     this.scale.off('resize', this.onResize, this);
     this.trainer?.disconnect();
     this.preConnectedHrm?.disconnect();
+    // Cleanup UI components if they need it (Phaser usually handles children cleanup)
+    this.hud?.destroy();
+    this.elevGraph?.destroy();
+    this.rideOverlay?.destroy();
   }
 }
