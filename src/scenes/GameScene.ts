@@ -217,7 +217,8 @@ export class GameScene extends Phaser.Scene {
   private layerMountains!: Phaser.GameObjects.TileSprite;
   private layerMidHills!: Phaser.GameObjects.TileSprite;
   private layerNearGround!: Phaser.GameObjects.TileSprite;
-  private layerRoad!: Phaser.GameObjects.TileSprite;
+  /** One TileSprite per surface type; only the active surface's layer is visible. */
+  private roadLayers!: Record<SurfaceType, Phaser.GameObjects.TileSprite>;
 
   // Pre-connected services passed in from MenuScene
   private preConnectedTrainer: ITrainerService | null = null;
@@ -293,7 +294,8 @@ export class GameScene extends Phaser.Scene {
       // to cover the full height without vertical tiling; tileScaleX stays 1 so
       // the texture tiles naturally for horizontal scrolling.
       const tileScaleY = height / H;
-      [this.layerMountains, this.layerMidHills, this.layerNearGround, this.layerRoad].forEach(tile => {
+      const roadTiles = this.roadLayers ? (Object.values(this.roadLayers) as Phaser.GameObjects.TileSprite[]) : [];
+      [this.layerMountains, this.layerMidHills, this.layerNearGround, ...roadTiles].forEach(tile => {
         if (tile) {
           tile.setSize(width, height);
           tile.setTileScale(1, tileScaleY);
@@ -630,6 +632,7 @@ export class GameScene extends Phaser.Scene {
     if (surfaceChanged) {
       this.currentSurface = newSurface;
       this.showSurfaceNotification(newSurface);
+      this.switchRoadLayer(newSurface);
     }
 
     if (gradeChanged || surfaceChanged) {
@@ -689,7 +692,10 @@ export class GameScene extends Phaser.Scene {
     this.layerMountains.tilePositionX += baseScroll * 0.10 * dir;
     this.layerMidHills.tilePositionX  += baseScroll * 0.30 * dir;
     this.layerNearGround.tilePositionX += baseScroll * 0.65 * dir;
-    this.layerRoad.tilePositionX      += baseScroll * 1.00 * dir;
+    // Scroll all road layers together so switching surfaces is seamless
+    for (const tile of Object.values(this.roadLayers)) {
+      tile.tilePositionX += baseScroll * 1.00 * dir;
+    }
 
     // ── HUD updates ──────────────────────────────────────────────────────────
     if (this.units === 'imperial') {
@@ -739,11 +745,6 @@ export class GameScene extends Phaser.Scene {
         parallax: 0.65,
         draw: (g) => this.drawNearGround(g),
       },
-      {
-        key: 'road',
-        parallax: 1.00,
-        draw: (g) => this.drawRoad(g),
-      },
     ];
 
     for (const layer of layers) {
@@ -762,8 +763,36 @@ export class GameScene extends Phaser.Scene {
       if (layer.key === 'mountains') this.layerMountains = sprite;
       else if (layer.key === 'midHills') this.layerMidHills = sprite;
       else if (layer.key === 'nearGround') this.layerNearGround = sprite;
-      else if (layer.key === 'road') this.layerRoad = sprite;
     }
+
+    // Build one road TileSprite per surface type; only the active one is visible.
+    const roadDrawers: Record<SurfaceType, (g: Phaser.GameObjects.Graphics) => void> = {
+      asphalt: (g) => this.drawRoad(g),
+      gravel:  (g) => this.drawRoadGravel(g),
+      dirt:    (g) => this.drawRoadDirt(g),
+      mud:     (g) => this.drawRoadMud(g),
+    };
+
+    const roadEntries = (Object.entries(roadDrawers) as [SurfaceType, (g: Phaser.GameObjects.Graphics) => void][]);
+    const roadSprites = {} as Record<SurfaceType, Phaser.GameObjects.TileSprite>;
+
+    for (const [surface, drawFn] of roadEntries) {
+      const key = `road_${surface}`;
+      const g = this.add.graphics();
+      drawFn(g);
+      g.generateTexture(key, W, H);
+      g.destroy();
+
+      const sprite = this.add
+        .tileSprite(-W / 2, -H / 2, W, H, key)
+        .setOrigin(0, 0)
+        .setVisible(surface === this.currentSurface);
+
+      this.worldContainer.add(sprite);
+      roadSprites[surface] = sprite;
+    }
+
+    this.roadLayers = roadSprites;
   }
 
   /** Mountains: aged paper peaks, y≈115–200 */
@@ -831,7 +860,14 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-  /** Road: paper grey strip at y≈455 with white dashed centre line */
+  /** Switch which road surface layer is visible. */
+  private switchRoadLayer(surface: SurfaceType): void {
+    for (const [key, tile] of Object.entries(this.roadLayers) as [SurfaceType, Phaser.GameObjects.TileSprite][]) {
+      tile.setVisible(key === surface);
+    }
+  }
+
+  /** Asphalt: paper grey strip with white dashed centre line. */
   private drawRoad(g: Phaser.GameObjects.Graphics): void {
     g.fillStyle(0x9a8878, 1);
     g.fillRect(0, 420, W, H - 420);
@@ -847,6 +883,109 @@ export class GameScene extends Phaser.Scene {
     const lineH = 4;
     for (let x = 0; x < W; x += dashW + gapW) {
       g.fillRect(x, lineY, dashW, lineH);
+    }
+  }
+
+  /** Gravel: sandy tan road with scattered pebble marks, no centre line. */
+  private drawRoadGravel(g: Phaser.GameObjects.Graphics): void {
+    // Base sandy colour
+    g.fillStyle(0xc4a882, 1);
+    g.fillRect(0, 420, W, H - 420);
+
+    // Slightly darker shoulder band at road edge
+    g.fillStyle(0xa88c68, 1);
+    g.fillRect(0, 420, W, 5);
+    g.fillRect(0, H - 5, W, 5);
+
+    // Scatter pebbles using a deterministic pattern across the texture
+    const pebbleData: Array<{ x: number; y: number; w: number; h: number; shade: number }> = [];
+    // Use a simple LCG for determinism (no Math.random so it's stable across runs)
+    let seed = 42;
+    const rand = () => { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; };
+
+    for (let i = 0; i < 220; i++) {
+      const px = rand() * W;
+      const py = 425 + rand() * (H - 430);
+      const size = 2 + rand() * 5;
+      const shade = rand() > 0.5 ? 0x9a7a58 : 0xddc8a8;
+      pebbleData.push({ x: Math.round(px), y: Math.round(py), w: Math.round(size), h: Math.round(size * 0.6), shade });
+    }
+
+    for (const p of pebbleData) {
+      g.fillStyle(p.shade, 0.9);
+      g.fillEllipse(p.x, p.y, p.w, p.h);
+    }
+  }
+
+  /** Dirt: earthy brown track with tyre ruts, no centre line. */
+  private drawRoadDirt(g: Phaser.GameObjects.Graphics): void {
+    // Base earthy brown
+    g.fillStyle(0xa06030, 1);
+    g.fillRect(0, 420, W, H - 420);
+
+    // Rough soil-coloured edge band
+    g.fillStyle(0x804818, 1);
+    g.fillRect(0, 420, W, 5);
+    g.fillRect(0, H - 5, W, 5);
+
+    // Two tyre ruts running the full width
+    const rutY1 = 437;
+    const rutY2 = 500;
+    const rutH = 6;
+    g.fillStyle(0x6b3810, 0.85);
+    g.fillRect(0, rutY1, W, rutH);
+    g.fillRect(0, rutY2, W, rutH);
+
+    // Small rocks and clods scattered between ruts
+    let seed = 17;
+    const rand = () => { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; };
+
+    for (let i = 0; i < 80; i++) {
+      const px = rand() * W;
+      const py = 426 + rand() * (H - 432);
+      const size = 2 + rand() * 4;
+      g.fillStyle(rand() > 0.5 ? 0xc08040 : 0x804020, 0.7);
+      g.fillRect(Math.round(px), Math.round(py), Math.round(size), Math.round(size * 0.7));
+    }
+  }
+
+  /** Mud: dark churned surface with deep tyre tracks, no centre line. */
+  private drawRoadMud(g: Phaser.GameObjects.Graphics): void {
+    // Base dark muddy olive-brown
+    g.fillStyle(0x5a4828, 1);
+    g.fillRect(0, 420, W, H - 420);
+
+    // Even darker edge band
+    g.fillStyle(0x3a2818, 1);
+    g.fillRect(0, 420, W, 6);
+    g.fillRect(0, H - 6, W, 6);
+
+    // Deep wide tyre tracks
+    const trackY1 = 433;
+    const trackY2 = 492;
+    const trackH = 12;
+    g.fillStyle(0x2e1e0e, 0.9);
+    g.fillRect(0, trackY1, W, trackH);
+    g.fillRect(0, trackY2, W, trackH);
+
+    // Tyre tread pattern inside each track
+    g.fillStyle(0x1e1208, 0.6);
+    for (let x = 0; x < W; x += 18) {
+      g.fillRect(x, trackY1 + 2, 9, trackH - 4);
+      g.fillRect(x + 9, trackY2 + 2, 9, trackH - 4);
+    }
+
+    // Mud splatter blobs around the tracks
+    let seed = 99;
+    const rand = () => { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; };
+
+    for (let i = 0; i < 60; i++) {
+      const px = rand() * W;
+      const py = 426 + rand() * (H - 432);
+      const rx = 3 + rand() * 8;
+      const ry = 2 + rand() * 4;
+      g.fillStyle(0x3a2818, 0.6);
+      g.fillEllipse(Math.round(px), Math.round(py), Math.round(rx), Math.round(ry));
     }
   }
 
