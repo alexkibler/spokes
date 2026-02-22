@@ -90,8 +90,24 @@ function computeKnee(
 const WORLD_SCALE = 50;
 const GRADE_SEND_THRESHOLD = 0.001;
 const GRADE_LERP_RATE = 1.0;
-const DRAFT_MAX_DISTANCE_M = 20;
-const DRAFT_MAX_CDA_REDUCTION = 0.30;
+/** Distance at which draft effect starts (DRAFT_MIN_CDA_REDUCTION at this distance) */
+const DRAFT_MAX_DISTANCE_M = 30;
+/** CdA reduction at gap = 0 m (wheel-to-wheel) */
+const DRAFT_MAX_CDA_REDUCTION = 0.50;
+/** CdA reduction at gap = DRAFT_MAX_DISTANCE_M (tail of the bubble) */
+const DRAFT_MIN_CDA_REDUCTION = 0.01;
+
+/**
+ * Returns the CdA reduction fraction for a trailing rider at `gapM` metres
+ * behind the leading rider.  Linear from DRAFT_MAX_CDA_REDUCTION at 0 m to
+ * DRAFT_MIN_CDA_REDUCTION at DRAFT_MAX_DISTANCE_M, 0 beyond that.
+ */
+function draftFactor(gapM: number): number {
+  if (gapM <= 0 || gapM >= DRAFT_MAX_DISTANCE_M) return 0;
+  return DRAFT_MIN_CDA_REDUCTION +
+    (DRAFT_MAX_CDA_REDUCTION - DRAFT_MIN_CDA_REDUCTION) *
+    (1 - gapM / DRAFT_MAX_DISTANCE_M);
+}
 
 interface GhostState {
   racer:        RacerProfile;
@@ -503,10 +519,7 @@ export class GameScene extends Phaser.Scene {
     if (this.ghosts.length > 0) {
       let bestDraft = 0;
       for (const ghost of this.ghosts) {
-        const gap = ghost.distanceM - this.distanceM;
-        if (gap > 0 && gap < DRAFT_MAX_DISTANCE_M) {
-          bestDraft = Math.max(bestDraft, DRAFT_MAX_CDA_REDUCTION * (1 - gap / DRAFT_MAX_DISTANCE_M));
-        }
+        bestDraft = Math.max(bestDraft, draftFactor(ghost.distanceM - this.distanceM));
       }
       this.playerDraftFactor = bestDraft;
       this.draftAnimOffset += this.smoothVelocityMs * dt * 2;
@@ -744,26 +757,77 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Draw animated speed lines in the wake of every leading rider that has a
+   * trailer within draft range.  Lines fan out from behind the leader and
+   * taper toward the trailing rider, scrolling at road speed.
+   */
   private drawSlipstream(): void {
     const g = this.slipstreamGraphics.clear();
     const gY = this.cycGroundY;
-    const riders = [{ distanceM: this.distanceM, offsetX: 0, draftFactor: this.playerDraftFactor }, ...this.ghosts.map(gh => ({ distanceM: gh.distanceM, offsetX: Math.tanh((gh.distanceM - this.distanceM) / 120) * 280, draftFactor: gh.draftFactor }))];
+
+    // All visible riders: player at offsetX=0, each ghost at its visual offset
+    const riders = [
+      { distanceM: this.distanceM, offsetX: 0 },
+      ...this.ghosts.map(gh => ({
+        distanceM: gh.distanceM,
+        offsetX: Math.tanh((gh.distanceM - this.distanceM) / 120) * 280,
+      })),
+    ];
+
     for (let i = 0; i < riders.length; i++) {
       for (let j = 0; j < riders.length; j++) {
         if (i === j) continue;
-        const trail = riders[i], lead = riders[j], gap = lead.distanceM - trail.distanceM;
-        if (gap <= 0 || gap >= DRAFT_MAX_DISTANCE_M) continue;
-        const trailX = trail.offsetX, leadX = lead.offsetX;
-        if (leadX <= trailX) continue;
-        const SPACING = (leadX - trailX - 18) / 5;
-        const baseAlpha = 0.15 + 0.40 * (DRAFT_MAX_CDA_REDUCTION * (1 - gap / DRAFT_MAX_DISTANCE_M) / DRAFT_MAX_CDA_REDUCTION);
-        for (let k = 0; k < 5; k++) {
-          const sx = trailX + k * (SPACING > 0 ? SPACING : 10) + (this.draftAnimOffset * 0.5) % (SPACING > 0 ? SPACING : 1);
-          if (sx < trailX || sx + 18 > leadX + 5) continue;
-          const fade = (k / 5) * 0.5 + 0.5;
-          g.lineStyle(1.5, 0xaaddff, baseAlpha * fade).beginPath().moveTo(sx, gY - 28).lineTo(sx + 18, gY - 28).strokePath();
-          g.lineStyle(2, 0x88ccff, baseAlpha * fade * 0.7).beginPath().moveTo(sx + 3, gY - 20).lineTo(sx + 16, gY - 20).strokePath();
-          g.lineStyle(1.5, 0xaaddff, baseAlpha * fade * 0.5).beginPath().moveTo(sx + 6, gY - 12).lineTo(sx + 13, gY - 12).strokePath();
+        const trail = riders[i];
+        const lead  = riders[j];
+        const gap   = lead.distanceM - trail.distanceM;
+        const df    = draftFactor(gap); // 0 if out of range
+        if (df <= 0) continue;
+
+        const trailX = trail.offsetX;
+        const leadX  = lead.offsetX;
+        if (leadX <= trailX + 4) continue; // no visual room
+
+        // Normalised intensity 0→1 across the draft range
+        const intensity = (df - DRAFT_MIN_CDA_REDUCTION) /
+          (DRAFT_MAX_CDA_REDUCTION - DRAFT_MIN_CDA_REDUCTION);
+
+        const span   = leadX - trailX;
+        // Lines scroll from lead toward trail at ~road speed
+        const scroll = this.draftAnimOffset % span;
+
+        // 7 speed-line rows at different heights through the rider silhouette
+        const rows: Array<{ y: number; thick: number; color: number; alphaMult: number }> = [
+          { y: gY - 38, thick: 1.0, color: 0xcceeff, alphaMult: 0.40 },
+          { y: gY - 32, thick: 1.5, color: 0xaaddff, alphaMult: 0.70 },
+          { y: gY - 26, thick: 2.0, color: 0x88ccff, alphaMult: 1.00 },
+          { y: gY - 20, thick: 2.5, color: 0x88ccff, alphaMult: 1.00 },
+          { y: gY - 14, thick: 2.0, color: 0xaaddff, alphaMult: 0.80 },
+          { y: gY -  8, thick: 1.5, color: 0xcceeff, alphaMult: 0.55 },
+          { y: gY -  2, thick: 1.0, color: 0xddeeFF, alphaMult: 0.30 },
+        ];
+
+        // Number of lines scales with intensity (2 at minimum, 6 at full draft)
+        const numLines = Math.round(2 + intensity * 4);
+        const lineLen  = 12 + intensity * 20; // longer lines = stronger draft
+        const spacing  = span / numLines;
+
+        for (const row of rows) {
+          const baseAlpha = 0.08 + 0.42 * intensity * row.alphaMult;
+          for (let k = 0; k < numLines; k++) {
+            // Position animated so lines stream from lead to trail
+            const rawX = leadX - scroll - k * spacing;
+            // Clamp to the gap zone
+            if (rawX - lineLen < trailX - 4 || rawX > leadX + 4) continue;
+            const x0 = Math.max(trailX, rawX - lineLen);
+            const x1 = Math.min(leadX,  rawX);
+            if (x1 <= x0) continue;
+            // Taper: brighter near the leader, fading toward the trailer
+            const t = (rawX - trailX) / span; // 0=near trailer, 1=near lead
+            const lineAlpha = baseAlpha * (0.3 + 0.7 * t);
+            g.lineStyle(row.thick, row.color, lineAlpha);
+            g.beginPath().moveTo(x0, row.y).lineTo(x1, row.y).strokePath();
+          }
         }
       }
     }
@@ -771,11 +835,12 @@ export class GameScene extends Phaser.Scene {
 
   private updateDraftBadge(): void {
     if (this.ghosts.length === 0) return;
-    const factor = this.playerDraftFactor / DRAFT_MAX_CDA_REDUCTION;
-    if (factor <= 0) { this.draftBadgeBg.clear(); this.draftBadgeText.setAlpha(0); return; }
-    const cx = this.scale.width / 2, badgeY = 82, badgeW = 180, badgeH = 22;
-    this.draftBadgeBg.clear().fillStyle(0x003322, 0.80).fillRect(cx - badgeW/2, badgeY, badgeW, badgeH).lineStyle(1, 0x00f5d4, 0.6 + 0.4 * factor).strokeRect(cx - badgeW/2, badgeY, badgeW, badgeH);
-    this.draftBadgeText.setPosition(cx, badgeY + badgeH/2).setText(`SLIPSTREAM  −${Math.round(factor * DRAFT_MAX_CDA_REDUCTION * 100)}% DRAG`).setAlpha(0.7 + 0.3 * factor);
+    const pct = Math.round(this.playerDraftFactor * 100); // already in 0–50 range
+    if (pct <= 0) { this.draftBadgeBg.clear(); this.draftBadgeText.setAlpha(0); return; }
+    const intensity = this.playerDraftFactor / DRAFT_MAX_CDA_REDUCTION; // 0–1 for visual scaling
+    const cx = this.scale.width / 2, badgeY = 82, badgeW = 190, badgeH = 22;
+    this.draftBadgeBg.clear().fillStyle(0x003322, 0.80).fillRect(cx - badgeW/2, badgeY, badgeW, badgeH).lineStyle(1, 0x00f5d4, 0.6 + 0.4 * intensity).strokeRect(cx - badgeW/2, badgeY, badgeW, badgeH);
+    this.draftBadgeText.setPosition(cx, badgeY + badgeH/2).setText(`SLIPSTREAM  −${pct}% DRAG`).setAlpha(0.7 + 0.3 * intensity);
   }
 
   private updateAllGhostRacers(dt: number): void {
@@ -790,13 +855,10 @@ export class GameScene extends Phaser.Scene {
       const surface = getSurfaceAtDistance(this.course, wrapped);
       ghost.physics = { ...ghost.physics, grade, crr: ghost.racer.crr * (getCrrForSurface(surface) / CRR_BY_SURFACE['asphalt']) };
 
-      let bestDraft = 0;
-      const playerGap = this.distanceM - ghost.distanceM;
-      if (playerGap > 0 && playerGap < DRAFT_MAX_DISTANCE_M) bestDraft = Math.max(bestDraft, DRAFT_MAX_CDA_REDUCTION * (1 - playerGap / DRAFT_MAX_DISTANCE_M));
+      let bestDraft = draftFactor(this.distanceM - ghost.distanceM); // player ahead?
       for (const other of this.ghosts) {
         if (other === ghost) continue;
-        const gap = other.distanceM - ghost.distanceM;
-        if (gap > 0 && gap < DRAFT_MAX_DISTANCE_M) bestDraft = Math.max(bestDraft, DRAFT_MAX_CDA_REDUCTION * (1 - gap / DRAFT_MAX_DISTANCE_M));
+        bestDraft = Math.max(bestDraft, draftFactor(other.distanceM - ghost.distanceM));
       }
       ghost.draftFactor = bestDraft;
       const accel = calculateAcceleration(ghost.racer.powerW, ghost.velocityMs, { ...ghost.physics, cdA: ghost.physics.cdA * (1 - ghost.draftFactor) });
