@@ -36,9 +36,10 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
     const CATALOG: ShopItem[] = [
       { id: 'tailwind',        label: 'TAILWIND',          description: '2× power toggle during ride',   basePrice: 100, color: 0x2a2a44, hoverColor: 0x3a3a5a, stackable: false },
       { id: 'teleport',        label: 'TELEPORT SCROLL',   description: 'Warp to any visited node',       basePrice: 10,  color: 0x442244, hoverColor: 0x553355, stackable: true  },
-      { id: 'aero_helmet',     label: 'AERO HELMET',       description: '+5% drag reduction (stacks)',    basePrice: 80,  color: 0x1a2a3a, hoverColor: 0x2a3a4a, stackable: true  },
-      { id: 'gold_crank',      label: 'SOLID GOLD CRANK',  description: '×2.0 permanent power (stacks)', basePrice: 200, color: 0x3a2a00, hoverColor: 0x4a3a00, stackable: true  },
-      { id: 'antigrav_pedals', label: 'ANTIGRAV PEDALS',   description: '×0.5 rider weight (stacks)',     basePrice: 150, color: 0x1a3a1a, hoverColor: 0x2a4a2a, stackable: true  },
+      { id: 'reroll_voucher',  label: 'REROLL VOUCHER',    description: 'Reroll reward choices once',     basePrice: 50,  color: 0x2a2a08, hoverColor: 0x3a3a10, stackable: true  },
+      { id: 'aero_helmet',     label: 'AERO HELMET',       description: '+3% drag reduction (stacks)',    basePrice: 60,  color: 0x1a2a3a, hoverColor: 0x2a3a4a, stackable: true  },
+      { id: 'gold_crank',      label: 'SOLID GOLD CRANK',  description: '×1.25 permanent power (stacks)', basePrice: 120, color: 0x3a2a00, hoverColor: 0x4a3a00, stackable: true  },
+      { id: 'antigrav_pedals', label: 'ANTIGRAV PEDALS',   description: '-8% rider weight (stacks)',       basePrice: 90,  color: 0x1a3a1a, hoverColor: 0x2a4a2a, stackable: true  },
     ];
 
     const ITEM_H = 52;
@@ -125,19 +126,20 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
           switch (item.id) {
             case 'tailwind':
             case 'teleport':
+            case 'reroll_voucher':
               RunStateManager.addToInventory(item.id);
               break;
             case 'aero_helmet':
               RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ dragReduction: 0.05 });
+              RunStateManager.applyModifier({ dragReduction: 0.03 });
               break;
             case 'gold_crank':
               RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ powerMult: 2.0 });
+              RunStateManager.applyModifier({ powerMult: 1.25 });
               break;
             case 'antigrav_pedals':
               RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ weightMult: 0.5 });
+              RunStateManager.applyModifier({ weightMult: 0.92 });
               break;
           }
           refreshShop();

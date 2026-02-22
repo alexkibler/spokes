@@ -40,6 +40,8 @@ const SURFACE_LABELS: Record<SurfaceType, string> = {
 };
 import { ElevationGraph } from './ui/ElevationGraph';
 import { RideOverlay, type RideStats } from './ui/RideOverlay';
+import { RewardOverlay } from './ui/RewardOverlay';
+import { pickRewards } from '../roguelike/RewardPool';
 import { Button } from '../ui/Button';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1146,6 +1148,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     let isFinishNode = false;
+    let showRewardScreen = false;
 
     // Roguelike Logic
     if (this.isRoguelike && completed) {
@@ -1186,6 +1189,8 @@ export class GameScene extends Phaser.Scene {
             stats.challengeResult = { success: false, reward: '' };
           }
         }
+
+        showRewardScreen = true;
       }
 
       const run = RunStateManager.getRun();
@@ -1203,6 +1208,9 @@ export class GameScene extends Phaser.Scene {
       () => {
         if (isFinishNode) {
           this.scene.start('VictoryScene');
+        } else if (showRewardScreen) {
+          this.rideOverlay?.destroy();
+          this.showRewardSelection();
         } else {
           this.scene.start('MapScene', {
             weightKg: this.weightKg,
@@ -1225,6 +1233,41 @@ export class GameScene extends Phaser.Scene {
         this.scene.start('MenuScene');
       }
     );
+  }
+
+  private showRewardSelection(): void {
+    const mapData = {
+      weightKg: this.weightKg,
+      units: this.units,
+      trainer: this.trainer,
+      hrm: this.preConnectedHrm,
+      isDevMode: this.isDevMode,
+    };
+
+    const goToMap = () => this.scene.start('MapScene', mapData);
+
+    const showOverlay = () => {
+      const run = RunStateManager.getRun();
+      const rerollCount = run?.inventory.filter(i => i === 'reroll_voucher').length ?? 0;
+      const picks = pickRewards(3);
+
+      const overlay = new RewardOverlay(
+        this,
+        picks,
+        (reward) => {
+          reward.apply();
+          overlay.destroy();
+          goToMap();
+        },
+        rerollCount > 0 ? () => {
+          RunStateManager.removeFromInventory('reroll_voucher');
+          overlay.destroy();
+          showOverlay();
+        } : null,
+      );
+    };
+
+    showOverlay();
   }
 
   private downloadFit(): void {
