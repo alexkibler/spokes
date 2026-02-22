@@ -26,6 +26,7 @@ import { HeartRateService } from '../services/HeartRateService';
 import type { HeartRateData } from '../services/HeartRateService';
 import { RunStateManager, type RunModifiers } from '../roguelike/RunState';
 import { evaluateChallenge, grantChallengeReward, type EliteChallenge } from '../roguelike/EliteChallenge';
+import type { RacerProfile } from '../race/RacerProfile';
 import {
   calculateAcceleration,
   msToKmh,
@@ -39,6 +40,7 @@ import {
   getGradeAtDistance,
   getSurfaceAtDistance,
   getCrrForSurface,
+  CRR_BY_SURFACE,
   buildElevationSamples,
   type CourseProfile,
   type ElevationSample,
@@ -150,6 +152,18 @@ export class GameScene extends Phaser.Scene {
   private isBackwards = false; // New flag for R->L traversal
   private ftpW = 200;
   private activeChallenge: EliteChallenge | null = null;
+
+  // Ghost racer state (boss / elite rival)
+  private racer: RacerProfile | null = null;
+  private racerDistanceM = 0;
+  private racerVelocityMs = 0;
+  private racerCrankAngle = 0;
+  private racerPhysics: PhysicsConfig = { ...DEFAULT_PHYSICS };
+  private ghostGraphics!: Phaser.GameObjects.Graphics;
+  private raceGapBg!: Phaser.GameObjects.Graphics;
+  private raceGapText!: Phaser.GameObjects.Text;
+  private raceGapLabel!: Phaser.GameObjects.Text;
+  private racerBeatsBossTime: number | null = null; // ms when boss crossed finish, null until then
 
   // Service reference – swapped when toggling demo mode
   private trainer!: ITrainerService;
@@ -377,6 +391,8 @@ export class GameScene extends Phaser.Scene {
     if (this.effectContainer) {
       this.effectContainer.setPosition(width - 100, 230);
     }
+
+    // 7. Race gap panel redraws itself each frame via updateRaceGapPanel
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -394,6 +410,7 @@ export class GameScene extends Phaser.Scene {
     isBackwards?: boolean;
     ftpW?: number;
     activeChallenge?: EliteChallenge | null;
+    racer?: RacerProfile | null;
   }): void {
     if (import.meta.env.DEV) console.log('[GameScene] init data:', data);
     // Accept a generated course, rider weight, and unit preference from MenuScene
@@ -407,6 +424,7 @@ export class GameScene extends Phaser.Scene {
     this.isBackwards         = data?.isBackwards ?? false;
     this.ftpW                = data?.ftpW ?? 200;
     this.activeChallenge     = data?.activeChallenge ?? null;
+    this.racer               = data?.racer ?? null;
 
     if (import.meta.env.DEV) console.log('[GameScene] isDevMode set to:', this.isDevMode);
 
@@ -446,6 +464,20 @@ export class GameScene extends Phaser.Scene {
     this.challengeEverStopped     = false;
     this.challengeStartMs         = 0;
     this.edgeStartRecordCount  = 0;
+    // Ghost racer
+    this.racerDistanceM    = 0;
+    this.racerVelocityMs   = 0;
+    this.racerCrankAngle   = 0;
+    this.racerBeatsBossTime = null;
+    if (this.racer) {
+      this.racerPhysics = {
+        massKg:  this.racer.massKg,
+        cdA:     this.racer.cdA,
+        crr:     this.racer.crr,
+        rhoAir:  DEFAULT_PHYSICS.rhoAir,
+        grade:   0,
+      };
+    }
   }
 
   create(): void {
@@ -511,6 +543,7 @@ export class GameScene extends Phaser.Scene {
     this.maxElevM = Math.max(...allElevs);
 
     this.buildParallaxLayers();
+    this.buildGhostCyclist();
     this.buildCyclist();
 
     // Pre-seed grade and surface so the world starts at the correct state
@@ -526,6 +559,7 @@ export class GameScene extends Phaser.Scene {
     this.worldContainer.setScale(Math.sqrt(1 + this.smoothGrade * this.smoothGrade) * 1.02);
 
     this.buildHUD();
+    this.buildRaceGapPanel();
     this.buildChallengePanel();
     this.buildElevationGraph();
     this.buildBottomControls();
@@ -701,6 +735,11 @@ export class GameScene extends Phaser.Scene {
     this.updateGradeDisplay(this.currentGrade);
     this.updateChallengePanel();
 
+    // ── Ghost racer physics ──────────────────────────────────────────────────
+    if (this.racer && !this.rideComplete) {
+      this.updateGhostRacer(dt, wrappedDist);
+    }
+
     // ── Cyclist animation ────────────────────────────────────────────────────
     // Average cadence over rolling 3-second window
     const now = Date.now();
@@ -710,10 +749,15 @@ export class GameScene extends Phaser.Scene {
     }
     // Advance crank: avgCadence rpm → revolutions per second → radians per second
     this.crankAngle += (this.avgCadence / 60) * 2 * Math.PI * dt;
+    // Ghost crank at a fixed pro cadence (90 rpm)
+    this.racerCrankAngle += (90 / 60) * 2 * Math.PI * dt;
+
     this.drawCyclist();
+    if (this.racer) this.drawGhostCyclist();
 
     // ── Elevation graph ──────────────────────────────────────────────────────
     this.drawElevationGraph(wrappedDist);
+    this.updateRaceGapPanel();
   }
 
   // ── Parallax layers ──────────────────────────────────────────────────────────
@@ -993,103 +1037,92 @@ export class GameScene extends Phaser.Scene {
   private static readonly WHEEL_R = 18;
 
   private buildCyclist(): void {
-    // Add AFTER all parallax layers so the cyclist renders on top
+    // Add AFTER ghost so player renders on top of ghost
     this.cyclistGraphics = this.add.graphics();
     this.worldContainer.add(this.cyclistGraphics);
-    
+
     // Flip cyclist if traveling backwards
     if (this.isBackwards) {
       this.cyclistGraphics.setScale(-1, 1);
     }
   }
 
-  private drawCyclist(): void {
-    const g  = this.cyclistGraphics;
-    g.clear();
+  private buildGhostCyclist(): void {
+    // Added BEFORE the player's cyclist layers so it renders behind
+    this.ghostGraphics = this.add.graphics();
+    this.ghostGraphics.setAlpha(0.72);
+    this.worldContainer.add(this.ghostGraphics);
+    if (!this.racer) this.ghostGraphics.setVisible(false);
+  }
 
-    const gY   = this.cycGroundY;
-    const wR   = GameScene.WHEEL_R;
-    const axleY = gY - wR;  // = 132 in container space
+  /**
+   * Core cyclist shape renderer. Draws a paper-cutout cyclist on `g`
+   * at local coordinates (centerX, groundY), with the given pedal crank
+   * angle and colour palette.
+   */
+  private drawCyclistShape(
+    g: Phaser.GameObjects.Graphics,
+    crankAngle: number,
+    gY: number,
+    BIKE: number,
+    JERSEY: number,
+    SKIN: number,
+  ): void {
+    const wR    = GameScene.WHEEL_R;
+    const axleY = gY - wR;
 
-    // ── Key bike coordinates (worldContainer space, x=0 is screen centre) ──
-    const rearX   = -22;     // rear axle x
-    const frontX  =  26;     // front axle x
-    const crankX  =   0;     // bottom bracket x
-    const crankY  = axleY;   // bottom bracket at axle height
-    const crankLen =  9;     // crank arm length (px)
+    const rearX   = -22;
+    const frontX  =  26;
+    const crankX  =   0;
+    const crankY  = axleY;
+    const crankLen =  9;
 
-    // Frame geometry
-    const seatX  = -5;  const seatY  = axleY - 35;  // saddle top
-    const hbarX  = 22;  const hbarY  = axleY - 33;  // handlebar grip
+    const seatX  = -5;  const seatY  = axleY - 35;
+    const hbarX  = 22;  const hbarY  = axleY - 33;
 
-    // Rider body
-    const hipX      = -2;  const hipY      = axleY - 30;  // hip joint
-    const shoulderX = 14;  const shoulderY = axleY - 43;  // shoulder
-    const headX     = 22;  const headY     = axleY - 53;  // head centre
+    const hipX      = -2;  const hipY      = axleY - 30;
+    const shoulderX = 14;  const shoulderY = axleY - 43;
+    const headX     = 22;  const headY     = axleY - 53;
     const headR     =  7;
 
-    // Leg segment lengths
     const upperLen = 22;
     const lowerLen = 19;
 
-    // ── Foot positions (pedal endpoints rotate with crankAngle) ─────────────
-    const rA  = this.crankAngle;
-    const lA  = this.crankAngle + Math.PI;
+    const rA  = crankAngle;
+    const lA  = crankAngle + Math.PI;
     const rFX = crankX + Math.cos(rA) * crankLen;
     const rFY = crankY + Math.sin(rA) * crankLen;
     const lFX = crankX + Math.cos(lA) * crankLen;
     const lFY = crankY + Math.sin(lA) * crankLen;
 
-    // ── Knee positions via two-bone IK ───────────────────────────────────────
-    // Both knees always bend forward (toward the front wheel) — legs are
-    // 180° out of phase but the hinge direction is the same for both.
     const [rKX, rKY] = computeKnee(hipX, hipY, rFX, rFY, upperLen, lowerLen, -1);
     const [lKX, lKY] = computeKnee(hipX, hipY, lFX, lFY, upperLen, lowerLen, -1);
 
-    // ── Palette (paper-cutout aesthetic matching the game) ───────────────────
-    const BIKE   = 0x2a2018;   // charcoal for frame & wheels
-    const JERSEY = 0x5a3a1a;   // dark kraft brown for torso & helmet
-    const SKIN   = 0xc49a6a;   // warm paper tone for head & arms
-
-    // ════════════════════════════════════════════════════════════════════════
-    // Draw order: far leg → wheels/frame → near leg → body → head
-    // ════════════════════════════════════════════════════════════════════════
-
-    // ── Far leg (left, behind bike) ──────────────────────────────────────────
+    // Far leg
     g.lineStyle(4, BIKE, 0.38);
-    g.beginPath();
-    g.moveTo(hipX, hipY);
-    g.lineTo(lKX, lKY);
-    g.lineTo(lFX, lFY);
-    g.strokePath();
+    g.beginPath(); g.moveTo(hipX, hipY); g.lineTo(lKX, lKY); g.lineTo(lFX, lFY); g.strokePath();
     g.fillStyle(BIKE, 0.38);
-    g.fillRect(lFX - 5, lFY - 1.5, 10, 3);  // far pedal
+    g.fillRect(lFX - 5, lFY - 1.5, 10, 3);
 
-    // ── Rear wheel ───────────────────────────────────────────────────────────
+    // Rear wheel
     g.lineStyle(3, BIKE, 1);
     g.strokeCircle(rearX, axleY, wR);
     g.lineStyle(1.5, BIKE, 0.45);
-    g.strokeCircle(rearX, axleY, wR * 0.55);  // inner rim
+    g.strokeCircle(rearX, axleY, wR * 0.55);
     g.fillStyle(BIKE, 1);
-    g.fillCircle(rearX, axleY, 2.5);           // hub
+    g.fillCircle(rearX, axleY, 2.5);
 
-    // ── Frame ────────────────────────────────────────────────────────────────
+    // Frame
     g.lineStyle(3, BIKE, 1);
-    // Chain stay: rear axle → bottom bracket
     g.beginPath(); g.moveTo(rearX, axleY); g.lineTo(crankX, crankY + 2); g.strokePath();
-    // Seat tube: BB → saddle
     g.beginPath(); g.moveTo(crankX, crankY); g.lineTo(seatX, seatY); g.strokePath();
-    // Top tube: saddle → handlebars
     g.beginPath(); g.moveTo(seatX, seatY); g.lineTo(hbarX, hbarY); g.strokePath();
-    // Down tube: head-tube area → BB
     g.beginPath(); g.moveTo(hbarX - 2, hbarY + 8); g.lineTo(crankX, crankY); g.strokePath();
-    // Fork: handlebars → front axle
     g.beginPath(); g.moveTo(hbarX, hbarY); g.lineTo(frontX, axleY); g.strokePath();
-    // Saddle rail
     g.lineStyle(4, BIKE, 1);
     g.beginPath(); g.moveTo(seatX - 6, seatY); g.lineTo(seatX + 8, seatY); g.strokePath();
 
-    // ── Front wheel ──────────────────────────────────────────────────────────
+    // Front wheel
     g.lineStyle(3, BIKE, 1);
     g.strokeCircle(frontX, axleY, wR);
     g.lineStyle(1.5, BIKE, 0.45);
@@ -1097,27 +1130,21 @@ export class GameScene extends Phaser.Scene {
     g.fillStyle(BIKE, 1);
     g.fillCircle(frontX, axleY, 2.5);
 
-    // ── Crank arms ───────────────────────────────────────────────────────────
+    // Crank arms + chainring
     g.lineStyle(3, BIKE, 1);
     g.beginPath(); g.moveTo(crankX, crankY); g.lineTo(rFX, rFY); g.strokePath();
     g.lineStyle(2.5, BIKE, 0.5);
     g.beginPath(); g.moveTo(crankX, crankY); g.lineTo(lFX, lFY); g.strokePath();
-    // Chainring
     g.lineStyle(2, BIKE, 0.7);
     g.strokeCircle(crankX, crankY, 6);
 
-    // ── Near leg (right, in front of bike) ───────────────────────────────────
+    // Near leg
     g.lineStyle(5, BIKE, 1);
-    g.beginPath();
-    g.moveTo(hipX, hipY);
-    g.lineTo(rKX, rKY);
-    g.lineTo(rFX, rFY);
-    g.strokePath();
+    g.beginPath(); g.moveTo(hipX, hipY); g.lineTo(rKX, rKY); g.lineTo(rFX, rFY); g.strokePath();
     g.fillStyle(BIKE, 1);
-    g.fillRect(rFX - 5, rFY - 1.5, 10, 3);  // near pedal
+    g.fillRect(rFX - 5, rFY - 1.5, 10, 3);
 
-    // ── Rider body ───────────────────────────────────────────────────────────
-    // Torso (filled quad)
+    // Torso
     g.fillStyle(JERSEY, 1);
     g.fillPoints([
       { x: hipX - 2,      y: hipY },
@@ -1126,18 +1153,15 @@ export class GameScene extends Phaser.Scene {
       { x: shoulderX - 5, y: shoulderY + 4 },
     ], true);
 
-    // Arms reaching to handlebars
+    // Arms
     g.lineStyle(3, SKIN, 1);
-    g.beginPath();
-    g.moveTo(shoulderX - 1, shoulderY + 2);
-    g.lineTo(hbarX, hbarY + 1);
-    g.strokePath();
+    g.beginPath(); g.moveTo(shoulderX - 1, shoulderY + 2); g.lineTo(hbarX, hbarY + 1); g.strokePath();
 
     // Head
     g.fillStyle(SKIN, 1);
     g.fillCircle(headX, headY, headR);
 
-    // Helmet cap
+    // Helmet
     g.fillStyle(JERSEY, 1);
     g.fillPoints([
       { x: headX - headR + 1, y: headY },
@@ -1146,6 +1170,117 @@ export class GameScene extends Phaser.Scene {
       { x: headX + headR,     y: headY - headR * 0.5 },
       { x: headX + headR,     y: headY },
     ], true);
+  }
+
+  private drawCyclist(): void {
+    const g = this.cyclistGraphics;
+    g.clear();
+    // Paper-cutout palette
+    this.drawCyclistShape(g, this.crankAngle, this.cycGroundY,
+      0x2a2018,  // BIKE  charcoal
+      0x5a3a1a,  // JERSEY kraft brown
+      0xc49a6a,  // SKIN  warm paper
+    );
+  }
+
+  private drawGhostCyclist(): void {
+    if (!this.racer || !this.ghostGraphics) return;
+
+    const gapM = this.racerDistanceM - this.distanceM;
+
+    // Fade the ghost out when the real gap grows large — prevents the misleading
+    // "pinned right behind me" look when actually hundreds of metres apart.
+    // Full opacity within 80 m, fully faded at 250 m.
+    const fadeStart = 80;
+    const fadeEnd   = 250;
+    const absGap    = Math.abs(gapM);
+    const alpha     = absGap < fadeStart
+      ? 0.72
+      : Math.max(0, 0.72 * (1 - (absGap - fadeStart) / (fadeEnd - fadeStart)));
+    this.ghostGraphics.setAlpha(alpha);
+
+    if (alpha < 0.01) {
+      this.ghostGraphics.clear();
+      return;
+    }
+
+    // Visual offset: larger scale (120 m half-saturation) so a 30 m gap looks
+    // proportionally small and a 100 m gap looks meaningfully large.
+    const offsetX = Math.tanh(gapM / 120) * 280;
+
+    // Reposition the ghost graphics object inside worldContainer
+    this.ghostGraphics.setPosition(offsetX, 0);
+    this.ghostGraphics.clear();
+
+    // Ghost palette derived from racer colour (desaturated / ethereal)
+    this.drawCyclistShape(
+      this.ghostGraphics,
+      this.racerCrankAngle,
+      this.cycGroundY,
+      this.racer.color,           // BIKE  = racer accent
+      this.racer.color & 0xaaaaaa, // JERSEY slightly muted
+      0xddeeff,                    // SKIN  pale blue-white
+    );
+  }
+
+  /**
+   * Advance the ghost racer's physics simulation by one tick.
+   * Uses the same calculateAcceleration function as the player but with
+   * the racer's own PhysicsConfig (mass, CdA, Crr) and no run modifiers.
+   */
+  private updateGhostRacer(dt: number, _wrappedPlayerDist: number): void {
+    if (!this.racer) return;
+
+    // If the gap has grown beyond the course length (e.g. mid-ride dev-mode toggle),
+    // snap the ghost to just behind the player so the race stays meaningful.
+    const absGap = Math.abs(this.racerDistanceM - this.distanceM);
+    if (absGap > this.course.totalDistanceM * 0.75) {
+      const snapBehind = Math.max(0, this.distanceM - 30);
+      this.racerDistanceM  = snapBehind;
+      this.racerVelocityMs = Math.max(this.smoothVelocityMs * 0.8, 1);
+    }
+
+    // Update grade for ghost's current course position
+    const ghostWrapped = this.racerDistanceM % this.course.totalDistanceM;
+    const ghostGrade   = getGradeAtDistance(this.course, ghostWrapped);
+    const ghostSurface = getSurfaceAtDistance(this.course, ghostWrapped);
+
+    // Scale the racer's base Crr by the surface multiplier (so their pro tyres
+    // stay advantaged on all surfaces, not overridden with the standard value).
+    const surfaceMult = getCrrForSurface(ghostSurface) / CRR_BY_SURFACE['asphalt'];
+    this.racerPhysics = {
+      ...this.racerPhysics,
+      grade: ghostGrade,
+      crr:   this.racer.crr * surfaceMult,
+    };
+
+    const accel = calculateAcceleration(
+      this.racer.powerW,
+      this.racerVelocityMs,
+      this.racerPhysics,
+    );
+    this.racerVelocityMs = Math.max(0, this.racerVelocityMs + accel * dt);
+    const prevDist = this.racerDistanceM;
+    this.racerDistanceM += this.racerVelocityMs * dt;
+
+    // Detect ghost crossing the finish line (first time only)
+    if (this.racerBeatsBossTime === null &&
+        prevDist < this.course.totalDistanceM &&
+        this.racerDistanceM >= this.course.totalDistanceM) {
+      this.racerBeatsBossTime = Date.now();
+      // Flash notification
+      this.notifTitle.setText('BOSS FINISHED!').setColor(this.racer.hexColor);
+      this.notifSub.setText(`${this.racer.displayName} crossed the line first`);
+      if (this.notifTween) this.notifTween.stop();
+      this.notifContainer.setAlpha(1);
+      this.notifTween = this.tweens.add({
+        targets: this.notifContainer,
+        alpha: 0,
+        delay: 3000,
+        duration: 800,
+        ease: 'Power2',
+      });
+    }
   }
 
   // ── HUD (top strip – 5 metrics) ───────────────────────────────────────────
@@ -1251,6 +1386,66 @@ export class GameScene extends Phaser.Scene {
     else if (colIdx === 3) this.hudUnits[1]?.setX(x);
     else if (colIdx === 4) this.hudUnits[2]?.setX(x);
     else if (colIdx === 5) this.hudUnits[3]?.setX(x);
+  }
+
+  // ── Race gap panel (ghost rider HUD) ─────────────────────────────────────
+
+  private buildRaceGapPanel(): void {
+    const mono = 'monospace';
+    // Background badge — top-right corner, below HUD
+    this.raceGapBg = this.add.graphics().setDepth(12);
+
+    this.raceGapLabel = this.add.text(0, 0, '', {
+      fontFamily: mono, fontSize: '8px', color: '#888899', letterSpacing: 2,
+    }).setDepth(13).setOrigin(1, 0);
+
+    this.raceGapText = this.add.text(0, 0, '', {
+      fontFamily: mono, fontSize: '14px', fontStyle: 'bold', color: '#ffffff',
+    }).setDepth(13).setOrigin(1, 0);
+
+    if (!this.racer) {
+      this.raceGapBg.setVisible(false);
+      this.raceGapLabel.setVisible(false);
+      this.raceGapText.setVisible(false);
+    }
+  }
+
+  private updateRaceGapPanel(): void {
+    if (!this.racer) return;
+
+    const w  = this.scale.width;
+    const px = w - 8;  // right-aligned
+    const py = 75;     // just below HUD strip
+    const panW = 160;
+    const panH = 36;
+
+    this.raceGapBg.clear();
+    this.raceGapBg.fillStyle(0x0a0a1a, 0.80);
+    this.raceGapBg.fillRect(px - panW, py, panW, panH);
+    this.raceGapBg.lineStyle(1, this.racer.accentColor, 0.6);
+    this.raceGapBg.strokeRect(px - panW, py, panW, panH);
+
+    const gapM  = this.racerDistanceM - this.distanceM;
+    const absgap = Math.abs(gapM);
+    const distStr = absgap < 1000
+      ? `${absgap.toFixed(0)} m`
+      : `${(absgap / 1000).toFixed(2)} km`;
+
+    let gapStr: string;
+    let gapColor: string;
+    if (Math.abs(gapM) <= 1) {
+      gapStr  = '─ NECK & NECK';
+      gapColor = '#ffffff';
+    } else if (gapM > 0) {
+      gapStr  = `▲ ${distStr} AHEAD`;
+      gapColor = this.racer.accentHex;
+    } else {
+      gapStr  = `▼ ${distStr} BEHIND`;
+      gapColor = '#00f5d4';
+    }
+
+    this.raceGapLabel.setPosition(px - 6, py + 5).setText(this.racer.displayName);
+    this.raceGapText.setPosition(px - 6, py + 17).setText(gapStr).setColor(gapColor);
   }
 
   // ── Challenge status panel ────────────────────────────────────────────────
@@ -1483,6 +1678,20 @@ export class GameScene extends Phaser.Scene {
     ];
     if (completedPoints.length > 2) {
       g.fillPoints(completedPoints, true);
+    }
+
+    // Ghost racer marker – draw before player marker so player appears on top
+    if (this.racer) {
+      const ghostDist = this.racerDistanceM % this.course.totalDistanceM;
+      const gx = toX(ghostDist);
+      g.lineStyle(1.5, this.racer.accentColor, 0.75);
+      g.beginPath();
+      g.moveTo(gx, oy);
+      g.lineTo(gx, oy + drawH);
+      g.strokePath();
+      // Upward triangle (boss approaching from above)
+      g.fillStyle(this.racer.accentColor, 0.9);
+      g.fillTriangle(gx - 4, oy + drawH + 2, gx + 4, oy + drawH + 2, gx, oy + drawH - 4);
     }
 
     // Position marker – vertical teal line
@@ -1950,6 +2159,17 @@ export class GameScene extends Phaser.Scene {
     this.add.text(cx, py + 76, `↑ ${segElevStr} gain`, {
       fontFamily: mono, fontSize: '11px', color: '#99bbcc', letterSpacing: 1,
     }).setOrigin(0.5, 0).setDepth(depth + 2);
+
+    // ── Boss race result ──────────────────────────────────────────────────────
+    if (this.racer && completed) {
+      const playerFinishedFirst = this.racerBeatsBossTime === null ||
+        this.racerDistanceM < this.course.totalDistanceM;
+      const bossResult = playerFinishedFirst ? 'YOU BEAT THE BOSS!' : `${this.racer.displayName} WINS`;
+      const bossColor  = playerFinishedFirst ? '#00f5d4' : this.racer.hexColor;
+      this.add.text(cx, py + 80, bossResult, {
+        fontFamily: mono, fontSize: '15px', fontStyle: 'bold', color: bossColor, letterSpacing: 2,
+      }).setOrigin(0.5, 0).setDepth(depth + 2);
+    }
 
     // Roguelike Gold Reward
     if (this.isRoguelike && completed) {

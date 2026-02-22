@@ -12,6 +12,7 @@ import { getRandomChallenge, formatChallengeText, generateEliteCourseProfile } f
 import type { Units } from './MenuScene';
 import type { ITrainerService } from '../services/ITrainerService';
 import { HeartRateService } from '../services/HeartRateService';
+import { createBossProfile, type RacerProfile } from '../race/RacerProfile';
 
 // Darker colors for better contrast against #e8dcc8 background
 const SURFACE_FILL_COLORS: Record<SurfaceType, number> = {
@@ -376,7 +377,9 @@ export class MapScene extends Phaser.Scene {
     nodes.forEach(fromNode => {
       fromNode.connectedTo.forEach(toId => {
         const toNode = nodes.find(n => n.id === toId)!;
-        const segmentKm = 1.0 + Math.random(); // 1.0–2.0 km per edge
+        const isBossEdge = toNode.type === 'finish';
+        // Final boss edge: fixed 5-mile epic course; others: 1.0–2.0 km
+        const segmentKm = isBossEdge ? 8.047 : 1.0 + Math.random();
         const surface = this.getRandomSurface();
         edges.push({
           from: fromNode.id,
@@ -467,9 +470,13 @@ export class MapScene extends Phaser.Scene {
       
       // Highlight paths connected to the current node (bidirectional)
       const isConnected = run.currentNodeId === fromNode.id || run.currentNodeId === toNode.id;
-      // High contrast: 1.0 alpha for active, 0.4 for inactive (was 0.25)
       const alpha = isConnected ? 1.0 : 0.4;
-      const dotSize = isConnected ? 8 : 5;
+
+      // Dot size scales with ride distance so longer edges look heftier.
+      // Base: ~3 px at 1 km, ~5 px at 2 km, ~12 px at 5 miles (8 km).
+      const distKm = edge.profile.totalDistanceM / 1000;
+      const baseDot = Math.max(3, Math.min(12, distKm * 1.5));
+      const dotSize = isConnected ? baseDot + 2 : baseDot;
       const gap = dotSize * 1.8;
       
       this.graphics.fillStyle(color, alpha);
@@ -815,19 +822,35 @@ export class MapScene extends Phaser.Scene {
         RunStateManager.setActiveEdge(edge);
       }
 
-      console.log('[MapScene] Starting GameScene. isDevMode:', this.isDevMode);
-      this.scene.start('GameScene', {
-        course,
-        isBackwards,
-        weightKg: this.weightKg,
-        units: this.units,
-        trainer: this.trainer,
-        hrm: this.hrm,
-        isRoguelike: true,
-        isDevMode: this.isDevMode,
-        ftpW: this.ftpW,
-        activeChallenge: null,
-      });
+      // Spawn the boss racer when the destination is the final finish node
+      const destNodeId = edge
+        ? (edge.to === run.currentNodeId ? edge.from : edge.to)
+        : node.id;
+      const destNode = run.nodes.find(n => n.id === destNodeId);
+      const racer: RacerProfile | null = destNode?.type === 'finish'
+        ? createBossProfile(this.ftpW)
+        : null;
+
+      if (racer) {
+        this.showBossEncounterSplash(racer, () => {
+          this.scene.start('GameScene', {
+            course, isBackwards,
+            weightKg: this.weightKg, units: this.units,
+            trainer: this.trainer, hrm: this.hrm,
+            isRoguelike: true, isDevMode: this.isDevMode,
+            ftpW: this.ftpW, activeChallenge: null, racer,
+          });
+        });
+      } else {
+        console.log('[MapScene] Starting GameScene. isDevMode:', this.isDevMode);
+        this.scene.start('GameScene', {
+          course, isBackwards,
+          weightKg: this.weightKg, units: this.units,
+          trainer: this.trainer, hrm: this.hrm,
+          isRoguelike: true, isDevMode: this.isDevMode,
+          ftpW: this.ftpW, activeChallenge: null, racer: null,
+        });
+      }
     }
   }
 
@@ -1402,6 +1425,103 @@ export class MapScene extends Phaser.Scene {
       this.devToggleBg!.setFillStyle(this.isDevMode ? 0x336633 : 0x555555));
     this.devToggleBg.on('pointerout', () =>
       this.devToggleBg!.setFillStyle(this.isDevMode ? 0x224422 : 0x333333));
+  }
+
+  /**
+   * Full-screen dramatic encounter screen shown before the final boss ride.
+   * Calls `onProceed` when the player taps "RACE".
+   */
+  private showBossEncounterSplash(racer: RacerProfile, onProceed: () => void): void {
+    const w  = this.scale.width;
+    const h  = this.scale.height;
+    const cx = w / 2;
+    const cy = h / 2;
+    const mono = 'monospace';
+    const depth = 100;
+
+    this.overlayActive = true;
+
+    // Full dim
+    const dim = this.add.graphics().setDepth(depth).setScrollFactor(0);
+    dim.fillStyle(0x000000, 0.88);
+    dim.fillRect(0, 0, w, h);
+
+    const panW = Math.min(520, w - 40);
+    const panH = 300;
+    const px = cx - panW / 2;
+    const py = cy - panH / 2;
+
+    const panel = this.add.graphics().setDepth(depth + 1).setScrollFactor(0);
+    panel.fillStyle(0x080818, 1);
+    panel.fillRect(px, py, panW, panH);
+    panel.lineStyle(2, racer.accentColor, 1);
+    panel.strokeRect(px, py, panW, panH);
+
+    // Warning stripe at top
+    panel.fillStyle(racer.accentColor, 1);
+    panel.fillRect(px, py, panW, 6);
+
+    this.add.text(cx, py + 22, '⚠ FINAL BOSS', {
+      fontFamily: mono, fontSize: '11px', color: racer.accentHex, letterSpacing: 4,
+    }).setOrigin(0.5, 0).setDepth(depth + 2).setScrollFactor(0);
+
+    this.add.text(cx, py + 44, racer.displayName, {
+      fontFamily: mono, fontSize: '30px', fontStyle: 'bold', color: racer.hexColor, letterSpacing: 2,
+    }).setOrigin(0.5, 0).setDepth(depth + 2).setScrollFactor(0);
+
+    this.add.text(cx, py + 88, racer.flavorText, {
+      fontFamily: mono, fontSize: '12px', color: '#aaaaaa', align: 'center',
+      wordWrap: { width: panW - 40 },
+    }).setOrigin(0.5, 0).setDepth(depth + 2).setScrollFactor(0);
+
+    // Boss stats
+    const statsY = py + 140;
+    const stats = [
+      { label: 'POWER',  value: `${racer.powerW} W` },
+      { label: 'MASS',   value: `${racer.massKg} kg` },
+      { label: 'CdA',    value: racer.cdA.toFixed(2) },
+      { label: 'Crr',    value: racer.crr.toFixed(3) },
+    ];
+    stats.forEach((s, i) => {
+      const x = px + 30 + i * (panW - 60) / (stats.length - 1);
+      this.add.text(x, statsY, s.label, {
+        fontFamily: mono, fontSize: '9px', color: '#666677', letterSpacing: 2,
+      }).setOrigin(0.5, 0).setDepth(depth + 2).setScrollFactor(0);
+      this.add.text(x, statsY + 14, s.value, {
+        fontFamily: mono, fontSize: '16px', fontStyle: 'bold', color: '#ddddee',
+      }).setOrigin(0.5, 0).setDepth(depth + 2).setScrollFactor(0);
+    });
+
+    // RACE button
+    const btnW = 160;
+    const btnH = 42;
+    const btnX = cx - btnW / 2;
+    const btnY = py + panH - 60;
+
+    const btnBg = this.add.graphics().setDepth(depth + 2).setScrollFactor(0);
+    const drawBtn = (hover: boolean) => {
+      btnBg.clear();
+      btnBg.fillStyle(hover ? racer.accentColor : 0x1a1a2e, 1);
+      btnBg.fillRect(btnX, btnY, btnW, btnH);
+      btnBg.lineStyle(2, racer.accentColor, 1);
+      btnBg.strokeRect(btnX, btnY, btnW, btnH);
+    };
+    drawBtn(false);
+    const btnLabel = this.add.text(cx, btnY + btnH / 2, 'RACE!', {
+      fontFamily: mono, fontSize: '18px', fontStyle: 'bold', color: racer.hexColor, letterSpacing: 4,
+    }).setOrigin(0.5).setDepth(depth + 3).setScrollFactor(0);
+
+    const btnHit = this.add
+      .rectangle(cx, btnY + btnH / 2, btnW, btnH, 0x000000, 0)
+      .setScrollFactor(0).setInteractive({ useHandCursor: true }).setDepth(depth + 4);
+
+    btnHit
+      .on('pointerover',  () => { drawBtn(true);  btnLabel.setColor('#000000'); })
+      .on('pointerout',   () => { drawBtn(false); btnLabel.setColor(racer.hexColor); })
+      .on('pointerdown',  () => {
+        this.overlayActive = false;
+        onProceed();
+      });
   }
 
   shutdown(): void {
