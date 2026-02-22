@@ -29,21 +29,21 @@ const POOL: RewardDefinition[] = [
     label: 'POWER BOOST',
     description: '+4% permanent power\n(stacks)',
     rarity: 'common',
-    apply: () => RunStateManager.applyModifier({ powerMult: 1.04 }),
+    apply: () => RunStateManager.applyModifier({ powerMult: 1.04 }, 'POWER BOOST'),
   },
   {
     id: 'aero_2',
     label: 'AERO TWEAK',
     description: '+2% drag reduction\n(stacks)',
     rarity: 'common',
-    apply: () => RunStateManager.applyModifier({ dragReduction: 0.02 }),
+    apply: () => RunStateManager.applyModifier({ dragReduction: 0.02 }, 'AERO TWEAK'),
   },
   {
     id: 'weight_3',
     label: 'LIGHTER LOAD',
     description: '-3% rider weight\n(stacks)',
     rarity: 'common',
-    apply: () => RunStateManager.applyModifier({ weightMult: 0.97 }),
+    apply: () => RunStateManager.applyModifier({ weightMult: 0.97 }, 'LIGHTER LOAD'),
   },
   {
     id: 'gold_20',
@@ -60,27 +60,38 @@ const POOL: RewardDefinition[] = [
     apply: () => RunStateManager.addToInventory('teleport'),
   },
 
+  {
+    id: 'dirt_tires',
+    label: 'DIRT TIRES',
+    description: '-35% rolling resistance\n(all surfaces, stacks)',
+    rarity: 'uncommon',
+    apply: () => {
+      RunStateManager.addToInventory('dirt_tires');
+      RunStateManager.applyModifier({ crrMult: 0.65 }, 'DIRT TIRES');
+    },
+  },
+
   // ── Uncommon ──────────────────────────────────────────────────────────────
   {
     id: 'power_7',
     label: 'POWER SURGE',
     description: '+7% permanent power\n(stacks)',
     rarity: 'uncommon',
-    apply: () => RunStateManager.applyModifier({ powerMult: 1.07 }),
+    apply: () => RunStateManager.applyModifier({ powerMult: 1.07 }, 'POWER SURGE'),
   },
   {
     id: 'aero_3',
     label: 'AERO UPGRADE',
     description: '+3% drag reduction\n(stacks)',
     rarity: 'uncommon',
-    apply: () => RunStateManager.applyModifier({ dragReduction: 0.03 }),
+    apply: () => RunStateManager.applyModifier({ dragReduction: 0.03 }, 'AERO UPGRADE'),
   },
   {
     id: 'weight_6',
     label: 'WEIGHT SHED',
     description: '-6% rider weight\n(stacks)',
     rarity: 'uncommon',
-    apply: () => RunStateManager.applyModifier({ weightMult: 0.94 }),
+    apply: () => RunStateManager.applyModifier({ weightMult: 0.94 }, 'WEIGHT SHED'),
   },
   {
     id: 'gold_40',
@@ -96,17 +107,27 @@ const POOL: RewardDefinition[] = [
     rarity: 'uncommon',
     apply: () => {
       RunStateManager.addToInventory('aero_helmet');
-      RunStateManager.applyModifier({ dragReduction: 0.03 });
+      RunStateManager.applyModifier({ dragReduction: 0.03 }, 'AERO HELMET');
     },
   },
 
   // ── Rare ──────────────────────────────────────────────────────────────────
   {
+    id: 'carbon_frame',
+    label: 'CARBON FRAME',
+    description: '-12% rider weight\n+3% drag reduction\n(stacks)',
+    rarity: 'rare',
+    apply: () => {
+      RunStateManager.addToInventory('carbon_frame');
+      RunStateManager.applyModifier({ weightMult: 0.88, dragReduction: 0.03 }, 'CARBON FRAME');
+    },
+  },
+  {
     id: 'power_12',
     label: 'OVERDRIVE',
     description: '+12% permanent power\n(stacks)',
     rarity: 'rare',
-    apply: () => RunStateManager.applyModifier({ powerMult: 1.12 }),
+    apply: () => RunStateManager.applyModifier({ powerMult: 1.12 }, 'OVERDRIVE'),
   },
   {
     id: 'antigrav_pedals',
@@ -115,7 +136,7 @@ const POOL: RewardDefinition[] = [
     rarity: 'rare',
     apply: () => {
       RunStateManager.addToInventory('antigrav_pedals');
-      RunStateManager.applyModifier({ weightMult: 0.92 });
+      RunStateManager.applyModifier({ weightMult: 0.92 }, 'ANTIGRAV PEDALS');
     },
   },
   {

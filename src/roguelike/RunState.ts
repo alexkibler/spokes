@@ -39,12 +39,25 @@ export interface RunModifiers {
   dragReduction: number;
   /** Multiplicative weight factor. 1.0 = normal, 0.01 = near weightless. Stacks multiplicatively, floored at 0.01. */
   weightMult: number;
+  /** Multiplicative rolling-resistance factor. 1.0 = normal, <1.0 reduces Crr on all surfaces. Floored at 0.01. */
+  crrMult: number;
+}
+
+/** One entry per modifier application; session-only (not persisted). */
+export interface ModifierLogEntry {
+  label: string;
+  powerMult?: number;
+  dragReduction?: number;
+  weightMult?: number;
+  crrMult?: number;
 }
 
 export interface RunData {
   gold: number;
   inventory: string[];
   modifiers: RunModifiers;
+  /** Session-only log of individual modifier applications, for the stats bar tooltip. */
+  modifierLog: ModifierLogEntry[];
   currentNodeId: string;
   visitedNodeIds: string[]; // Track all nodes the player has visited
   activeEdge: MapEdge | null; // The edge currently being traversed (or just finished)
@@ -82,7 +95,8 @@ export class RunStateManager {
     this.instance = {
       gold: 0,
       inventory: [],
-      modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 },
+      modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 },
+      modifierLog: [],
       currentNodeId: '', // Set by map generator
       visitedNodeIds: [],
       activeEdge: null,
@@ -104,7 +118,8 @@ export class RunStateManager {
 
   static loadFromSave(saved: import('../services/SaveService').SavedRun): RunData {
     this.instance = {
-      modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 }, // default for old saves
+      modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 }, // default for old saves
+      modifierLog: [], // session-only, not persisted
       stats: { totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
       pendingNodeAction: null, // default for old saves
       ...saved.runData,
@@ -215,7 +230,7 @@ export class RunStateManager {
   }
 
   static getModifiers(): RunModifiers {
-    return this.instance?.modifiers ?? { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 };
+    return this.instance?.modifiers ?? { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 };
   }
 
   /**
@@ -223,12 +238,14 @@ export class RunStateManager {
    * - powerMult / weightMult: multiplicative
    * - dragReduction: additive, capped at 0.99
    */
-  static applyModifier(delta: Partial<RunModifiers>): void {
+  static applyModifier(delta: Partial<RunModifiers>, label?: string): void {
     if (!this.instance) return;
     const m = this.instance.modifiers;
     if (delta.powerMult !== undefined)    m.powerMult     = m.powerMult * delta.powerMult;
     if (delta.dragReduction !== undefined) m.dragReduction = Math.min(0.99, m.dragReduction + delta.dragReduction);
     if (delta.weightMult !== undefined)   m.weightMult    = Math.max(0.01, m.weightMult * delta.weightMult);
+    if (delta.crrMult !== undefined)      m.crrMult       = Math.max(0.01, m.crrMult * delta.crrMult);
+    if (label) this.instance.modifierLog.push({ label, ...delta });
     this.persist();
   }
 

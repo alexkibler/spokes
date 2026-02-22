@@ -34,12 +34,14 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
       stackable: boolean;
     }
     const CATALOG: ShopItem[] = [
-      { id: 'tailwind',        label: 'TAILWIND',          description: '2× power toggle during ride',   basePrice: 100, color: 0x2a2a44, hoverColor: 0x3a3a5a, stackable: false },
-      { id: 'teleport',        label: 'TELEPORT SCROLL',   description: 'Warp to any visited node',       basePrice: 10,  color: 0x442244, hoverColor: 0x553355, stackable: true  },
-      { id: 'reroll_voucher',  label: 'REROLL VOUCHER',    description: 'Reroll reward choices once',     basePrice: 50,  color: 0x2a2a08, hoverColor: 0x3a3a10, stackable: true  },
-      { id: 'aero_helmet',     label: 'AERO HELMET',       description: '+3% drag reduction (stacks)',    basePrice: 60,  color: 0x1a2a3a, hoverColor: 0x2a3a4a, stackable: true  },
-      { id: 'gold_crank',      label: 'SOLID GOLD CRANK',  description: '×1.25 permanent power (stacks)', basePrice: 120, color: 0x3a2a00, hoverColor: 0x4a3a00, stackable: true  },
-      { id: 'antigrav_pedals', label: 'ANTIGRAV PEDALS',   description: '-8% rider weight (stacks)',       basePrice: 90,  color: 0x1a3a1a, hoverColor: 0x2a4a2a, stackable: true  },
+      { id: 'tailwind',        label: 'TAILWIND',          description: '2× power toggle during ride',     basePrice: 100, color: 0x2a2a44, hoverColor: 0x3a3a5a, stackable: false },
+      { id: 'teleport',        label: 'TELEPORT SCROLL',   description: 'Warp to any visited node',         basePrice: 10,  color: 0x442244, hoverColor: 0x553355, stackable: true  },
+      { id: 'reroll_voucher',  label: 'REROLL VOUCHER',    description: 'Reroll reward choices once',       basePrice: 50,  color: 0x2a2a08, hoverColor: 0x3a3a10, stackable: true  },
+      { id: 'aero_helmet',     label: 'AERO HELMET',       description: '+3% drag reduction (stacks)',      basePrice: 60,  color: 0x1a2a3a, hoverColor: 0x2a3a4a, stackable: true  },
+      { id: 'gold_crank',      label: 'SOLID GOLD CRANK',  description: '×1.25 permanent power (stacks)',   basePrice: 120, color: 0x3a2a00, hoverColor: 0x4a3a00, stackable: true  },
+      { id: 'antigrav_pedals', label: 'ANTIGRAV PEDALS',   description: '-8% rider weight (stacks)',         basePrice: 90,  color: 0x1a3a1a, hoverColor: 0x2a4a2a, stackable: true  },
+      { id: 'dirt_tires',      label: 'DIRT TIRES',        description: '-35% rolling resistance (stacks)', basePrice: 70,  color: 0x1a1a0a, hoverColor: 0x2a2a14, stackable: true  },
+      { id: 'carbon_frame',    label: 'CARBON FRAME',      description: '-12% weight, +3% aero (stacks)',   basePrice: 150, color: 0x0a1a2a, hoverColor: 0x142030, stackable: true  },
     ];
 
     const ITEM_H = 52;
@@ -131,15 +133,23 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
               break;
             case 'aero_helmet':
               RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ dragReduction: 0.03 });
+              RunStateManager.applyModifier({ dragReduction: 0.03 }, 'AERO HELMET (shop)');
               break;
             case 'gold_crank':
               RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ powerMult: 1.25 });
+              RunStateManager.applyModifier({ powerMult: 1.25 }, 'GOLD CRANK (shop)');
               break;
             case 'antigrav_pedals':
               RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ weightMult: 0.92 });
+              RunStateManager.applyModifier({ weightMult: 0.92 }, 'ANTIGRAV PEDALS (shop)');
+              break;
+            case 'dirt_tires':
+              RunStateManager.addToInventory(item.id);
+              RunStateManager.applyModifier({ crrMult: 0.65 }, 'DIRT TIRES (shop)');
+              break;
+            case 'carbon_frame':
+              RunStateManager.addToInventory(item.id);
+              RunStateManager.applyModifier({ weightMult: 0.88, dragReduction: 0.03 }, 'CARBON FRAME (shop)');
               break;
           }
           refreshShop();

@@ -33,7 +33,8 @@ function makeRunData(overrides: Partial<RunData> = {}): RunData {
   return {
     gold: 50,
     inventory: ['tailwind'],
-    modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 },
+    modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 },
+    modifierLog: [],
     currentNodeId: 'node-3',
     visitedNodeIds: ['node-1', 'node-2', 'node-3'],
     activeEdge: null,

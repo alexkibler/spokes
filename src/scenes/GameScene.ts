@@ -144,6 +144,8 @@ export class GameScene extends Phaser.Scene {
   private isDevMode = false;
   private isBackwards = false;
   private ftpW = 200;
+  /** FTP adjusted by the run's powerMult — what challenges should target. */
+  private get effectiveFtpW(): number { return this.ftpW * this.runModifiers.powerMult; }
   private activeChallenge: EliteChallenge | null = null;
 
   private racerProfiles: RacerProfile[] = [];
@@ -184,7 +186,7 @@ export class GameScene extends Phaser.Scene {
 
   private activeEffect: ActiveEffect | null = null;
   private rawPower     = DEMO_POWER_WATTS;
-  private runModifiers: RunModifiers = { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 };
+  private runModifiers: RunModifiers = { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 };
 
   // UI Components
   private hud!: GameHUD;
@@ -396,7 +398,7 @@ export class GameScene extends Phaser.Scene {
     this.physicsConfig = {
       ...this.basePhysics,
       grade: this.currentGrade,
-      crr:   getCrrForSurface(this.currentSurface),
+      crr:   getCrrForSurface(this.currentSurface) * (this.runModifiers.crrMult ?? 1),
     };
     this.worldContainer.rotation = -Math.atan(this.smoothGrade);
     this.worldContainer.setScale(Math.sqrt(1 + this.smoothGrade * this.smoothGrade) * 1.02);
@@ -416,7 +418,7 @@ export class GameScene extends Phaser.Scene {
     this.onResize();
 
     // ── Trainer ─────────────────────────────────────────────────────────────
-    if (this.preConnectedTrainer) {
+    if (this.preConnectedTrainer && !(this.preConnectedTrainer instanceof MockTrainerService)) {
       this.trainer = this.preConnectedTrainer;
       this.trainer.onData((data) => this.handleData(data));
       this.isDemoMode = false;
@@ -492,7 +494,7 @@ export class GameScene extends Phaser.Scene {
       this.physicsConfig = {
         ...this.basePhysics,
         grade: this.currentGrade,
-        crr:   getCrrForSurface(this.currentSurface),
+        crr:   getCrrForSurface(this.currentSurface) * (this.runModifiers.crrMult ?? 1),
       };
     }
 
@@ -930,11 +932,11 @@ export class GameScene extends Phaser.Scene {
     if (cond.type === 'avg_power_above_ftp_pct') {
       const liveRecs = this.fitWriter.recordCount - this.edgeStartRecordCount;
       current = Math.round(liveRecs > 0 ? this.recordedPowerSum / liveRecs : this.latestPower);
-      target = Math.round(this.ftpW * (cond.ftpMultiplier ?? 1));
+      target = Math.round(this.effectiveFtpW * (cond.ftpMultiplier ?? 1));
       valueLabel = `AVG: ${current} W  →  TARGET: ${target} W`;
     } else if (cond.type === 'peak_power_above_ftp_pct') {
       current = Math.round(this.peakPowerW);
-      target = Math.round(this.ftpW * (cond.ftpMultiplier ?? 1));
+      target = Math.round(this.effectiveFtpW * (cond.ftpMultiplier ?? 1));
       valueLabel = `PEAK: ${current} W  →  TARGET: ${target} W`;
     } else if (cond.type === 'complete_no_stop') {
       const clean = !this.challengeEverStopped;
@@ -1148,7 +1150,6 @@ export class GameScene extends Phaser.Scene {
     }
 
     let isFinishNode = false;
-    let showRewardScreen = false;
 
     // Roguelike Logic
     if (this.isRoguelike && completed) {
@@ -1177,7 +1178,7 @@ export class GameScene extends Phaser.Scene {
           const passed = evaluateChallenge(this.activeChallenge, {
             avgPowerW: challengeAvgPow,
             peakPowerW: this.peakPowerW,
-            ftpW: this.ftpW,
+            ftpW: this.effectiveFtpW,
             everStopped: this.challengeEverStopped,
             elapsedSeconds: elapsedSec,
           });
@@ -1189,14 +1190,26 @@ export class GameScene extends Phaser.Scene {
             stats.challengeResult = { success: false, reward: '' };
           }
         }
-
-        showRewardScreen = true;
       }
 
       const run = RunStateManager.getRun();
       const currentNode = run?.nodes.find(n => n.id === run.currentNodeId);
       isFinishNode = currentNode?.type === 'finish';
+
+      // First-clear non-finish: skip stats panel and show combined reward screen
+      if (isFirstClear && !isFinishNode) {
+        this.showRewardSelection(stats);
+        return;
+      }
     }
+
+    const mapData = {
+      weightKg: this.weightKg,
+      units: this.units,
+      trainer: this.trainer,
+      hrm: this.preConnectedHrm,
+      isDevMode: this.isDevMode,
+    };
 
     this.rideOverlay = new RideOverlay(
       this,
@@ -1208,17 +1221,8 @@ export class GameScene extends Phaser.Scene {
       () => {
         if (isFinishNode) {
           this.scene.start('VictoryScene');
-        } else if (showRewardScreen) {
-          this.rideOverlay?.destroy();
-          this.showRewardSelection();
         } else {
-          this.scene.start('MapScene', {
-            weightKg: this.weightKg,
-            units: this.units,
-            trainer: this.trainer,
-            hrm: this.preConnectedHrm,
-            isDevMode: this.isDevMode,
-          });
+          this.scene.start('MapScene', mapData);
         }
       },
       () => {
@@ -1235,7 +1239,7 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-  private showRewardSelection(): void {
+  private showRewardSelection(initialStats?: RideStats): void {
     const mapData = {
       weightKg: this.weightKg,
       units: this.units,
@@ -1246,7 +1250,7 @@ export class GameScene extends Phaser.Scene {
 
     const goToMap = () => this.scene.start('MapScene', mapData);
 
-    const showOverlay = () => {
+    const showOverlay = (headerStats?: RideStats) => {
       const run = RunStateManager.getRun();
       const rerollCount = run?.inventory.filter(i => i === 'reroll_voucher').length ?? 0;
       const picks = pickRewards(3);
@@ -1262,12 +1266,14 @@ export class GameScene extends Phaser.Scene {
         rerollCount > 0 ? () => {
           RunStateManager.removeFromInventory('reroll_voucher');
           overlay.destroy();
+          // On reroll, drop the stats header so focus stays on the new cards
           showOverlay();
         } : null,
+        headerStats ? { stats: headerStats, units: this.units } : undefined,
       );
     };
 
-    showOverlay();
+    showOverlay(initialStats);
   }
 
   private downloadFit(): void {
