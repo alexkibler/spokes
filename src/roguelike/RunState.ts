@@ -21,7 +21,8 @@ export interface MapNode {
   x: number; // Relative visualization (0-1)
   y: number; // Relative visualization (0-1)
   connectedTo: string[]; // IDs of nodes this node connects TO (next floor)
-  eliteChallenge?: EliteChallenge; // Only set for 'elite' type nodes
+  eliteChallenge?: EliteChallenge;       // Only set for 'elite' type nodes
+  eliteCourseProfile?: CourseProfile;   // Pre-generated course for the elite challenge
 }
 
 export interface MapEdge {
@@ -70,6 +71,11 @@ export interface RunData {
 /** Global singleton or context-managed state for the current run */
 export class RunStateManager {
   private static instance: RunData | null = null;
+
+  // ── Dev mode — persists across scene transitions ─────────────────────────
+  private static _devMode = false;
+  static getDevMode(): boolean { return this._devMode; }
+  static setDevMode(val: boolean): void { this._devMode = val; }
 
   static startNewRun(runLength: number, totalDistanceKm: number, difficulty: 'easy' | 'normal' | 'hard', ftpW = 200, weightKg = 68, units: Units = 'imperial'): RunData {
     SaveService.clear();

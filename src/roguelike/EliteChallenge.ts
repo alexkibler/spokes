@@ -5,6 +5,7 @@
  */
 
 import { RunStateManager } from './RunState';
+import { buildCourseProfile, generateCourseProfile, type CourseProfile } from '../course/CourseProfile';
 
 export type ConditionType =
   | 'avg_power_above_ftp_pct'  // Sustain average watts > ftpMultiplier × FTP
@@ -134,6 +135,66 @@ export function grantChallengeReward(challenge: EliteChallenge): void {
     RunStateManager.addGold(reward.goldAmount);
   } else if (reward.type === 'item' && reward.item !== undefined) {
     RunStateManager.addToInventory(reward.item);
+  }
+}
+
+/**
+ * Generates a challenge-specific CourseProfile tailored to the elite challenge type.
+ * Each challenge gets terrain that naturally rewards the target behavior.
+ */
+export function generateEliteCourseProfile(challenge: EliteChallenge): CourseProfile {
+  switch (challenge.id) {
+    case 'sustained_threshold':
+      // Long sustained climb — forces threshold output throughout
+      return buildCourseProfile([
+        { distanceM: 200,  grade: 0,    surface: 'asphalt' },
+        { distanceM: 600,  grade: 0.05, surface: 'asphalt' },
+        { distanceM: 1000, grade: 0.07, surface: 'asphalt' },
+        { distanceM: 400,  grade: 0.06, surface: 'gravel'  },
+        { distanceM: 200,  grade: 0,    surface: 'asphalt' },
+      ]);
+
+    case 'sprint_peak':
+      // Mostly flat with a short steep kick for the sprint — rewards explosive power
+      return buildCourseProfile([
+        { distanceM: 600,  grade: 0,    surface: 'asphalt' },
+        { distanceM: 200,  grade: 0.02, surface: 'asphalt' },
+        { distanceM: 100,  grade: 0.08, surface: 'asphalt' },  // sprint trigger point
+        { distanceM: 200,  grade: 0,    surface: 'asphalt' },
+      ]);
+
+    case 'no_stop':
+      // Rolling mixed terrain with descents — momentum is your friend
+      return buildCourseProfile([
+        { distanceM: 200,  grade: 0.03,  surface: 'asphalt' },
+        { distanceM: 400,  grade: -0.04, surface: 'asphalt' },
+        { distanceM: 300,  grade: 0.05,  surface: 'gravel'  },
+        { distanceM: 500,  grade: -0.03, surface: 'gravel'  },
+        { distanceM: 300,  grade: 0.04,  surface: 'dirt'    },
+        { distanceM: 300,  grade: -0.02, surface: 'asphalt' },
+        { distanceM: 200,  grade: 0,     surface: 'asphalt' },
+      ]);
+
+    case 'time_trial':
+      // Short, slightly downhill TT course — go as fast as possible
+      return buildCourseProfile([
+        { distanceM: 150,  grade: 0,     surface: 'asphalt' },
+        { distanceM: 700,  grade: -0.01, surface: 'asphalt' },
+        { distanceM: 150,  grade: 0,     surface: 'asphalt' },
+      ]);
+
+    case 'vo2max_ramp':
+      // Steep ramp that gets steeper — punishes anyone who starts too easy
+      return buildCourseProfile([
+        { distanceM: 200,  grade: 0,    surface: 'asphalt' },
+        { distanceM: 500,  grade: 0.07, surface: 'asphalt' },
+        { distanceM: 500,  grade: 0.10, surface: 'asphalt' },
+        { distanceM: 500,  grade: 0.12, surface: 'gravel'  },
+        { distanceM: 200,  grade: 0,    surface: 'asphalt' },
+      ]);
+
+    default:
+      return generateCourseProfile(2, 0.06, 'asphalt');
   }
 }
 

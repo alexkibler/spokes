@@ -125,7 +125,7 @@ export class MenuScene extends Phaser.Scene {
   private saveBannerContainer: Phaser.GameObjects.Container | null = null;
 
   // ── Dev Mode ──────────────────────────────────────────────────────────────
-  private isDevMode = true;
+  private isDevMode = RunStateManager.getDevMode();
   private isStartWarningActive = false;
   private devModeToggle!: Phaser.GameObjects.Container;
 
@@ -911,6 +911,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private buildDevToggle(): void {
+    this.isDevMode = RunStateManager.getDevMode();
     this.devModeToggle = this.add.container(0, 0);
 
     const btn = this.add.rectangle(0, 0, 100, 24, this.isDevMode ? 0x224422 : 0x444444)
@@ -926,6 +927,7 @@ export class MenuScene extends Phaser.Scene {
 
     btn.on('pointerdown', () => {
       this.isDevMode = !this.isDevMode;
+      RunStateManager.setDevMode(this.isDevMode);
       txt.setText(this.isDevMode ? 'DEV MODE: ON' : 'DEV MODE: OFF');
       txt.setColor(this.isDevMode ? '#00ff00' : '#aaaaaa');
       btn.setFillStyle(this.isDevMode ? 0x224422 : 0x444444);

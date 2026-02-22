@@ -403,7 +403,7 @@ export class GameScene extends Phaser.Scene {
     this.preConnectedTrainer = data?.trainer ?? null;
     this.preConnectedHrm     = data?.hrm     ?? null;
     this.isRoguelike         = data?.isRoguelike ?? false;
-    this.isDevMode           = data?.isDevMode ?? false;
+    this.isDevMode           = RunStateManager.getDevMode();
     this.isBackwards         = data?.isBackwards ?? false;
     this.ftpW                = data?.ftpW ?? 200;
     this.activeChallenge     = data?.activeChallenge ?? null;
@@ -531,6 +531,7 @@ export class GameScene extends Phaser.Scene {
     this.buildBottomControls();
     this.buildEffectUI();
     this.buildManualEffectButtons();
+    this.buildDevToggle();
 
     // Handle resizing
     this.scale.on('resize', this.onResize, this);
@@ -562,20 +563,12 @@ export class GameScene extends Phaser.Scene {
       this.isDemoMode = false;
       this.setStatus('demo', `DEV (${DEV_POWER_WATTS}W)`);
     } else {
-      console.warn('[GameScene] No trainer connected and not in Demo/Dev mode. Defaulting to 0W idle.');
-      // Fallback: Idle "mock" that produces no power, effectively waiting for input that will never come
-      // (Unless we add re-connection logic later)
-      this.trainer = new MockTrainerService({ power: 0, speed: 0, cadence: 0 });
+      // No trainer connected — simulate at 200 W so the game is playable
+      this.trainer = new MockTrainerService({ power: DEMO_POWER_WATTS, speed: 25, cadence: 80 });
       this.trainer.onData((data) => this.handleData(data));
       void this.trainer.connect();
       this.isDemoMode = false;
-      this.setStatus('err', 'NO TRAINER');
-      
-      // Show blocking alert?
-      this.add.rectangle(W/2, H/2, 400, 100, 0x000000, 0.8).setDepth(100);
-      this.add.text(W/2, H/2, 'TRAINER DISCONNECTED', {
-        fontFamily: 'monospace', fontSize: '24px', color: '#ff4444', fontStyle: 'bold'
-      }).setOrigin(0.5).setDepth(101);
+      this.setStatus('demo', 'SIM 200W');
     }
 
     // ── Heart rate monitor setup ──────────────────────────────────────────
@@ -2119,6 +2112,36 @@ export class GameScene extends Phaser.Scene {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  private buildDevToggle(): void {
+    const on = this.isDevMode;
+    const bg = this.add.rectangle(70, 20, 130, 26, on ? 0x224422 : 0x333333)
+      .setScrollFactor(0).setDepth(50).setInteractive({ useHandCursor: true });
+    const txt = this.add.text(70, 20, on ? 'DEV MODE: ON' : 'DEV MODE: OFF', {
+      fontFamily: 'monospace', fontSize: '11px',
+      color: on ? '#00ff00' : '#aaaaaa', fontStyle: 'bold',
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(51);
+
+    bg.on('pointerdown', () => {
+      this.isDevMode = !this.isDevMode;
+      RunStateManager.setDevMode(this.isDevMode);
+      bg.setFillStyle(this.isDevMode ? 0x224422 : 0x333333);
+      txt.setText(this.isDevMode ? 'DEV MODE: ON' : 'DEV MODE: OFF');
+      txt.setColor(this.isDevMode ? '#00ff00' : '#aaaaaa');
+      // Live-update mock trainer power if not using a real BT trainer
+      if (this.trainer instanceof MockTrainerService) {
+        if (this.isDevMode) {
+          this.trainer.setPower(DEV_POWER_WATTS);
+          this.setStatus('demo', `DEV (${DEV_POWER_WATTS}W)`);
+        } else {
+          this.trainer.setPower(DEMO_POWER_WATTS);
+          this.setStatus('demo', 'SIM 200W');
+        }
+      }
+    });
+    bg.on('pointerover', () => bg.setFillStyle(this.isDevMode ? 0x336633 : 0x555555));
+    bg.on('pointerout',  () => bg.setFillStyle(this.isDevMode ? 0x224422 : 0x333333));
   }
 
   shutdown(): void {

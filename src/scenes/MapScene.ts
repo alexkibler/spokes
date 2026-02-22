@@ -8,13 +8,10 @@
 import Phaser from 'phaser';
 import { RunStateManager, type MapNode, type MapEdge, type NodeType } from '../roguelike/RunState';
 import { generateCourseProfile, invertCourseProfile, type SurfaceType } from '../course/CourseProfile';
-import { getRandomChallenge, formatChallengeText } from '../roguelike/EliteChallenge';
+import { getRandomChallenge, formatChallengeText, generateEliteCourseProfile } from '../roguelike/EliteChallenge';
 import type { Units } from './MenuScene';
 import type { ITrainerService } from '../services/ITrainerService';
 import { HeartRateService } from '../services/HeartRateService';
-
-// Node types that are freely accessible in dev mode regardless of traversal
-const DEV_ACCESSIBLE_TYPES: NodeType[] = [];
 
 // Darker colors for better contrast against #e8dcc8 background
 const SURFACE_FILL_COLORS: Record<SurfaceType, number> = {
@@ -81,7 +78,13 @@ export class MapScene extends Phaser.Scene {
   private goldText!: Phaser.GameObjects.Text;
 
   private isTeleportMode = false;
-  private teleportBtn: Phaser.GameObjects.Container | null = null;
+  // Teleport button — stored as individual objects (not in a Container) so
+  // setScrollFactor(0) on each element fixes screen-space input hit testing.
+  private teleportBg:  Phaser.GameObjects.Rectangle | null = null;
+  private teleportTxt: Phaser.GameObjects.Text | null = null;
+  // Dev toggle — same reason: no Container, scrollFactor(0) on each element.
+  private devToggleBg:  Phaser.GameObjects.Rectangle | null = null;
+  private devToggleTxt: Phaser.GameObjects.Text | null = null;
 
   // Scrollable map
   private static readonly FLOOR_SPACING = 80; // px between floors
@@ -107,7 +110,8 @@ export class MapScene extends Phaser.Scene {
     this.units = data.units;
     this.trainer = data.trainer;
     this.hrm = data.hrm;
-    this.isDevMode = data.isDevMode ?? false;
+    // Always read from the global singleton so toggle is preserved across scenes
+    this.isDevMode = RunStateManager.getDevMode();
     this.ftpW = data.ftpW ?? RunStateManager.getRun()?.ftpW ?? 200;
 
     const run = RunStateManager.getRun();
@@ -127,6 +131,7 @@ export class MapScene extends Phaser.Scene {
 
   create(): void {
     this.nodeObjects.clear();
+    this.edgeObjects.clear(); // Always reset — stale destroyed rects cause setSize crash
     this.cameras.main.setBackgroundColor('#e8dcc8');
 
     // Main container for map elements (world space — scrolls with camera)
@@ -152,6 +157,8 @@ export class MapScene extends Phaser.Scene {
     this.buildStatsPanel();
     this.createTooltip();
     this.setupScrolling();
+
+    this.buildDevToggle();
 
     this.scale.on('resize', this.onResize, this);
 
@@ -219,41 +226,38 @@ export class MapScene extends Phaser.Scene {
     this.goldText.setX(this.scale.width - 20);
 
     // ── Teleport Button ──
+    // Note: these are direct scene objects (not inside a Container) so that
+    // setScrollFactor(0) correctly fixes the input hit area to screen space.
     const teleCount = run.inventory.filter(i => i === 'teleport').length;
-    
+    const teleX = this.scale.width - 90;
+
     if (teleCount > 0) {
-      if (!this.teleportBtn) {
-        this.teleportBtn = this.add.container(this.scale.width - 20, 60)
-          .setScrollFactor(0).setDepth(20);
-
-        const bg = this.add.rectangle(0, 0, 140, 30, 0x442244)
+      if (!this.teleportBg) {
+        this.teleportBg = this.add.rectangle(teleX, 60, 160, 30, 0x442244)
+          .setScrollFactor(0).setDepth(20)
           .setInteractive({ useHandCursor: true });
-        const txt = this.add.text(0, 0, `TELEPORT (${teleCount})`, {
-          fontFamily: 'monospace', fontSize: '12px', color: '#ff88ff', fontStyle: 'bold'
-        }).setOrigin(0.5);
+        this.teleportTxt = this.add.text(teleX, 60, `TELEPORT (${teleCount})`, {
+          fontFamily: 'monospace', fontSize: '12px', color: '#ff88ff', fontStyle: 'bold',
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
 
-        this.teleportBtn.add([bg, txt]);
-
-        bg.on('pointerdown', () => {
+        this.teleportBg.on('pointerdown', () => {
           this.isTeleportMode = !this.isTeleportMode;
-          // Update button appearance
-          bg.setFillStyle(this.isTeleportMode ? 0x884488 : 0x442244);
+          this.teleportBg!.setFillStyle(this.isTeleportMode ? 0x884488 : 0x442244);
           this.drawMap();
         });
-        
-        bg.on('pointerover', () => bg.setFillStyle(this.isTeleportMode ? 0x995599 : 0x553355));
-        bg.on('pointerout', () => bg.setFillStyle(this.isTeleportMode ? 0x884488 : 0x442244));
+        this.teleportBg.on('pointerover', () =>
+          this.teleportBg!.setFillStyle(this.isTeleportMode ? 0x995599 : 0x553355));
+        this.teleportBg.on('pointerout', () =>
+          this.teleportBg!.setFillStyle(this.isTeleportMode ? 0x884488 : 0x442244));
       } else {
-        this.teleportBtn.setVisible(true);
-        this.teleportBtn.setX(this.scale.width - 20); // Resize handling
-        const txt = this.teleportBtn.getAt(1) as Phaser.GameObjects.Text;
-        txt.setText(this.isTeleportMode ? 'CANCEL TELEPORT' : `TELEPORT (${teleCount})`);
-        
-        const bg = this.teleportBtn.getAt(0) as Phaser.GameObjects.Rectangle;
-        bg.setFillStyle(this.isTeleportMode ? 0x884488 : 0x442244);
+        this.teleportBg.setVisible(true).setX(teleX);
+        this.teleportTxt!.setVisible(true).setX(teleX);
+        this.teleportTxt!.setText(this.isTeleportMode ? 'CANCEL TELEPORT' : `TELEPORT (${teleCount})`);
+        this.teleportBg.setFillStyle(this.isTeleportMode ? 0x884488 : 0x442244);
       }
     } else {
-      if (this.teleportBtn) this.teleportBtn.setVisible(false);
+      this.teleportBg?.setVisible(false);
+      this.teleportTxt?.setVisible(false);
       if (this.isTeleportMode) {
         this.isTeleportMode = false;
         this.drawMap();
@@ -364,6 +368,7 @@ export class MapScene extends Phaser.Scene {
         node.type = this.getRandomNodeType(node.floor, totalFloors);
         if (node.type === 'elite') {
           node.eliteChallenge = getRandomChallenge();
+          node.eliteCourseProfile = generateEliteCourseProfile(node.eliteChallenge);
         }
       }
     });
@@ -719,32 +724,30 @@ export class MapScene extends Phaser.Scene {
   private isNodeReachable(nodeId: string): boolean {
     const run = RunStateManager.getRun();
     if (!run) return false;
-    
-    // Teleport Mode: Any visited node is reachable (except current, arguably, but allowing it is harmless)
-    if (this.isTeleportMode) {
-      return run.visitedNodeIds.includes(nodeId) && nodeId !== run.currentNodeId;
-    }
-    
-    const targetNode = run.nodes.find(n => n.id === nodeId);
-    if (!targetNode) return false;
 
-    // Dev mode: shops (and future event nodes) are always reachable
-    if (this.isDevMode && DEV_ACCESSIBLE_TYPES.includes(targetNode.type)) {
-      return nodeId !== run.currentNodeId;
+    if (nodeId === run.currentNodeId) return false;
+
+    // Teleport Mode: Any visited node is reachable
+    if (this.isTeleportMode) {
+      return run.visitedNodeIds.includes(nodeId);
     }
+
+    // Dev mode: every node is reachable
+    if (this.isDevMode) return true;
 
     // 1. Initial Choice
     if (!run.currentNodeId) {
-      return targetNode.floor === 0;
+      const targetNode = run.nodes.find(n => n.id === nodeId);
+      return targetNode?.floor === 0;
     }
 
     const currentNode = run.nodes.find(n => n.id === run.currentNodeId);
     if (!currentNode) return false;
 
     // 2. Bidirectional Movement: Check for ANY edge connecting current <-> target
-    const edge = run.edges.find(e => 
-      (e.from === currentNode.id && e.to === targetNode.id) || 
-      (e.from === targetNode.id && e.to === currentNode.id)
+    const edge = run.edges.find(e =>
+      (e.from === currentNode.id && e.to === nodeId) ||
+      (e.from === nodeId && e.to === currentNode.id)
     );
 
     return !!edge;
@@ -757,13 +760,34 @@ export class MapScene extends Phaser.Scene {
     // ── Teleport Mode Handling ──
     if (this.isTeleportMode) {
       if (run.visitedNodeIds.includes(node.id)) {
-        // Deduct item
         if (RunStateManager.removeFromInventory('teleport')) {
           RunStateManager.setCurrentNode(node.id);
           this.isTeleportMode = false;
           this.drawMap();
-          this.updateGoldUI(); // Refresh UI to update teleport button count/state
+          this.updateGoldUI();
         }
+      }
+      return;
+    }
+
+    // ── Dev Mode: check if there's a connecting edge ───────────────────────
+    const connectingEdge = run.edges.find(e =>
+      (e.from === run.currentNodeId && e.to === node.id) ||
+      (e.from === node.id && e.to === run.currentNodeId)
+    );
+
+    // In dev mode with no connecting edge: teleport directly, then trigger overlay
+    if (this.isDevMode && !connectingEdge && node.floor !== 0) {
+      RunStateManager.setCurrentNode(node.id);
+      this.drawMap();
+      this.buildStatsPanel();
+      this.updateGoldUI();
+      if (node.type === 'shop') {
+        this.openShop();
+      } else if (node.type === 'event') {
+        this.openEvent();
+      } else if (node.type === 'elite') {
+        this.openEliteChallenge(node);
       }
       return;
     }
@@ -775,26 +799,17 @@ export class MapScene extends Phaser.Scene {
     }
 
     {
-      // Find edge connecting current <-> target (all non-elite node types ride the edge)
-      const edge = run.edges.find(e => 
-        (e.from === run.currentNodeId && e.to === node.id) || 
-        (e.from === node.id && e.to === run.currentNodeId)
-      );
-
+      const edge = connectingEdge;
       if (!edge && node.floor !== 0) return; // Should not happen if reachable
 
-      // Create course from edge profile
       let course: any = generateCourseProfile(5, 0.05, 'asphalt'); // Default fallback
       let isBackwards = false;
-      
+
       if (edge) {
-        // Check direction
         if (edge.to === run.currentNodeId) {
-          // Backward travel: Invert profile
           course = invertCourseProfile(edge.profile);
           isBackwards = true;
         } else {
-          // Forward travel
           course = edge.profile;
         }
         RunStateManager.setActiveEdge(edge);
@@ -1136,23 +1151,23 @@ export class MapScene extends Phaser.Scene {
         (e.from === node.id && e.to === fromNodeId)
       );
 
-      if (edge) RunStateManager.setActiveEdge(edge);
-      overlay.destroy();
+      // Elite nodes ride their own dedicated course profile (not the edge's profile)
+      const course = node.eliteCourseProfile ?? generateCourseProfile(2, 0.06, 'asphalt');
 
-      let course = generateCourseProfile(5, 0.05, 'asphalt');
-      let isBackwards = false;
       if (edge) {
-        if (edge.to === fromNodeId) {
-          course = invertCourseProfile(edge.profile);
-          isBackwards = true;
-        } else {
-          course = edge.profile;
-        }
+        RunStateManager.setActiveEdge(edge);
+      } else {
+        // Dev mode teleport: no edge exists, move to the elite node now so
+        // completeActiveEdge (which needs an edge) isn't required for progression.
+        RunStateManager.setCurrentNode(node.id);
+        RunStateManager.setActiveEdge(null);
       }
+
+      overlay.destroy();
 
       this.scene.start('GameScene', {
         course,
-        isBackwards,
+        isBackwards: false,
         weightKg: this.weightKg,
         units: this.units,
         trainer: this.trainer,
@@ -1358,9 +1373,43 @@ export class MapScene extends Phaser.Scene {
     });
   }
 
+  private buildDevToggle(): void {
+    // Destroy previous instances if rebuilding
+    this.devToggleBg?.destroy();
+    this.devToggleTxt?.destroy();
+
+    // Use direct scene objects (NOT inside a Container) with setScrollFactor(0)
+    // on each element. Containers with scrollFactor(0) don't fix the input hit
+    // area to screen space in scrollable scenes — direct objects do.
+    const on = this.isDevMode;
+    this.devToggleBg = this.add.rectangle(70, 20, 130, 26, on ? 0x224422 : 0x333333)
+      .setScrollFactor(0).setDepth(30)
+      .setInteractive({ useHandCursor: true });
+    this.devToggleTxt = this.add.text(70, 20, on ? 'DEV MODE: ON' : 'DEV MODE: OFF', {
+      fontFamily: 'monospace', fontSize: '11px',
+      color: on ? '#00ff00' : '#aaaaaa', fontStyle: 'bold',
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(31);
+
+    this.devToggleBg.on('pointerdown', () => {
+      this.isDevMode = !this.isDevMode;
+      RunStateManager.setDevMode(this.isDevMode);
+      this.devToggleBg!.setFillStyle(this.isDevMode ? 0x224422 : 0x333333);
+      this.devToggleTxt!.setText(this.isDevMode ? 'DEV MODE: ON' : 'DEV MODE: OFF');
+      this.devToggleTxt!.setColor(this.isDevMode ? '#00ff00' : '#aaaaaa');
+      this.drawMap();
+    });
+    this.devToggleBg.on('pointerover', () =>
+      this.devToggleBg!.setFillStyle(this.isDevMode ? 0x336633 : 0x555555));
+    this.devToggleBg.on('pointerout', () =>
+      this.devToggleBg!.setFillStyle(this.isDevMode ? 0x224422 : 0x333333));
+  }
+
   shutdown(): void {
     this.scale.off('resize', this.onResize, this);
-    this.teleportBtn = null;
+    this.teleportBg = null;
+    this.teleportTxt = null;
+    this.devToggleBg = null;
+    this.devToggleTxt = null;
     this.isTeleportMode = false;
     this.overlayActive = false;
     this.nodeObjects.clear();
