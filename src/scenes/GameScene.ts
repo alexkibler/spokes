@@ -112,6 +112,27 @@ const GRADE_SEND_THRESHOLD = 0.001; // 0.1%
 /** Exponential lerp rate for visual grade smoothing (~63% convergence per second) */
 const GRADE_LERP_RATE = 1.0;
 
+// ─── Drafting constants ───────────────────────────────────────────────────────
+
+/** Maximum distance (m) at which a trailing rider benefits from draft */
+const DRAFT_MAX_DISTANCE_M = 20;
+/** Maximum CdA reduction fraction from drafting (30% = peloton-level benefit) */
+const DRAFT_MAX_CDA_REDUCTION = 0.30;
+
+// ─── Ghost racer state ────────────────────────────────────────────────────────
+
+interface GhostState {
+  racer:        RacerProfile;
+  distanceM:    number;
+  velocityMs:   number;
+  crankAngle:   number;
+  physics:      PhysicsConfig;
+  graphics:     Phaser.GameObjects.Graphics;
+  finishedTime: number | null;
+  /** CdA reduction fraction from drafting another rider (0–DRAFT_MAX_CDA_REDUCTION) */
+  draftFactor:  number;
+}
+
 // ─── Reference canvas dimensions (used for texture generation) ────────────────
 
 /** Width of each parallax layer texture (tiles horizontally for scrolling). */
@@ -153,17 +174,24 @@ export class GameScene extends Phaser.Scene {
   private ftpW = 200;
   private activeChallenge: EliteChallenge | null = null;
 
-  // Ghost racer state (boss / elite rival)
-  private racer: RacerProfile | null = null;
-  private racerDistanceM = 0;
-  private racerVelocityMs = 0;
-  private racerCrankAngle = 0;
-  private racerPhysics: PhysicsConfig = { ...DEFAULT_PHYSICS };
-  private ghostGraphics!: Phaser.GameObjects.Graphics;
+  // Ghost racer state (boss / elite rivals — may be 0..N ghosts)
+  /** Profiles passed in from MapScene; populated before create() runs. */
+  private racerProfiles: RacerProfile[] = [];
+  /** Live simulation state for each ghost, built in buildGhostCyclist(). */
+  private ghosts: GhostState[] = [];
+  /** Timestamp (ms) when the first ghost crossed the finish line, null until then. */
+  private firstGhostFinishedTime: number | null = null;
   private raceGapBg!: Phaser.GameObjects.Graphics;
   private raceGapText!: Phaser.GameObjects.Text;
   private raceGapLabel!: Phaser.GameObjects.Text;
-  private racerBeatsBossTime: number | null = null; // ms when boss crossed finish, null until then
+
+  // Drafting state
+  /** 0–DRAFT_MAX_CDA_REDUCTION: player's current CdA reduction from sitting in any ghost's wake */
+  private playerDraftFactor = 0;
+  private slipstreamGraphics!: Phaser.GameObjects.Graphics;
+  private draftBadgeBg!: Phaser.GameObjects.Graphics;
+  private draftBadgeText!: Phaser.GameObjects.Text;
+  private draftAnimOffset = 0; // drives the animated streak motion
 
   // Service reference – swapped when toggling demo mode
   private trainer!: ITrainerService;
@@ -410,6 +438,9 @@ export class GameScene extends Phaser.Scene {
     isBackwards?: boolean;
     ftpW?: number;
     activeChallenge?: EliteChallenge | null;
+    /** Array of ghost racers (preferred). */
+    racers?: RacerProfile[];
+    /** Legacy single-racer shim; wrapped into a 1-element array if provided. */
     racer?: RacerProfile | null;
   }): void {
     if (import.meta.env.DEV) console.log('[GameScene] init data:', data);
@@ -424,7 +455,8 @@ export class GameScene extends Phaser.Scene {
     this.isBackwards         = data?.isBackwards ?? false;
     this.ftpW                = data?.ftpW ?? 200;
     this.activeChallenge     = data?.activeChallenge ?? null;
-    this.racer               = data?.racer ?? null;
+    // Support both the new `racers` array and the legacy single `racer`
+    this.racerProfiles = data?.racers ?? (data?.racer ? [data.racer] : []);
 
     if (import.meta.env.DEV) console.log('[GameScene] isDevMode set to:', this.isDevMode);
 
@@ -464,20 +496,11 @@ export class GameScene extends Phaser.Scene {
     this.challengeEverStopped     = false;
     this.challengeStartMs         = 0;
     this.edgeStartRecordCount  = 0;
-    // Ghost racer
-    this.racerDistanceM    = 0;
-    this.racerVelocityMs   = 0;
-    this.racerCrankAngle   = 0;
-    this.racerBeatsBossTime = null;
-    if (this.racer) {
-      this.racerPhysics = {
-        massKg:  this.racer.massKg,
-        cdA:     this.racer.cdA,
-        crr:     this.racer.crr,
-        rhoAir:  DEFAULT_PHYSICS.rhoAir,
-        grade:   0,
-      };
-    }
+    // Ghost racer + drafting — GhostState objects are created in buildGhostCyclist()
+    this.ghosts                 = [];
+    this.firstGhostFinishedTime = null;
+    this.playerDraftFactor      = 0;
+    this.draftAnimOffset        = 0;
   }
 
   create(): void {
@@ -701,8 +724,28 @@ export class GameScene extends Phaser.Scene {
       void this.trainer.setSimulationParams(this.smoothGrade, effectiveCrr, cwa);
     }
 
+    // ── Drafting ─────────────────────────────────────────────────────────────
+    // Player draft: find the best (closest) ghost 0–DRAFT_MAX_DISTANCE_M ahead.
+    if (this.ghosts.length > 0) {
+      let bestDraft = 0;
+      for (const ghost of this.ghosts) {
+        const gap = ghost.distanceM - this.distanceM; // positive = ghost is ahead
+        if (gap > 0 && gap < DRAFT_MAX_DISTANCE_M) {
+          bestDraft = Math.max(bestDraft, DRAFT_MAX_CDA_REDUCTION * (1 - gap / DRAFT_MAX_DISTANCE_M));
+        }
+      }
+      this.playerDraftFactor = bestDraft;
+      this.draftAnimOffset += this.smoothVelocityMs * dt * 2; // streaks scroll at 2× road speed
+    } else {
+      this.playerDraftFactor = 0;
+    }
+
     // ── Physics ─────────────────────────────────────────────────────────────
-    const acceleration = calculateAcceleration(this.latestPower, this.smoothVelocityMs, this.physicsConfig, this.runModifiers);
+    // Merge draft bonus into run modifiers (capped at 0.99 by convention)
+    const draftModifiers: RunModifiers = this.playerDraftFactor > 0
+      ? { ...this.runModifiers, dragReduction: Math.min(0.99, this.runModifiers.dragReduction + this.playerDraftFactor) }
+      : this.runModifiers;
+    const acceleration = calculateAcceleration(this.latestPower, this.smoothVelocityMs, this.physicsConfig, draftModifiers);
 
     this.smoothVelocityMs += acceleration * dt;
 
@@ -736,8 +779,8 @@ export class GameScene extends Phaser.Scene {
     this.updateChallengePanel();
 
     // ── Ghost racer physics ──────────────────────────────────────────────────
-    if (this.racer && !this.rideComplete) {
-      this.updateGhostRacer(dt, wrappedDist);
+    if (this.ghosts.length > 0 && !this.rideComplete) {
+      this.updateAllGhostRacers(dt);
     }
 
     // ── Cyclist animation ────────────────────────────────────────────────────
@@ -749,11 +792,17 @@ export class GameScene extends Phaser.Scene {
     }
     // Advance crank: avgCadence rpm → revolutions per second → radians per second
     this.crankAngle += (this.avgCadence / 60) * 2 * Math.PI * dt;
-    // Ghost crank at a fixed pro cadence (90 rpm)
-    this.racerCrankAngle += (90 / 60) * 2 * Math.PI * dt;
+    // Advance each ghost crank at a fixed pro cadence (90 rpm)
+    for (const ghost of this.ghosts) {
+      ghost.crankAngle += (90 / 60) * 2 * Math.PI * dt;
+    }
 
     this.drawCyclist();
-    if (this.racer) this.drawGhostCyclist();
+    if (this.ghosts.length > 0) {
+      this.drawAllGhosts();
+      this.drawSlipstream();
+    }
+    this.updateDraftBadge();
 
     // ── Elevation graph ──────────────────────────────────────────────────────
     this.drawElevationGraph(wrappedDist);
@@ -1048,11 +1097,45 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildGhostCyclist(): void {
-    // Added BEFORE the player's cyclist layers so it renders behind
-    this.ghostGraphics = this.add.graphics();
-    this.ghostGraphics.setAlpha(0.72);
-    this.worldContainer.add(this.ghostGraphics);
-    if (!this.racer) this.ghostGraphics.setVisible(false);
+    // Create one GhostState per racer profile — graphics added BEFORE the player
+    // so all ghosts render behind the player cyclist.
+    this.ghosts = this.racerProfiles.map((racer) => {
+      const graphics = this.add.graphics();
+      graphics.setAlpha(0.72);
+      this.worldContainer.add(graphics);
+      return {
+        racer,
+        distanceM:    0,
+        velocityMs:   0,
+        crankAngle:   0,
+        physics: {
+          massKg: racer.massKg,
+          cdA:    racer.cdA,
+          crr:    racer.crr,
+          rhoAir: DEFAULT_PHYSICS.rhoAir,
+          grade:  0,
+        },
+        graphics,
+        finishedTime: null,
+        draftFactor:  0,
+      } satisfies GhostState;
+    });
+
+    // Slipstream streaks — rendered between cyclists, inside worldContainer
+    this.slipstreamGraphics = this.add.graphics();
+    this.worldContainer.add(this.slipstreamGraphics);
+
+    // Draft badge — fixed to screen (not in worldContainer)
+    const hasRacers = this.ghosts.length > 0;
+    this.draftBadgeBg   = this.add.graphics().setDepth(15);
+    this.draftBadgeText = this.add.text(0, 0, '', {
+      fontFamily: 'monospace', fontSize: '11px', fontStyle: 'bold',
+      color: '#00f5d4', letterSpacing: 2,
+    }).setOrigin(0.5).setDepth(16).setAlpha(0);
+    if (!hasRacers) {
+      this.draftBadgeBg.setVisible(false);
+      this.draftBadgeText.setVisible(false);
+    }
   }
 
   /**
@@ -1183,103 +1266,208 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-  private drawGhostCyclist(): void {
-    if (!this.racer || !this.ghostGraphics) return;
-
-    const gapM = this.racerDistanceM - this.distanceM;
-
-    // Fade the ghost out when the real gap grows large — prevents the misleading
-    // "pinned right behind me" look when actually hundreds of metres apart.
-    // Full opacity within 80 m, fully faded at 250 m.
+  private drawAllGhosts(): void {
     const fadeStart = 80;
     const fadeEnd   = 250;
-    const absGap    = Math.abs(gapM);
-    const alpha     = absGap < fadeStart
-      ? 0.72
-      : Math.max(0, 0.72 * (1 - (absGap - fadeStart) / (fadeEnd - fadeStart)));
-    this.ghostGraphics.setAlpha(alpha);
 
-    if (alpha < 0.01) {
-      this.ghostGraphics.clear();
-      return;
+    for (const ghost of this.ghosts) {
+      const gapM  = ghost.distanceM - this.distanceM; // positive = ghost ahead
+      const absGap = Math.abs(gapM);
+
+      // Fade out when the gap grows large — prevents the "pinned right behind"
+      // illusion when actually hundreds of metres apart.
+      const alpha = absGap < fadeStart
+        ? 0.72
+        : Math.max(0, 0.72 * (1 - (absGap - fadeStart) / (fadeEnd - fadeStart)));
+      ghost.graphics.setAlpha(alpha);
+
+      if (alpha < 0.01) {
+        ghost.graphics.clear();
+        continue;
+      }
+
+      // Visual offset: tanh saturation so large gaps look meaningfully large.
+      const offsetX = Math.tanh(gapM / 120) * 280;
+      ghost.graphics.setPosition(offsetX, 0);
+      ghost.graphics.clear();
+
+      this.drawCyclistShape(
+        ghost.graphics,
+        ghost.crankAngle,
+        this.cycGroundY,
+        ghost.racer.color,
+        ghost.racer.color & 0xaaaaaa, // slightly muted jersey
+        0xddeeff,                      // pale blue-white skin
+      );
     }
-
-    // Visual offset: larger scale (120 m half-saturation) so a 30 m gap looks
-    // proportionally small and a 100 m gap looks meaningfully large.
-    const offsetX = Math.tanh(gapM / 120) * 280;
-
-    // Reposition the ghost graphics object inside worldContainer
-    this.ghostGraphics.setPosition(offsetX, 0);
-    this.ghostGraphics.clear();
-
-    // Ghost palette derived from racer colour (desaturated / ethereal)
-    this.drawCyclistShape(
-      this.ghostGraphics,
-      this.racerCrankAngle,
-      this.cycGroundY,
-      this.racer.color,           // BIKE  = racer accent
-      this.racer.color & 0xaaaaaa, // JERSEY slightly muted
-      0xddeeff,                    // SKIN  pale blue-white
-    );
   }
 
   /**
-   * Advance the ghost racer's physics simulation by one tick.
-   * Uses the same calculateAcceleration function as the player but with
-   * the racer's own PhysicsConfig (mass, CdA, Crr) and no run modifiers.
+   * Draw animated slipstream streaks for every pair of riders that are within
+   * draft range of each other: player↔ghost or ghost↔ghost.
    */
-  private updateGhostRacer(dt: number, _wrappedPlayerDist: number): void {
-    if (!this.racer) return;
+  private drawSlipstream(): void {
+    const g = this.slipstreamGraphics;
+    g.clear();
 
-    // If the gap has grown beyond the course length (e.g. mid-ride dev-mode toggle),
-    // snap the ghost to just behind the player so the race stays meaningful.
-    const absGap = Math.abs(this.racerDistanceM - this.distanceM);
-    if (absGap > this.course.totalDistanceM * 0.75) {
-      const snapBehind = Math.max(0, this.distanceM - 30);
-      this.racerDistanceM  = snapBehind;
-      this.racerVelocityMs = Math.max(this.smoothVelocityMs * 0.8, 1);
+    const gY = this.cycGroundY;
+    const streamY1 = gY - 28;
+    const streamY2 = gY - 20;
+    const streamY3 = gY - 12;
+    const NUM_STREAKS = 5;
+    const STREAK_LEN  = 18;
+
+    // Build a list of (distanceM, offsetX) for player + all visible ghosts
+    // "player" lives at offsetX = 0 in worldContainer space
+    interface RiderVis { distanceM: number; offsetX: number; draftFactor: number; }
+    const riders: RiderVis[] = [
+      { distanceM: this.distanceM, offsetX: 0, draftFactor: this.playerDraftFactor },
+      ...this.ghosts.map(gh => ({
+        distanceM: gh.distanceM,
+        offsetX:   Math.tanh((gh.distanceM - this.distanceM) / 120) * 280,
+        draftFactor: gh.draftFactor,
+      })),
+    ];
+
+    // For every pair where one is directly behind the other in draft range,
+    // draw streaks flowing from lead toward trail.
+    for (let i = 0; i < riders.length; i++) {
+      for (let j = 0; j < riders.length; j++) {
+        if (i === j) continue;
+        const trail = riders[i];
+        const lead  = riders[j];
+        const gap   = lead.distanceM - trail.distanceM;
+        if (gap <= 0 || gap >= DRAFT_MAX_DISTANCE_M) continue;
+
+        const factor     = DRAFT_MAX_CDA_REDUCTION * (1 - gap / DRAFT_MAX_DISTANCE_M);
+        const normalised = factor / DRAFT_MAX_CDA_REDUCTION;
+        const trailX     = trail.offsetX;
+        const leadX      = lead.offsetX;
+        if (leadX <= trailX) continue; // visual overlap guard
+
+        const SPACING   = (leadX - trailX - STREAK_LEN) / NUM_STREAKS;
+        const baseAlpha = 0.15 + 0.40 * normalised;
+
+        for (let k = 0; k < NUM_STREAKS; k++) {
+          const animShift = (this.draftAnimOffset * 0.5) % (SPACING > 0 ? SPACING : 1);
+          const sx = trailX + k * (SPACING > 0 ? SPACING : 10) + animShift;
+          if (sx < trailX || sx + STREAK_LEN > leadX + 5) continue;
+
+          const fade = (k / NUM_STREAKS) * 0.5 + 0.5;
+          g.lineStyle(1.5, 0xaaddff, baseAlpha * fade);
+          g.beginPath(); g.moveTo(sx, streamY1); g.lineTo(sx + STREAK_LEN, streamY1); g.strokePath();
+          g.lineStyle(2, 0x88ccff, baseAlpha * fade * 0.7);
+          g.beginPath(); g.moveTo(sx + 3, streamY2); g.lineTo(sx + STREAK_LEN - 2, streamY2); g.strokePath();
+          g.lineStyle(1.5, 0xaaddff, baseAlpha * fade * 0.5);
+          g.beginPath(); g.moveTo(sx + 6, streamY3); g.lineTo(sx + STREAK_LEN - 5, streamY3); g.strokePath();
+        }
+      }
+    }
+  }
+
+  /** Show / hide and update the "SLIPSTREAM" screen badge. */
+  private updateDraftBadge(): void {
+    if (this.ghosts.length === 0) return;
+
+    const factor = this.playerDraftFactor / DRAFT_MAX_CDA_REDUCTION;
+
+    if (factor <= 0) {
+      this.draftBadgeBg.clear();
+      this.draftBadgeText.setAlpha(0);
+      return;
     }
 
-    // Update grade for ghost's current course position
-    const ghostWrapped = this.racerDistanceM % this.course.totalDistanceM;
-    const ghostGrade   = getGradeAtDistance(this.course, ghostWrapped);
-    const ghostSurface = getSurfaceAtDistance(this.course, ghostWrapped);
+    const pct   = Math.round(factor * DRAFT_MAX_CDA_REDUCTION * 100);
+    const cx    = this.scale.width / 2;
+    const badgeY = 82; // just below HUD
+    const badgeW = 180;
+    const badgeH = 22;
 
-    // Scale the racer's base Crr by the surface multiplier (so their pro tyres
-    // stay advantaged on all surfaces, not overridden with the standard value).
-    const surfaceMult = getCrrForSurface(ghostSurface) / CRR_BY_SURFACE['asphalt'];
-    this.racerPhysics = {
-      ...this.racerPhysics,
-      grade: ghostGrade,
-      crr:   this.racer.crr * surfaceMult,
-    };
+    this.draftBadgeBg.clear();
+    this.draftBadgeBg.fillStyle(0x003322, 0.80);
+    this.draftBadgeBg.fillRect(cx - badgeW / 2, badgeY, badgeW, badgeH);
+    this.draftBadgeBg.lineStyle(1, 0x00f5d4, 0.6 + 0.4 * factor);
+    this.draftBadgeBg.strokeRect(cx - badgeW / 2, badgeY, badgeW, badgeH);
 
-    const accel = calculateAcceleration(
-      this.racer.powerW,
-      this.racerVelocityMs,
-      this.racerPhysics,
-    );
-    this.racerVelocityMs = Math.max(0, this.racerVelocityMs + accel * dt);
-    const prevDist = this.racerDistanceM;
-    this.racerDistanceM += this.racerVelocityMs * dt;
+    this.draftBadgeText
+      .setPosition(cx, badgeY + badgeH / 2)
+      .setText(`SLIPSTREAM  −${pct}% DRAG`)
+      .setAlpha(0.7 + 0.3 * factor);
+  }
 
-    // Detect ghost crossing the finish line (first time only)
-    if (this.racerBeatsBossTime === null &&
-        prevDist < this.course.totalDistanceM &&
-        this.racerDistanceM >= this.course.totalDistanceM) {
-      this.racerBeatsBossTime = Date.now();
-      // Flash notification
-      this.notifTitle.setText('BOSS FINISHED!').setColor(this.racer.hexColor);
-      this.notifSub.setText(`${this.racer.displayName} crossed the line first`);
-      if (this.notifTween) this.notifTween.stop();
-      this.notifContainer.setAlpha(1);
-      this.notifTween = this.tweens.add({
-        targets: this.notifContainer,
-        alpha: 0,
-        delay: 3000,
-        duration: 800,
-        ease: 'Power2',
-      });
+  /**
+   * Advance every ghost racer's physics simulation by one tick.
+   * Each ghost checks for draft benefit from any entity 0–DRAFT_MAX_DISTANCE_M
+   * ahead of it (the player or another ghost).
+   */
+  private updateAllGhostRacers(dt: number): void {
+    const courseLen = this.course.totalDistanceM;
+
+    for (const ghost of this.ghosts) {
+      // If the gap has blown out (e.g. dev-mode toggle mid-ride), snap ghost back.
+      const absGap = Math.abs(ghost.distanceM - this.distanceM);
+      if (absGap > courseLen * 0.75) {
+        ghost.distanceM  = Math.max(0, this.distanceM - 30);
+        ghost.velocityMs = Math.max(this.smoothVelocityMs * 0.8, 1);
+      }
+
+      // Current grade and surface for ghost's position
+      const wrapped = ghost.distanceM % courseLen;
+      const grade   = getGradeAtDistance(this.course, wrapped);
+      const surface = getSurfaceAtDistance(this.course, wrapped);
+
+      // Preserve the ghost's tyre advantage across all surfaces
+      const surfaceMult = getCrrForSurface(surface) / CRR_BY_SURFACE['asphalt'];
+      ghost.physics = {
+        ...ghost.physics,
+        grade,
+        crr: ghost.racer.crr * surfaceMult,
+      };
+
+      // Draft: find the closest entity ahead within DRAFT_MAX_DISTANCE_M
+      // (player or any other ghost).
+      let bestDraft = 0;
+      // Check player
+      const playerGap = this.distanceM - ghost.distanceM;
+      if (playerGap > 0 && playerGap < DRAFT_MAX_DISTANCE_M) {
+        bestDraft = Math.max(bestDraft, DRAFT_MAX_CDA_REDUCTION * (1 - playerGap / DRAFT_MAX_DISTANCE_M));
+      }
+      // Check other ghosts
+      for (const other of this.ghosts) {
+        if (other === ghost) continue;
+        const gap = other.distanceM - ghost.distanceM;
+        if (gap > 0 && gap < DRAFT_MAX_DISTANCE_M) {
+          bestDraft = Math.max(bestDraft, DRAFT_MAX_CDA_REDUCTION * (1 - gap / DRAFT_MAX_DISTANCE_M));
+        }
+      }
+      ghost.draftFactor = bestDraft;
+
+      const physicsWithDraft = { ...ghost.physics, cdA: ghost.physics.cdA * (1 - ghost.draftFactor) };
+      const accel = calculateAcceleration(ghost.racer.powerW, ghost.velocityMs, physicsWithDraft);
+      ghost.velocityMs = Math.max(0, ghost.velocityMs + accel * dt);
+      const prevDist = ghost.distanceM;
+      ghost.distanceM += ghost.velocityMs * dt;
+
+      // Detect first ghost to cross the finish line
+      if (ghost.finishedTime === null &&
+          prevDist < courseLen &&
+          ghost.distanceM >= courseLen) {
+        ghost.finishedTime = Date.now();
+        if (this.firstGhostFinishedTime === null) {
+          this.firstGhostFinishedTime = ghost.finishedTime;
+          this.notifTitle.setText('RIVAL FINISHED!').setColor(ghost.racer.hexColor);
+          this.notifSub.setText(`${ghost.racer.displayName} crossed the line first`);
+          if (this.notifTween) this.notifTween.stop();
+          this.notifContainer.setAlpha(1);
+          this.notifTween = this.tweens.add({
+            targets: this.notifContainer,
+            alpha: 0,
+            delay: 3000,
+            duration: 800,
+            ease: 'Power2',
+          });
+        }
+      }
     }
   }
 
@@ -1392,7 +1580,6 @@ export class GameScene extends Phaser.Scene {
 
   private buildRaceGapPanel(): void {
     const mono = 'monospace';
-    // Background badge — top-right corner, below HUD
     this.raceGapBg = this.add.graphics().setDepth(12);
 
     this.raceGapLabel = this.add.text(0, 0, '', {
@@ -1403,7 +1590,7 @@ export class GameScene extends Phaser.Scene {
       fontFamily: mono, fontSize: '14px', fontStyle: 'bold', color: '#ffffff',
     }).setDepth(13).setOrigin(1, 0);
 
-    if (!this.racer) {
+    if (this.ghosts.length === 0) {
       this.raceGapBg.setVisible(false);
       this.raceGapLabel.setVisible(false);
       this.raceGapText.setVisible(false);
@@ -1411,40 +1598,59 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateRaceGapPanel(): void {
-    if (!this.racer) return;
+    if (this.ghosts.length === 0) return;
 
-    const w  = this.scale.width;
-    const px = w - 8;  // right-aligned
-    const py = 75;     // just below HUD strip
+    const w    = this.scale.width;
+    const px   = w - 8;
+    const py   = 75;
     const panW = 160;
     const panH = 36;
+
+    // Find nearest ghost (smallest absolute gap)
+    let nearest = this.ghosts[0];
+    let nearestGap = nearest.distanceM - this.distanceM;
+    for (const gh of this.ghosts) {
+      const gap = gh.distanceM - this.distanceM;
+      if (Math.abs(gap) < Math.abs(nearestGap)) {
+        nearest   = gh;
+        nearestGap = gap;
+      }
+    }
+
+    const accentColor = nearest.racer.accentColor;
+    const accentHex   = nearest.racer.accentHex;
 
     this.raceGapBg.clear();
     this.raceGapBg.fillStyle(0x0a0a1a, 0.80);
     this.raceGapBg.fillRect(px - panW, py, panW, panH);
-    this.raceGapBg.lineStyle(1, this.racer.accentColor, 0.6);
+    this.raceGapBg.lineStyle(1, accentColor, 0.6);
     this.raceGapBg.strokeRect(px - panW, py, panW, panH);
 
-    const gapM  = this.racerDistanceM - this.distanceM;
-    const absgap = Math.abs(gapM);
-    const distStr = absgap < 1000
-      ? `${absgap.toFixed(0)} m`
-      : `${(absgap / 1000).toFixed(2)} km`;
+    const absGap  = Math.abs(nearestGap);
+    const distStr = absGap < 1000
+      ? `${absGap.toFixed(0)} m`
+      : `${(absGap / 1000).toFixed(2)} km`;
 
     let gapStr: string;
     let gapColor: string;
-    if (Math.abs(gapM) <= 1) {
-      gapStr  = '─ NECK & NECK';
+    if (absGap <= 1) {
+      gapStr   = '─ NECK & NECK';
       gapColor = '#ffffff';
-    } else if (gapM > 0) {
-      gapStr  = `▲ ${distStr} AHEAD`;
-      gapColor = this.racer.accentHex;
+    } else if (nearestGap > 0) {
+      gapStr   = `▲ ${distStr} AHEAD`;
+      gapColor = accentHex;
     } else {
-      gapStr  = `▼ ${distStr} BEHIND`;
+      gapStr   = `▼ ${distStr} BEHIND`;
       gapColor = '#00f5d4';
     }
 
-    this.raceGapLabel.setPosition(px - 6, py + 5).setText(this.racer.displayName);
+    // Show how many ghosts are ahead as a secondary label
+    const ahead = this.ghosts.filter(gh => gh.distanceM > this.distanceM).length;
+    const label = this.ghosts.length > 1
+      ? `RIVALS  ${ahead}/${this.ghosts.length} AHEAD`
+      : nearest.racer.displayName;
+
+    this.raceGapLabel.setPosition(px - 6, py + 5).setText(label);
     this.raceGapText.setPosition(px - 6, py + 17).setText(gapStr).setColor(gapColor);
   }
 
@@ -1680,17 +1886,16 @@ export class GameScene extends Phaser.Scene {
       g.fillPoints(completedPoints, true);
     }
 
-    // Ghost racer marker – draw before player marker so player appears on top
-    if (this.racer) {
-      const ghostDist = this.racerDistanceM % this.course.totalDistanceM;
+    // Ghost racer markers – draw before player marker so player appears on top
+    for (const ghost of this.ghosts) {
+      const ghostDist = ghost.distanceM % this.course.totalDistanceM;
       const gx = toX(ghostDist);
-      g.lineStyle(1.5, this.racer.accentColor, 0.75);
+      g.lineStyle(1.5, ghost.racer.accentColor, 0.60);
       g.beginPath();
       g.moveTo(gx, oy);
       g.lineTo(gx, oy + drawH);
       g.strokePath();
-      // Upward triangle (boss approaching from above)
-      g.fillStyle(this.racer.accentColor, 0.9);
+      g.fillStyle(ghost.racer.color, 0.85);
       g.fillTriangle(gx - 4, oy + drawH + 2, gx + 4, oy + drawH + 2, gx, oy + drawH - 4);
     }
 
@@ -2161,13 +2366,15 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5, 0).setDepth(depth + 2);
 
     // ── Boss race result ──────────────────────────────────────────────────────
-    if (this.racer && completed) {
-      const playerFinishedFirst = this.racerBeatsBossTime === null ||
-        this.racerDistanceM < this.course.totalDistanceM;
-      const bossResult = playerFinishedFirst ? 'YOU BEAT THE BOSS!' : `${this.racer.displayName} WINS`;
-      const bossColor  = playerFinishedFirst ? '#00f5d4' : this.racer.hexColor;
+    if (this.ghosts.length > 0 && completed) {
+      const playerFinishedFirst = this.firstGhostFinishedTime === null ||
+        this.ghosts.every(gh => gh.distanceM < this.course.totalDistanceM);
+      const bossResult = playerFinishedFirst
+        ? `YOU BEAT THE PELOTON!`
+        : `PELOTON WINS  (${this.ghosts.filter(gh => gh.finishedTime !== null).length}/${this.ghosts.length} FINISHED)`;
+      const bossColor  = playerFinishedFirst ? '#00f5d4' : '#ff6600';
       this.add.text(cx, py + 80, bossResult, {
-        fontFamily: mono, fontSize: '15px', fontStyle: 'bold', color: bossColor, letterSpacing: 2,
+        fontFamily: mono, fontSize: '14px', fontStyle: 'bold', color: bossColor, letterSpacing: 2,
       }).setOrigin(0.5, 0).setDepth(depth + 2);
     }
 

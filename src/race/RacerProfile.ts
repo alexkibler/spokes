@@ -64,6 +64,44 @@ export function createBossProfile(playerFtpW: number): RacerProfile {
 }
 
 /**
+ * Creates a peloton of 10 ghost racers for the final boss fight.
+ * Each has slightly different power, mass, and CdA so they spread out
+ * rather than clumping together.  Power ranges from 1.75× to 2.25× FTP.
+ */
+export function createBossRacers(playerFtpW: number): RacerProfile[] {
+  const variants: Array<{ suffix: string; powerMult: number; massKg: number; cdA: number }> = [
+    { suffix: 'I',    powerMult: 1.75, massKg: 72, cdA: 0.21 },
+    { suffix: 'II',   powerMult: 1.85, massKg: 74, cdA: 0.20 },
+    { suffix: 'III',  powerMult: 1.90, massKg: 71, cdA: 0.21 },
+    { suffix: 'IV',   powerMult: 1.95, massKg: 76, cdA: 0.20 },
+    { suffix: 'V',    powerMult: 2.00, massKg: 74, cdA: 0.20 },
+    { suffix: 'VI',   powerMult: 2.05, massKg: 73, cdA: 0.19 },
+    { suffix: 'VII',  powerMult: 2.10, massKg: 77, cdA: 0.20 },
+    { suffix: 'VIII', powerMult: 2.15, massKg: 72, cdA: 0.21 },
+    { suffix: 'IX',   powerMult: 2.20, massKg: 75, cdA: 0.19 },
+    { suffix: 'X',    powerMult: 2.25, massKg: 73, cdA: 0.20 },
+  ];
+  // Gradient from pale sky-blue (weakest) to vivid violet (strongest)
+  const colors = [
+    0x99ddff, 0x88ccff, 0x77bbff, 0x66aaff, 0x5599ee,
+    0x6688ff, 0x7777ff, 0x8866ff, 0x9955ff, 0xaa44ff,
+  ];
+  return variants.map((v, i) => ({
+    id: `le_fantome_${v.suffix.toLowerCase()}`,
+    displayName: `LE FANTÔME ${v.suffix}`,
+    flavorText: '"You cannot outrun what has no shadow." — The Phantom',
+    powerW:      Math.round(playerFtpW * v.powerMult),
+    massKg:      v.massKg,
+    cdA:         v.cdA,
+    crr:         0.003,
+    color:       colors[i],
+    hexColor:    `#${colors[i].toString(16).padStart(6, '0')}`,
+    accentColor: 0xff6600,
+    accentHex:   '#ff6600',
+  }));
+}
+
+/**
  * Generic ghost racer for Elite events: a local rival who pushes at
  * a specific FTP fraction, with default road-bike aero.
  */

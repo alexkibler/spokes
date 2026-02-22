@@ -12,7 +12,7 @@ import { getRandomChallenge, formatChallengeText, generateEliteCourseProfile } f
 import type { Units } from './MenuScene';
 import type { ITrainerService } from '../services/ITrainerService';
 import { HeartRateService } from '../services/HeartRateService';
-import { createBossProfile, type RacerProfile } from '../race/RacerProfile';
+import { createBossRacers, type RacerProfile } from '../race/RacerProfile';
 
 // Darker colors for better contrast against #e8dcc8 background
 const SURFACE_FILL_COLORS: Record<SurfaceType, number> = {
@@ -822,23 +822,23 @@ export class MapScene extends Phaser.Scene {
         RunStateManager.setActiveEdge(edge);
       }
 
-      // Spawn the boss racer when the destination is the final finish node
+      // Spawn the boss peloton when the destination is the final finish node
       const destNodeId = edge
         ? (edge.to === run.currentNodeId ? edge.from : edge.to)
         : node.id;
       const destNode = run.nodes.find(n => n.id === destNodeId);
-      const racer: RacerProfile | null = destNode?.type === 'finish'
-        ? createBossProfile(this.ftpW)
-        : null;
+      const racers: RacerProfile[] = destNode?.type === 'finish'
+        ? createBossRacers(this.ftpW)
+        : [];
 
-      if (racer) {
-        this.showBossEncounterSplash(racer, () => {
+      if (racers.length > 0) {
+        this.showBossEncounterSplash(racers[4], () => {  // show mid-tier ghost as representative
           this.scene.start('GameScene', {
             course, isBackwards,
             weightKg: this.weightKg, units: this.units,
             trainer: this.trainer, hrm: this.hrm,
             isRoguelike: true, isDevMode: this.isDevMode,
-            ftpW: this.ftpW, activeChallenge: null, racer,
+            ftpW: this.ftpW, activeChallenge: null, racers,
           });
         });
       } else {
@@ -848,7 +848,7 @@ export class MapScene extends Phaser.Scene {
           weightKg: this.weightKg, units: this.units,
           trainer: this.trainer, hrm: this.hrm,
           isRoguelike: true, isDevMode: this.isDevMode,
-          ftpW: this.ftpW, activeChallenge: null, racer: null,
+          ftpW: this.ftpW, activeChallenge: null,
         });
       }
     }
