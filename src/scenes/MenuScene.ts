@@ -208,19 +208,38 @@ export class MenuScene extends Phaser.Scene {
     if (this.diffSection) this.diffSection.setScale(s).setPosition(row2StartX, 288 * s);
     if (this.ftpSection)  this.ftpSection.setScale(s).setPosition(row2StartX + 320 * s, 288 * s);
 
+    // Reserve space for the iOS home indicator / Android nav bar so interactive
+    // elements never land in the system-gesture zone at the bottom of the screen.
+    const safeBottom = MenuScene.getSafeAreaInsetBottom();
+
     // Row 3: Devices — pushed up when save banner occupies the row above buttons
     // Bottom-anchored (use height - X*s)
-    const devicesY = this.saveBannerContainer ? height - 210 * s : height - 165 * s;
+    const devicesY = this.saveBannerContainer ? height - safeBottom - 210 * s : height - safeBottom - 165 * s;
     if (this.devicesSection) this.devicesSection.setScale(s).setPosition(cx - 310 * s, devicesY);
 
     // Save banner — sits between devices and start buttons
-    if (this.saveBannerContainer) this.saveBannerContainer.setScale(s).setPosition(cx, height - 110 * s);
+    if (this.saveBannerContainer) this.saveBannerContainer.setScale(s).setPosition(cx, height - safeBottom - 110 * s);
 
     // Row 4: Start buttons
-    if (this.startBtnContainer) this.startBtnContainer.setScale(s).setPosition(cx, height - 60 * s);
+    if (this.startBtnContainer) this.startBtnContainer.setScale(s).setPosition(cx, height - safeBottom - 60 * s);
 
     // Dev Toggle
     if (this.devModeToggle) this.devModeToggle.setScale(s).setPosition(width - 120 * s, 30 * s);
+  }
+
+  /**
+   * Read the CSS env(safe-area-inset-bottom) value in pixels.
+   * Returns 0 on platforms without a home indicator / nav bar.
+   * We measure via a throwaway DOM element rather than parsing env() directly,
+   * since CSS environment variables aren't accessible via getPropertyValue().
+   */
+  private static getSafeAreaInsetBottom(): number {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);pointer-events:none;';
+    document.body.appendChild(probe);
+    const inset = probe.getBoundingClientRect().height;
+    document.body.removeChild(probe);
+    return inset;
   }
 
   update(_time: number, delta: number): void {
