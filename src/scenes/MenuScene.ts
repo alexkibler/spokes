@@ -160,7 +160,10 @@ export class MenuScene extends Phaser.Scene {
       this.buildSaveBanner(existingSave);
     }
 
-    this.showBannerIfNeeded();
+    // Delay check slightly to allow BleClient polyfill to populate navigator.bluetooth
+    this.time.delayedCall(2000, () => {
+      this.showBannerIfNeeded();
+    });
 
     this.scale.on('resize', this.onResize, this);
     this.onResize();
@@ -170,9 +173,10 @@ export class MenuScene extends Phaser.Scene {
     const ua = navigator.userAgent;
     const isIOS = /iPad|iPhone|iPod/.test(ua) || (ua.includes('Mac') && navigator.maxTouchPoints > 1);
     const hasBt = 'bluetooth' in navigator;
+    const isCapacitor = !!(window as any).Capacitor;
     const banner = document.getElementById('unsupported-banner');
     if (!banner || banner.dataset.dismissed === 'true') return;
-    if (isIOS || !hasBt) banner.style.display = 'block';
+    if (!isCapacitor && (isIOS || !hasBt)) banner.style.display = 'block';
   }
 
   private hideBanner(): void {
@@ -784,7 +788,9 @@ export class MenuScene extends Phaser.Scene {
         this.trainerStatusLabel.setText('CONNECTED').setColor('#00ff88');
         btnTrainer.setFillStyle(0x1a5a3a);
         btnTrainerTxt.setText('RECONNECT BT');
-      } catch {
+      } catch (err: any) {
+        const msg = err?.message || JSON.stringify(err);
+        console.error('[MenuScene] Trainer connection failed:', msg);
         this.trainerService = null;
         this.trainerStatusDot.setFillStyle(0xff4444);
         this.trainerStatusLabel.setText('FAILED').setColor('#ff4444');
@@ -832,7 +838,9 @@ export class MenuScene extends Phaser.Scene {
         this.hrmStatusLabel.setText('CONNECTED').setColor('#ff4488');
         btnHrm.setFillStyle(0x5a1a5a);
         btnHrmTxt.setText('RECONNECT HRM');
-      } catch {
+      } catch (err: any) {
+        const msg = err?.message || JSON.stringify(err);
+        console.error('[MenuScene] HRM connection failed:', msg);
         this.hrmService = null;
         this.hrmStatusDot.setFillStyle(0xff4444);
         this.hrmStatusLabel.setText('FAILED').setColor('#ff4444');

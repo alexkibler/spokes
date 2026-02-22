@@ -6,10 +6,16 @@
  */
 
 import Phaser from 'phaser';
+import { BleClient } from '@capacitor-community/bluetooth-le';
 import { MenuScene } from './scenes/MenuScene';
 import { MapScene } from './scenes/MapScene';
 import { GameScene } from './scenes/GameScene';
 import { VictoryScene } from './scenes/VictoryScene';
+
+// Initialize Capacitor BLE — must run before any BleClient calls in the services
+BleClient.initialize().catch((e) => {
+  console.error('[main.ts] BleClient.initialize() failed', e);
+});
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,

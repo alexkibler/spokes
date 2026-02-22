@@ -21,15 +21,16 @@
  * Pattern inspired by dvmarinoff/Auuki (characteristic-based device model).
  */
 
+import { BleClient } from '@capacitor-community/bluetooth-le';
 import type { ITrainerService, TrainerData } from './ITrainerService';
 
 // ─── GATT UUIDs ──────────────────────────────────────────────────────────────
 
-export const FTMS_SERVICE_UUID = 'fitness_machine';
+export const FTMS_SERVICE_UUID = '00001826-0000-1000-8000-00805f9b34fb';
 /** Indoor Bike Data – 0x2AD2 */
-export const INDOOR_BIKE_DATA_UUID = 'indoor_bike_data';
+export const INDOOR_BIKE_DATA_UUID = '00002ad2-0000-1000-8000-00805f9b34fb';
 /** Fitness Machine Control Point – 0x2AD9 (write + indicate) */
-export const CONTROL_POINT_UUID = 'fitness_machine_control_point';
+export const CONTROL_POINT_UUID = '00002ad9-0000-1000-8000-00805f9b34fb';
 
 // ─── Control Point Op Codes (FTMS spec §4.16.1) ──────────────────────────────
 
@@ -149,77 +150,75 @@ export function parseIndoorBikeData(data: DataView): Partial<TrainerData> {
  *   await svc.connect();   // triggers browser BT picker
  */
 export class TrainerService implements ITrainerService {
-  private device: BluetoothDevice | null = null;
-  private characteristic: BluetoothRemoteGATTCharacteristic | null = null;
-  private controlPoint: BluetoothRemoteGATTCharacteristic | null = null;
+  private deviceId: string | null = null;
+  private connected = false;
+  private hasControlPoint = false;
   private controlGranted = false;
   private dataCallback: ((data: Partial<TrainerData>) => void) | null = null;
 
-  // Store the most recent simulation parameters in case they are sent 
+  // Store the most recent simulation parameters in case they are sent
   // before the trainer is ready (e.g. during the connection handshake).
   private pendingParams: { grade: number; crr: number; cwa: number } | null = null;
 
   async connect(): Promise<void> {
-    this.device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [FTMS_SERVICE_UUID] }],
+    const device = await BleClient.requestDevice({
+      services: [FTMS_SERVICE_UUID],
     });
+    this.deviceId = device.deviceId;
 
-    if (!this.device.gatt) {
-      throw new Error('GATT server unavailable on selected device');
-    }
-
-    const server = await this.device.gatt.connect();
-    const service = await server.getPrimaryService(FTMS_SERVICE_UUID);
+    await BleClient.connect(this.deviceId, () => {
+      // onDisconnect callback
+      this.connected = false;
+      this.controlGranted = false;
+      this.hasControlPoint = false;
+    });
+    this.connected = true;
 
     // ── Indoor Bike Data (read-only notifications) ──────────────────────────
-    this.characteristic = await service.getCharacteristic(INDOOR_BIKE_DATA_UUID);
-    this.characteristic.addEventListener(
-      'characteristicvaluechanged',
-      this.handleNotification,
+    await BleClient.startNotifications(
+      this.deviceId,
+      FTMS_SERVICE_UUID,
+      INDOOR_BIKE_DATA_UUID,
+      (data) => {
+        if (this.dataCallback) {
+          this.dataCallback(parseIndoorBikeData(data));
+        }
+      },
     );
-    await this.characteristic.startNotifications();
 
     // ── Fitness Machine Control Point (write + indications) ─────────────────
     // Optional: if the trainer does not expose 0x2AD9 we continue without it.
     try {
-      this.controlPoint = await service.getCharacteristic(CONTROL_POINT_UUID);
-      this.controlPoint.addEventListener(
-        'characteristicvaluechanged',
+      await BleClient.startNotifications(
+        this.deviceId,
+        FTMS_SERVICE_UUID,
+        CONTROL_POINT_UUID,
         this.handleControlResponse,
       );
-      await this.controlPoint.startNotifications();
+      this.hasControlPoint = true;
       // Request exclusive write access to the control point
-      await this.controlPoint.writeValueWithResponse(
-        new Uint8Array([OP_REQUEST_CONTROL]).buffer,
-      );
+      const requestControlBuf = new DataView(new ArrayBuffer(1));
+      requestControlBuf.setUint8(0, OP_REQUEST_CONTROL);
+      await BleClient.write(this.deviceId, FTMS_SERVICE_UUID, CONTROL_POINT_UUID, requestControlBuf);
     } catch (err) {
       console.warn('[TrainerService] Control Point unavailable – grade writes disabled:', err);
-      this.controlPoint = null;
+      this.hasControlPoint = false;
     }
   }
 
   disconnect(): void {
-    if (this.controlPoint) {
-      this.controlPoint.removeEventListener(
-        'characteristicvaluechanged',
-        this.handleControlResponse,
-      );
-      void this.controlPoint.stopNotifications().catch(() => undefined);
-      this.controlPoint = null;
-      this.controlGranted = false;
+    if (!this.deviceId) return;
+    const id = this.deviceId;
+    this.deviceId = null;
+    this.connected = false;
+    this.controlGranted = false;
+
+    if (this.hasControlPoint) {
+      void BleClient.stopNotifications(id, FTMS_SERVICE_UUID, CONTROL_POINT_UUID).catch(() => undefined);
+      this.hasControlPoint = false;
     }
-    if (this.characteristic) {
-      this.characteristic.removeEventListener(
-        'characteristicvaluechanged',
-        this.handleNotification,
-      );
-      void this.characteristic.stopNotifications().catch(() => undefined);
-      this.characteristic = null;
-    }
-    if (this.device?.gatt?.connected) {
-      this.device.gatt.disconnect();
-    }
-    this.device = null;
+    void BleClient.stopNotifications(id, FTMS_SERVICE_UUID, INDOOR_BIKE_DATA_UUID).catch(() => undefined);
+    void BleClient.disconnect(id).catch(() => undefined);
   }
 
   onData(callback: (data: Partial<TrainerData>) => void): void {
@@ -227,7 +226,7 @@ export class TrainerService implements ITrainerService {
   }
 
   isConnected(): boolean {
-    return this.device?.gatt?.connected ?? false;
+    return this.connected;
   }
 
   /**
@@ -244,7 +243,7 @@ export class TrainerService implements ITrainerService {
    * At sea level with CdA = 0.325 m²: CWA = 0.5 × 1.225 × 0.325 ≈ 0.199 → 20
    */
   async setSimulationParams(grade: number, crr: number, cwa: number): Promise<void> {
-    if (!this.controlPoint) return;
+    if (!this.hasControlPoint || !this.deviceId) return;
 
     // Always store the latest params so we can (re)sync once control is ready
     this.pendingParams = { grade, crr, cwa };
@@ -260,22 +259,15 @@ export class TrainerService implements ITrainerService {
     buf.setInt16(3, Math.round(grade * 10000), true);                     // grade in 0.01% units
     buf.setUint8(5, Math.min(255, Math.round(crr / 0.0001)));             // Crr
     buf.setUint8(6, Math.min(255, Math.round(cwa / 0.01)));               // CWA
-    
+
     try {
-      await this.controlPoint.writeValueWithResponse(buf.buffer);
+      await BleClient.write(this.deviceId, FTMS_SERVICE_UUID, CONTROL_POINT_UUID, buf);
     } catch (err) {
       console.error('[TrainerService] Failed to set simulation params:', err);
     }
   }
 
-  // ── Private event handlers ─────────────────────────────────────────────────
-
-  private handleNotification = (event: Event): void => {
-    const characteristic = event.target as BluetoothRemoteGATTCharacteristic;
-    if (characteristic.value && this.dataCallback) {
-      this.dataCallback(parseIndoorBikeData(characteristic.value));
-    }
-  };
+  // ── Private handlers ───────────────────────────────────────────────────────
 
   /**
    * Parse FTMS Control Point indication responses.
@@ -284,32 +276,28 @@ export class TrainerService implements ITrainerService {
    *   [1] = Request Op Code
    *   [2] = Result Code: 0x01 = Success
    */
-  private handleControlResponse = (event: Event): void => {
-    const characteristic = event.target as BluetoothRemoteGATTCharacteristic;
-    if (!characteristic.value) return;
-    const view = characteristic.value;
-    // Byte 0 = 0x80 (response), byte 1 = echoed op code, byte 2 = result
-    if (view.byteLength >= 3 && view.getUint8(0) === 0x80) {
-      const opCode = view.getUint8(1);
-      const result = view.getUint8(2);
+  private handleControlResponse = (data: DataView): void => {
+    if (data.byteLength < 3 || data.getUint8(0) !== 0x80) return;
 
-      if (opCode === OP_REQUEST_CONTROL && result === 0x01) {
-        console.log('[TrainerService] Control granted. Starting session...');
-        this.controlGranted = true;
-        // Automatically start/resume session once control is granted.
-        // This ensures the trainer exits any default pause/erg modes.
-        if (this.controlPoint) {
-          void this.controlPoint.writeValueWithResponse(
-            new Uint8Array([OP_START_RESUME]).buffer,
-          );
-        }
-      } else if (opCode === OP_START_RESUME && result === 0x01) {
-        console.log('[TrainerService] Workout session started.');
-        // Once the session is active, sync the initial simulation state
-        if (this.pendingParams) {
-          const { grade, crr, cwa } = this.pendingParams;
-          void this.setSimulationParams(grade, crr, cwa);
-        }
+    const opCode = data.getUint8(1);
+    const result = data.getUint8(2);
+
+    if (opCode === OP_REQUEST_CONTROL && result === 0x01) {
+      console.log('[TrainerService] Control granted. Starting session...');
+      this.controlGranted = true;
+      // Automatically start/resume session once control is granted.
+      // This ensures the trainer exits any default pause/erg modes.
+      if (this.deviceId) {
+        const startBuf = new DataView(new ArrayBuffer(1));
+        startBuf.setUint8(0, OP_START_RESUME);
+        void BleClient.write(this.deviceId, FTMS_SERVICE_UUID, CONTROL_POINT_UUID, startBuf);
+      }
+    } else if (opCode === OP_START_RESUME && result === 0x01) {
+      console.log('[TrainerService] Workout session started.');
+      // Once the session is active, sync the initial simulation state
+      if (this.pendingParams) {
+        const { grade, crr, cwa } = this.pendingParams;
+        void this.setSimulationParams(grade, crr, cwa);
       }
     }
   };

@@ -19,6 +19,8 @@
  * Wahoo Tickr, Apple Watch, etc.) that advertise the Heart Rate service.
  */
 
+import { BleClient } from '@capacitor-community/bluetooth-le';
+
 // ─── Data type ────────────────────────────────────────────────────────────────
 
 export interface HeartRateData {
@@ -38,43 +40,40 @@ export interface HeartRateData {
  *   hrm.onData(d => console.log(d.bpm));
  *   await hrm.connect();   // triggers browser BT picker
  */
+const HR_SERVICE_UUID = '0000180d-0000-1000-8000-00805f9b34fb';
+const HR_MEASUREMENT_UUID = '00002a37-0000-1000-8000-00805f9b34fb';
+
 export class HeartRateService {
-  private device: BluetoothDevice | null = null;
-  private characteristic: BluetoothRemoteGATTCharacteristic | null = null;
+  private deviceId: string | null = null;
+  private connected = false;
   private dataCallback: ((data: HeartRateData) => void) | null = null;
 
   async connect(): Promise<void> {
-    this.device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: ['heart_rate'] }],
+    const device = await BleClient.requestDevice({
+      services: [HR_SERVICE_UUID],
     });
+    this.deviceId = device.deviceId;
 
-    if (!this.device.gatt) {
-      throw new Error('GATT server unavailable on selected device');
-    }
+    await BleClient.connect(this.deviceId, () => {
+      this.connected = false;
+    });
+    this.connected = true;
 
-    const server = await this.device.gatt.connect();
-    const service = await server.getPrimaryService('heart_rate');
-    this.characteristic = await service.getCharacteristic('heart_rate_measurement');
-    this.characteristic.addEventListener(
-      'characteristicvaluechanged',
+    await BleClient.startNotifications(
+      this.deviceId,
+      HR_SERVICE_UUID,
+      HR_MEASUREMENT_UUID,
       this.handleNotification,
     );
-    await this.characteristic.startNotifications();
   }
 
   disconnect(): void {
-    if (this.characteristic) {
-      this.characteristic.removeEventListener(
-        'characteristicvaluechanged',
-        this.handleNotification,
-      );
-      void this.characteristic.stopNotifications().catch(() => undefined);
-      this.characteristic = null;
-    }
-    if (this.device?.gatt?.connected) {
-      this.device.gatt.disconnect();
-    }
-    this.device = null;
+    if (!this.deviceId) return;
+    const id = this.deviceId;
+    this.deviceId = null;
+    this.connected = false;
+    void BleClient.stopNotifications(id, HR_SERVICE_UUID, HR_MEASUREMENT_UUID).catch(() => undefined);
+    void BleClient.disconnect(id).catch(() => undefined);
   }
 
   onData(callback: (data: HeartRateData) => void): void {
@@ -82,20 +81,17 @@ export class HeartRateService {
   }
 
   isConnected(): boolean {
-    return this.device?.gatt?.connected ?? false;
+    return this.connected;
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
 
-  private handleNotification = (event: Event): void => {
-    const char = event.target as BluetoothRemoteGATTCharacteristic;
-    if (!char.value || !this.dataCallback) return;
-
-    const view = char.value;
-    const flags = view.getUint8(0);
+  private handleNotification = (data: DataView): void => {
+    if (!this.dataCallback) return;
+    const flags = data.getUint8(0);
     // Bit 0 of flags: 0 = uint8 format, 1 = uint16 format
-    const bpm = (flags & 0x01) ? view.getUint16(1, /* littleEndian= */ true)
-                                : view.getUint8(1);
+    const bpm = (flags & 0x01) ? data.getUint16(1, /* littleEndian= */ true)
+                                : data.getUint8(1);
     this.dataCallback({ bpm, timestamp: Date.now() });
   };
 }
