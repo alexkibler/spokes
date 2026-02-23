@@ -49,7 +49,7 @@ export const en = {
       start_run: '▶  START RUN',
       erase_confirm: 'ERASE SAVE? CONFIRM',
       no_trainer_title: 'NO TRAINER?',
-      no_trainer_msg: 'Playing without a trainer just means you're playing a crappy roguelike without getting exercise. Are you sure?',
+      no_trainer_msg: 'Playing without a trainer just means you\'re playing a crappy roguelike without getting exercise. Are you sure?',
       play_anyway: 'PLAY ANYWAY',
       trainer_required_title: 'TRAINER REQUIRED',
       trainer_required_msg: 'This run was started with a real trainer.\nPlease connect your trainer before continuing.',
