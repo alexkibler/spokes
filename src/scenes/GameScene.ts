@@ -470,6 +470,7 @@ export class GameScene extends Phaser.Scene {
         distanceM: this.distanceM,
         heartRateBpm: this.currentHR,
         currentGrade: this.currentGrade,
+        units: this.units,
       });
     }
 

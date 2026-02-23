@@ -258,7 +258,10 @@ function renderRide() {
                 </div>
                 <div class="stat-box">
                     <div class="stat-label">SPEED</div>
-                    <div class="stat-val">${gameState.speedMs ? (gameState.speedMs * 3.6).toFixed(1) : '--'} <span style="font-size:12px">KM/H</span></div>
+                    ${gameState.units === 'imperial'
+                        ? `<div class="stat-val">${gameState.speedMs ? (gameState.speedMs * 2.23694).toFixed(1) : '--'} <span style="font-size:12px">MPH</span></div>`
+                        : `<div class="stat-val">${gameState.speedMs ? (gameState.speedMs * 3.6).toFixed(1) : '--'} <span style="font-size:12px">KM/H</span></div>`
+                    }
                 </div>
                 <div class="stat-box">
                     <div class="stat-label">GRADE</div>

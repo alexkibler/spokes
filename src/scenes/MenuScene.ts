@@ -1301,7 +1301,7 @@ export class MenuScene extends Phaser.Scene {
 
   private async showRemoteQR(roomCode: string): Promise<void> {
     const remoteUrl = `${window.location.protocol}//${window.location.host}/remote.html?code=${roomCode}`;
-    const CW = 960, CH = 540;
+    const CW = this.scale.width, CH = this.scale.height;
     const QR_SIZE = 200;
     const PANEL_W = 300, PANEL_H = 300;
     const cx = CW / 2, cy = CH / 2;
