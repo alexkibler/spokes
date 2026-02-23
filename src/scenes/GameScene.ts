@@ -44,6 +44,8 @@ import { RideOverlay, type RideStats } from './ui/RideOverlay';
 import { RewardOverlay } from './ui/RewardOverlay';
 import { pickRewards } from '../roguelike/RewardPool';
 import { Button } from '../ui/Button';
+import { PauseOverlay } from './ui/PauseOverlay';
+import { RemotePairingOverlay } from './ui/RemotePairingOverlay';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -232,6 +234,7 @@ export class GameScene extends Phaser.Scene {
   private statusDot!: Phaser.GameObjects.Arc;
   private statusLabel!: Phaser.GameObjects.Text;
   private btnMenu!: Button;
+  private btnRemote!: Phaser.GameObjects.Text;
 
   // Challenge status panel
   private challengePanel!: Phaser.GameObjects.Graphics;
@@ -291,6 +294,10 @@ export class GameScene extends Phaser.Scene {
       if (this.btnMenu) {
         this.btnMenu.setPosition(width - 90, stY);
       }
+    }
+
+    if (this.btnRemote) {
+        this.btnRemote.setPosition(width - 40, 40);
     }
 
     // 5. Effect Buttons
@@ -417,6 +424,7 @@ export class GameScene extends Phaser.Scene {
     this.buildEffectUI();
     this.buildManualEffectButtons();
     this.buildDevToggle();
+    this.buildRemoteButton();
 
     this.scale.on('resize', this.onResize, this);
     this.onResize();
@@ -436,11 +444,11 @@ export class GameScene extends Phaser.Scene {
       this.isDemoMode = false;
       this.setStatus('demo', `DEV (${DEV_POWER_WATTS}W)`);
     } else {
-      this.trainer = new MockTrainerService({ power: DEMO_POWER_WATTS, speed: 25, cadence: 80 });
+      this.trainer = new MockTrainerService({ power: this.ftpW, speed: 25, cadence: 80 });
       this.trainer.onData((data) => this.handleData(data));
       void this.trainer.connect();
       this.isDemoMode = false;
-      this.setStatus('demo', 'SIM 200W');
+      this.setStatus('demo', `SIM ${this.ftpW}W`);
     }
 
     if (this.preConnectedHrm) {
@@ -986,13 +994,55 @@ export class GameScene extends Phaser.Scene {
 
     this.btnMenu = new Button(this, {
       x: 0, y: 0, width: 120, height: 34,
-      text: '← MENU',
+      text: 'PAUSE',
       color: THEME.colors.buttons.primary,
       hoverColor: THEME.colors.buttons.primaryHover,
-      textColor: '#aaaacc',
-      onClick: () => this.showRideEndOverlay(false),
+      textColor: '#ffffff',
+      onClick: () => {
+        this.overlayVisible = true;
+        new PauseOverlay(this, {
+          onResume: () => { this.overlayVisible = false; },
+          onBackToMap: () => {
+            this.overlayVisible = false;
+            this.showRideEndOverlay(false);
+          },
+          onQuit: () => {
+            this.trainer.disconnect();
+            this.preConnectedHrm?.disconnect();
+            this.scene.start('MenuScene');
+          }
+        }, this.ftpW);
+      },
     });
     this.btnMenu.setDepth(11);
+  }
+
+  private buildRemoteButton(): void {
+    this.btnRemote = this.add.text(0, 0, '📱', { fontSize: '24px' })
+      .setInteractive({ useHandCursor: true })
+      .setDepth(50); // High depth
+
+    this.btnRemote.on('pointerdown', async () => {
+      const existingCode = RemoteService.getInstance().getRoomCode();
+      if (existingCode) {
+        new RemotePairingOverlay(this, existingCode, () => {});
+        return;
+      }
+      try {
+        const code = await RemoteService.getInstance().initHost();
+        new RemotePairingOverlay(this, code, () => {});
+      } catch (e) {
+        console.error('Remote init failed', e);
+      }
+    });
+  }
+
+  public setFtp(w: number): void {
+    this.ftpW = w;
+    if (this.trainer instanceof MockTrainerService) {
+      this.trainer.setPower(w);
+      this.setStatus('demo', `SIM ${w}W`);
+    }
   }
 
   private setStatus(state: 'ok' | 'demo' | 'off' | 'err', label: string): void {

@@ -221,6 +221,18 @@ export class RunStateManager {
     }
   }
 
+  static setFtp(w: number): void {
+    if (this.instance) {
+      this.instance.ftpW = w;
+      this.persist();
+    }
+  }
+
+  static getLastFtp(): number {
+    const { save } = SaveService.loadResult();
+    return save?.runData.ftpW ?? 200;
+  }
+
   static addGold(amount: number): void {
     if (this.instance) {
       this.instance.gold += amount;

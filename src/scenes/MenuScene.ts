@@ -12,8 +12,9 @@
  */
 
 import Phaser from 'phaser';
-import QRCode from 'qrcode';
 import { RunStateManager } from '../roguelike/RunState';
+import { RemotePairingOverlay } from './ui/RemotePairingOverlay';
+import { ConfirmationModal } from '../ui/ConfirmationModal';
 import type { ITrainerService } from '../services/ITrainerService';
 import { TrainerService } from '../services/TrainerService';
 import { HeartRateService } from '../services/HeartRateService';
@@ -74,7 +75,7 @@ export class MenuScene extends Phaser.Scene {
   private difficulty: Difficulty = 'easy';
   private distanceKm = 20 * MI_TO_KM; // 20 miles default
   private weightKg   = DEFAULT_WEIGHT_KG;
-  private ftpW       = 200; // Functional Threshold Power in watts
+  private ftpW       = RunStateManager.getLastFtp(); // Functional Threshold Power in watts
   private units: Units = 'imperial';
 
   private distText!: Phaser.GameObjects.Text;
@@ -136,6 +137,9 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Refresh FTP from storage (it might have changed in the pause menu)
+    this.ftpW = RunStateManager.getLastFtp();
+
     // Reset device state each time the menu starts — the game scene disconnects
     // both services on shutdown, so we start fresh.
     this.trainerService = null;
@@ -846,7 +850,7 @@ export class MenuScene extends Phaser.Scene {
     btnRemote.on('pointerdown', async () => {
       const existingCode = RemoteService.getInstance().getRoomCode();
       if (existingCode) {
-        this.showRemoteQR(existingCode);
+        new RemotePairingOverlay(this, existingCode, () => {});
         return;
       }
 
@@ -857,7 +861,7 @@ export class MenuScene extends Phaser.Scene {
         const roomCode = await RemoteService.getInstance().initHost();
         btnRemoteTxt.setText(roomCode).setFontSize(14).setColor('#00ff88');
         btnRemote.setFillStyle(0x222233).setStrokeStyle(1, 0x00ff88);
-        this.showRemoteQR(roomCode);
+        new RemotePairingOverlay(this, roomCode, () => {});
       } catch (e) {
         console.error('Remote init failed', e);
         btnRemoteTxt.setText('ERR');
@@ -1059,21 +1063,37 @@ export class MenuScene extends Phaser.Scene {
     this.startBtnContainer.add([btn, txt]);
 
     let confirmPending = false;
+    let trainerCheckPassed = false;
 
     btn.on('pointerover', () => { if (!confirmPending) btn.setFillStyle(0xaa5a00); });
     btn.on('pointerout',  () => { if (!confirmPending) btn.setFillStyle(0x6b3a00); });
     btn.on('pointerdown', () => {
-      if (!this.trainerService && !this.isDevMode) {
-        if (this.isStartWarningActive) return;
-        this.isStartWarningActive = true;
-        const origText = '▶  START NEW RUN';
-        const origColor = 0x6b3a00;
-        txt.setText('TRAINER REQUIRED');
-        btn.setFillStyle(0xa82222);
-        this.time.delayedCall(1500, () => {
-          this.isStartWarningActive = false;
-          txt.setText(origText);
-          btn.setFillStyle(origColor);
+      if (!this.trainerService && !this.isDevMode && !trainerCheckPassed) {
+        new ConfirmationModal(this, {
+          title: 'NO TRAINER?',
+          message: 'Playing without a smart trainer means no resistance and no exercise. Are you sure?',
+          confirmLabel: 'PLAY ANYWAY',
+          confirmColor: 0xaa5a00,
+          onConfirm: () => {
+            trainerCheckPassed = true;
+            // Auto-advance to the erase save warning
+            if (!confirmPending) {
+              confirmPending = true;
+              txt.setText('ERASE SAVE? CONFIRM');
+              btn.setFillStyle(0xaa2222);
+              this.time.delayedCall(2500, () => {
+                if (confirmPending) {
+                  confirmPending = false;
+                  trainerCheckPassed = false;
+                  txt.setText('▶  START NEW RUN');
+                  btn.setFillStyle(0x6b3a00);
+                }
+              });
+            } else {
+              // Should generally not reach here if logic holds, but proceed if so
+              this.doStartNewRun();
+            }
+          }
         });
         return;
       }
@@ -1086,6 +1106,8 @@ export class MenuScene extends Phaser.Scene {
         this.time.delayedCall(2500, () => {
           if (confirmPending) {
             confirmPending = false;
+            // Only reset trainer check if we timeout
+            trainerCheckPassed = false;
             txt.setText('▶  START NEW RUN');
             btn.setFillStyle(0x6b3a00);
           }
@@ -1095,22 +1117,7 @@ export class MenuScene extends Phaser.Scene {
 
       // Second click: confirmed — wipe save and start fresh
       confirmPending = false;
-      const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
-      RunStateManager.startNewRun(
-        floors,
-        this.distanceKm,
-        this.difficulty,
-        this.ftpW,
-        this.weightKg,
-        this.units,
-      );
-      this.scene.start('MapScene', {
-        weightKg: this.weightKg,
-        units:    this.units,
-        trainer:  this.trainerService,
-        hrm:      this.hrmService,
-        isDevMode: this.isDevMode,
-      });
+      this.doStartNewRun();
     });
   }
 
@@ -1131,36 +1138,17 @@ export class MenuScene extends Phaser.Scene {
       if (!this.isStartWarningActive) runBtn.setFillStyle(0x8b5a00);
     });
     runBtn.on('pointerdown', () => {
-      console.log('[MenuScene] START RUN. isDevMode:', this.isDevMode);
       if (!this.trainerService && !this.isDevMode) {
-        if (this.isStartWarningActive) return;
-        this.isStartWarningActive = true;
-        runTxt.setText('TRAINER REQUIRED');
-        runBtn.setFillStyle(0xa82222);
-        this.time.delayedCall(1500, () => {
-          this.isStartWarningActive = false;
-          runTxt.setText('▶  START RUN');
-          runBtn.setFillStyle(0x8b5a00);
+        new ConfirmationModal(this, {
+          title: 'NO TRAINER?',
+          message: 'Playing without a smart trainer means no resistance and no exercise. Are you sure?',
+          confirmLabel: 'PLAY ANYWAY',
+          confirmColor: 0xaa5a00,
+          onConfirm: () => this.doStartRun(),
         });
         return;
       }
-
-      const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
-      RunStateManager.startNewRun(
-        floors,
-        this.distanceKm,
-        this.difficulty,
-        this.ftpW,
-        this.weightKg,
-        this.units,
-      );
-      this.scene.start('MapScene', {
-        weightKg: this.weightKg,
-        units:    this.units,
-        trainer:  this.trainerService,
-        hrm:      this.hrmService,
-        isDevMode: this.isDevMode,
-      });
+      this.doStartRun();
     });
   }
 
@@ -1299,66 +1287,42 @@ export class MenuScene extends Phaser.Scene {
     return txt;
   }
 
-  private async showRemoteQR(roomCode: string): Promise<void> {
-    const remoteUrl = `${window.location.protocol}//${window.location.host}/remote.html?code=${roomCode}`;
-    const CW = this.scale.width, CH = this.scale.height;
-    const QR_SIZE = 200;
-    const PANEL_W = 300, PANEL_H = 300;
-    const cx = CW / 2, cy = CH / 2;
+  private doStartNewRun(): void {
+    const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
+    RunStateManager.startNewRun(
+      floors,
+      this.distanceKm,
+      this.difficulty,
+      this.ftpW,
+      this.weightKg,
+      this.units,
+    );
+    this.scene.start('MapScene', {
+      weightKg: this.weightKg,
+      units:    this.units,
+      trainer:  this.trainerService,
+      hrm:      this.hrmService,
+      isDevMode: this.isDevMode,
+    });
+  }
 
-    // Backdrop
-    const backdrop = this.add.rectangle(cx, cy, CW, CH, 0x000000, 0.7)
-      .setDepth(100)
-      .setInteractive(); // blocks clicks through
-
-    // Panel
-    const panel = this.add.rectangle(cx, cy, PANEL_W, PANEL_H, 0x1a1a2a)
-      .setStrokeStyle(2, 0x00ff88)
-      .setDepth(101);
-
-    // Title
-    const title = this.add.text(cx, cy - PANEL_H / 2 + 20, 'SCAN TO CONNECT', {
-      fontFamily: 'monospace', fontSize: '12px', color: '#00ff88', letterSpacing: 2,
-    }).setOrigin(0.5, 0).setDepth(102);
-
-    // Code label
-    const codeLabel = this.add.text(cx, cy + PANEL_H / 2 - 20, `CODE: ${roomCode}`, {
-      fontFamily: 'monospace', fontSize: '14px', color: '#ffffff',
-    }).setOrigin(0.5, 1).setDepth(102);
-
-    // Close hint
-    const closeHint = this.add.text(cx + PANEL_W / 2 - 8, cy - PANEL_H / 2 + 8, '✕', {
-      fontFamily: 'monospace', fontSize: '14px', color: '#aaaaaa',
-    }).setOrigin(1, 0).setDepth(102).setInteractive({ useHandCursor: true });
-
-    const destroy = () => {
-      backdrop.destroy(); panel.destroy(); title.destroy();
-      codeLabel.destroy(); closeHint.destroy(); qrImage?.destroy();
-    };
-
-    backdrop.on('pointerdown', destroy);
-    closeHint.on('pointerdown', destroy);
-
-    let qrImage: Phaser.GameObjects.Image | null = null;
-
-    try {
-      const dataUrl = await QRCode.toDataURL(remoteUrl, {
-        width: QR_SIZE, margin: 1,
-        color: { dark: '#000000', light: '#e8dcc8' },
-      });
-
-      const texKey = `qr_${roomCode}`;
-      if (this.textures.exists(texKey)) this.textures.remove(texKey);
-      this.textures.addBase64(texKey, dataUrl);
-
-      this.textures.once(`addtexture-${texKey}`, () => {
-        qrImage = this.add.image(cx, cy - 4, texKey)
-          .setDisplaySize(QR_SIZE, QR_SIZE)
-          .setDepth(102);
-      });
-    } catch (e) {
-      console.error('QR generation failed', e);
-    }
+  private doStartRun(): void {
+    const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
+    RunStateManager.startNewRun(
+      floors,
+      this.distanceKm,
+      this.difficulty,
+      this.ftpW,
+      this.weightKg,
+      this.units,
+    );
+    this.scene.start('MapScene', {
+      weightKg: this.weightKg,
+      units:    this.units,
+      trainer:  this.trainerService,
+      hrm:      this.hrmService,
+      isDevMode: this.isDevMode,
+    });
   }
 
   shutdown(): void {
