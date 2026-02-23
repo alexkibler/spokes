@@ -3,6 +3,7 @@ import { RunStateManager } from '../../roguelike/RunState';
 import { THEME } from '../../theme';
 import { Button } from '../../ui/Button';
 import { ITEM_REGISTRY, type ItemDef } from '../../roguelike/ItemRegistry';
+import i18n from '../../i18n';
 
 export class EventOverlay extends Phaser.GameObjects.Container {
   constructor(scene: Phaser.Scene, scrollY: number, onAction: () => void, onClose: () => void) {
@@ -43,8 +44,9 @@ export class EventOverlay extends Phaser.GameObjects.Container {
     const successPct = Math.round(successChance * 100);
 
     // Event Text
-    const titleText = 'MYSTERIOUS CACHE';
-    const description = `You spot a weathered crate hidden in the brush. Inside, you see a glimpse of... ${item.label}.\n\nIt looks risky to retrieve.`;
+    const titleText = i18n.t('event.title');
+    const itemLabel = i18n.t(item.label);
+    const description = i18n.t('event.description', { item: itemLabel });
 
     // Measure description text height
     const charsPerLine = Math.floor(descWidth / (descFontSize * 0.6));
@@ -100,7 +102,7 @@ export class EventOverlay extends Phaser.GameObjects.Container {
         y: btnsStartY + btnHeight / 2,
         width: btnWidth,
         height: btnHeight,
-        text: `ATTEMPT RETRIEVAL (${successPct}%)`,
+        text: i18n.t('event.attempt', { chance: successPct }),
         color: 0x093d46,
         hoverColor: 0x0e5560,
         onClick: () => {
@@ -115,7 +117,7 @@ export class EventOverlay extends Phaser.GameObjects.Container {
         y: btnsStartY + btnHeight + btnGap + btnHeight / 2,
         width: btnWidth,
         height: btnHeight,
-        text: 'LEAVE IT',
+        text: i18n.t('event.leave'),
         color: 0x444455,
         hoverColor: 0x555566,
         onClick: () => {
@@ -176,7 +178,8 @@ export class EventOverlay extends Phaser.GameObjects.Container {
       if (roll < chance) {
           // Success
           RunStateManager.addToInventory(item.id);
-          this.showOutcome('SUCCESS!', `You retrieved the ${item.label}!`, true, onAction, onClose);
+          const itemLabel = i18n.t(item.label);
+          this.showOutcome(i18n.t('event.success_title'), i18n.t('event.success_msg', { item: itemLabel }), true, onAction, onClose);
       } else {
           // Failure
           const run = RunStateManager.getRun();
@@ -186,12 +189,12 @@ export class EventOverlay extends Phaser.GameObjects.Container {
           if (gold >= 50) {
               const lost = 50;
               RunStateManager.spendGold(lost);
-              outcomeText = `The crate was trapped! You dropped ${lost} gold while escaping.`;
+              outcomeText = i18n.t('event.failure_msg_gold', { amount: lost });
           } else {
               RunStateManager.applyModifier({ powerMult: 0.95 }, 'INJURY');
-              outcomeText = `The crate collapsed on you! You suffered a minor injury (-5% Power).`;
+              outcomeText = i18n.t('event.failure_msg_injury');
           }
-           this.showOutcome('FAILURE!', outcomeText, false, onAction, onClose);
+           this.showOutcome(i18n.t('event.failure_title'), outcomeText, false, onAction, onClose);
       }
   }
 
@@ -230,7 +233,7 @@ export class EventOverlay extends Phaser.GameObjects.Container {
       const okBtn = new Button(this.scene, {
           x: cx, y: cy + 90,
           width: 140, height: 46,
-          text: 'CONTINUE',
+          text: i18n.t('event.continue'),
           color: THEME.colors.buttons.primary,
           hoverColor: THEME.colors.buttons.primaryHover,
           onClick: () => {

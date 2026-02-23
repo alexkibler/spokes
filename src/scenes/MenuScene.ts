@@ -21,6 +21,7 @@ import { HeartRateService } from '../services/HeartRateService';
 import { RemoteService } from '../services/RemoteService';
 import { SaveService } from '../services/SaveService';
 import { SessionService } from '../services/SessionService';
+import i18n from '../i18n';
 import {
   KM_TO_MI,
   MI_TO_KM,
@@ -132,6 +133,7 @@ export class MenuScene extends Phaser.Scene {
   private isDevMode = RunStateManager.getDevMode();
   private isStartWarningActive = false;
   private devModeToggle!: Phaser.GameObjects.Container;
+  private languageToggle!: Phaser.GameObjects.Container;
 
   constructor() {
     super({ key: 'MenuScene' });
@@ -161,6 +163,7 @@ export class MenuScene extends Phaser.Scene {
     this.setupInputHandlers();
 
     this.buildDevToggle();
+    this.buildLanguageToggle();
 
     // Check for an existing save and build the save banner if one exists
     const { save: existingSave, wasIncompatible } = SaveService.loadResult();
@@ -235,6 +238,9 @@ export class MenuScene extends Phaser.Scene {
 
     // Dev Toggle
     if (this.devModeToggle) this.devModeToggle.setScale(s).setPosition(width - 120 * s, 30 * s);
+
+    // Language Toggle
+    if (this.languageToggle) this.languageToggle.setScale(s).setPosition(60 * s, 30 * s);
   }
 
   /**
@@ -390,14 +396,14 @@ export class MenuScene extends Phaser.Scene {
   private buildTitle(): void {
     this.titleContainer = this.add.container(0, 50);
 
-    const title = this.add.text(0, 0, 'PAPER PELOTON', {
+    const title = this.add.text(0, 0, i18n.t('menu.title'), {
       fontFamily: 'monospace',
       fontSize:   '52px',
       color:      '#2a2018',
       fontStyle:  'bold',
     }).setOrigin(0.5, 0);
 
-    const subtitle = this.add.text(0, 66, 'CHOOSE YOUR RIDE', {
+    const subtitle = this.add.text(0, 66, i18n.t('menu.subtitle'), {
       fontFamily:    'monospace',
       fontSize:      '13px',
       color:         '#7a6850',
@@ -420,7 +426,7 @@ export class MenuScene extends Phaser.Scene {
     bg.fillRoundedRect(0, 0, PW, PH, 6);
     this.distSection.add(bg);
 
-    const label = this.add.text(18, 10, 'DISTANCE', {
+    const label = this.add.text(18, 10, i18n.t('menu.distance'), {
       fontFamily:    'monospace',
       fontSize:      '10px',
       color:         '#aaaaaa',
@@ -447,7 +453,7 @@ export class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.distSection.add(this.distText);
 
-    const hint = this.add.text(CX, fieldCY + 34, 'click to edit · enter to confirm', {
+    const hint = this.add.text(CX, fieldCY + 34, i18n.t('menu.edit_hint'), {
       fontFamily: 'monospace',
       fontSize:   '8px',
       color:      '#666677',
@@ -512,7 +518,7 @@ export class MenuScene extends Phaser.Scene {
     bg.fillRoundedRect(0, 0, PW, PH, 6);
     this.weightSection.add(bg);
 
-    const label = this.add.text(18, 10, 'RIDER WEIGHT', {
+    const label = this.add.text(18, 10, i18n.t('menu.weight'), {
       fontFamily:    'monospace',
       fontSize:      '10px',
       color:         '#aaaaaa',
@@ -538,7 +544,7 @@ export class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.weightSection.add(this.weightText);
 
-    const hint = this.add.text(CX, PH - 14, 'click to edit · enter to confirm', {
+    const hint = this.add.text(CX, PH - 14, i18n.t('menu.edit_hint'), {
       fontFamily: 'monospace',
       fontSize:   '8px',
       color:      '#666677',
@@ -570,7 +576,7 @@ export class MenuScene extends Phaser.Scene {
     bg.fillRoundedRect(0, 0, PW, PH, 6);
     this.ftpSection.add(bg);
 
-    this.ftpSection.add(this.add.text(14, 10, 'FTP', {
+    this.ftpSection.add(this.add.text(14, 10, i18n.t('menu.ftp'), {
       fontFamily: 'monospace', fontSize: '10px', color: '#aaaaaa', letterSpacing: 3,
     }));
 
@@ -584,12 +590,12 @@ export class MenuScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     this.ftpSection.add(this.ftpInputField);
 
-    this.ftpText = this.add.text(CX, fieldCY, `${this.ftpW} W`, {
+    this.ftpText = this.add.text(CX, fieldCY, `${this.ftpW} ${i18n.t('menu.ftp_unit')}`, {
       fontFamily: 'monospace', fontSize: '24px', color: '#ffffff', fontStyle: 'bold',
     }).setOrigin(0.5);
     this.ftpSection.add(this.ftpText);
 
-    const hint = this.add.text(CX, PH - 12, 'click to edit · enter to confirm', {
+    const hint = this.add.text(CX, PH - 12, i18n.t('menu.edit_hint'), {
       fontFamily: 'monospace', fontSize: '8px', color: '#666677',
     }).setOrigin(0.5);
     this.ftpSection.add(hint);
@@ -627,12 +633,12 @@ export class MenuScene extends Phaser.Scene {
     if (!isNaN(parsed) && parsed > 0) {
       this.ftpW = Math.max(50, Math.min(9999, parsed));
     }
-    this.ftpText.setText(`${this.ftpW} W`);
+    this.ftpText.setText(`${this.ftpW} ${i18n.t('menu.ftp_unit')}`);
   }
 
   private showFtpInputDisplay(): void {
     const cursor = this.ftpCursorOn ? '|' : ' ';
-    this.ftpText.setText((this.ftpInputStr || '0') + cursor + ' W');
+    this.ftpText.setText((this.ftpInputStr || '0') + cursor + ' ' + i18n.t('menu.ftp_unit'));
   }
 
   private startDistEdit(): void {
@@ -719,7 +725,7 @@ export class MenuScene extends Phaser.Scene {
     bg.fillRoundedRect(0, 0, PW, PH, 6);
     this.diffSection.add(bg);
 
-    this.diffSection.add(this.add.text(12, 10, 'DIFFICULTY', {
+    this.diffSection.add(this.add.text(12, 10, i18n.t('menu.difficulty'), {
       fontFamily: 'monospace', fontSize: '10px', color: '#aaaaaa', letterSpacing: 3,
     }));
 
@@ -729,19 +735,19 @@ export class MenuScene extends Phaser.Scene {
     const xs: Record<Difficulty, number> = { easy: 54, normal: 150, hard: 246 };
 
     DIFF_ORDER.forEach((diff) => {
-      const { label, hint, colorOff } = DIFF[diff];
+      const { colorOff } = DIFF[diff];
       const x = xs[diff];
 
       const btn = this.add
         .rectangle(x, BTN_Y, BTN_W, BTN_H, colorOff)
         .setInteractive({ useHandCursor: true });
 
-      const btnLabel = this.add.text(x, BTN_Y - 8, label, {
+      const btnLabel = this.add.text(x, BTN_Y - 8, i18n.t(`menu.diff.${diff}`), {
         fontFamily: 'monospace', fontSize: '11px', color: '#ffffff',
         fontStyle: 'bold', letterSpacing: 1,
       }).setOrigin(0.5);
 
-      const hintText = this.add.text(x, BTN_Y + 12, hint.replace('max ', ''), {
+      const hintText = this.add.text(x, BTN_Y + 12, i18n.t(`menu.diff.hint.${diff}`).replace('max ', ''), {
         fontFamily: 'monospace', fontSize: '8px', color: '#888899',
       }).setOrigin(0.5);
 
@@ -780,20 +786,20 @@ export class MenuScene extends Phaser.Scene {
 
     // ── Trainer (left half) ─────────────────────────────────────────────────
 
-    this.devicesSection.add(this.add.text(18, 11, 'TRAINER', {
+    this.devicesSection.add(this.add.text(18, 11, i18n.t('menu.device.trainer'), {
       fontFamily: 'monospace', fontSize: '10px', color: '#aaaaaa', letterSpacing: 3,
     }));
 
     const btnTrainer = this.add
       .rectangle(100, 50, 170, 32, 0x1a3a6b)
       .setInteractive({ useHandCursor: true });
-    const btnTrainerTxt = this.add.text(100, 50, 'CONNECT BT', {
+    const btnTrainerTxt = this.add.text(100, 50, i18n.t('menu.device.connect_bt'), {
       fontFamily: 'monospace', fontSize: '11px', color: '#ffffff',
     }).setOrigin(0.5);
     this.devicesSection.add([btnTrainer, btnTrainerTxt]);
 
     this.trainerStatusDot = this.add.arc(194, 50, 4, 0, 360, false, 0x555566);
-    this.trainerStatusLabel = this.add.text(202, 50, 'DISCONNECTED', {
+    this.trainerStatusLabel = this.add.text(202, 50, i18n.t('menu.device.disconnected'), {
       fontFamily: 'monospace', fontSize: '10px', color: '#888899',
     }).setOrigin(0, 0.5);
     this.devicesSection.add([this.trainerStatusDot, this.trainerStatusLabel]);
@@ -806,27 +812,27 @@ export class MenuScene extends Phaser.Scene {
     });
     btnTrainer.on('pointerdown', async () => {
       btnTrainer.setFillStyle(0x2a2a6b);
-      btnTrainerTxt.setText('CONNECTING…');
+      btnTrainerTxt.setText(i18n.t('menu.device.connecting'));
       this.trainerStatusDot.setFillStyle(0x888888);
-      this.trainerStatusLabel.setText('CONNECTING…').setColor('#888888');
+      this.trainerStatusLabel.setText(i18n.t('menu.device.connecting')).setColor('#888888');
       try {
         const svc = new TrainerService();
         await svc.connect();
         this.trainerService = svc;
         SessionService.setTrainer(svc);
         this.trainerStatusDot.setFillStyle(0x00ff88);
-        this.trainerStatusLabel.setText('CONNECTED').setColor('#00ff88');
+        this.trainerStatusLabel.setText(i18n.t('menu.device.connected')).setColor('#00ff88');
         btnTrainer.setFillStyle(0x1a5a3a);
-        btnTrainerTxt.setText('RECONNECT BT');
+        btnTrainerTxt.setText(i18n.t('menu.device.reconnect_bt'));
       } catch (err: any) {
         const msg = err?.message || JSON.stringify(err);
         console.error('[MenuScene] Trainer connection failed:', msg);
         this.trainerService = null;
         SessionService.setTrainer(null);
         this.trainerStatusDot.setFillStyle(0xff4444);
-        this.trainerStatusLabel.setText('FAILED').setColor('#ff4444');
+        this.trainerStatusLabel.setText(i18n.t('menu.device.failed')).setColor('#ff4444');
         btnTrainer.setFillStyle(0x1a3a6b);
-        btnTrainerTxt.setText('CONNECT BT');
+        btnTrainerTxt.setText(i18n.t('menu.device.connect_bt'));
       }
     });
 
@@ -837,7 +843,7 @@ export class MenuScene extends Phaser.Scene {
       .rectangle(295, 50, 80, 32, 0x4a4a5a)
       .setInteractive({ useHandCursor: true });
 
-    const btnRemoteTxt = this.add.text(295, 50, 'REMOTE', {
+    const btnRemoteTxt = this.add.text(295, 50, i18n.t('menu.device.remote'), {
       fontFamily: 'monospace', fontSize: '11px', color: '#ffffff',
     }).setOrigin(0.5);
 
@@ -875,20 +881,20 @@ export class MenuScene extends Phaser.Scene {
 
     // ── Heart Rate Monitor (right half) ────────────────────────────────────
 
-    this.devicesSection.add(this.add.text(330, 11, 'HEART RATE', {
+    this.devicesSection.add(this.add.text(330, 11, i18n.t('menu.device.hrm'), {
       fontFamily: 'monospace', fontSize: '10px', color: '#aaaaaa', letterSpacing: 3,
     }));
 
     const btnHrm = this.add
       .rectangle(430, 50, 160, 32, 0x3a1a5a)
       .setInteractive({ useHandCursor: true });
-    const btnHrmTxt = this.add.text(430, 50, 'CONNECT HRM', {
+    const btnHrmTxt = this.add.text(430, 50, i18n.t('menu.device.connect_hrm'), {
       fontFamily: 'monospace', fontSize: '11px', color: '#ffffff',
     }).setOrigin(0.5);
     this.devicesSection.add([btnHrm, btnHrmTxt]);
 
     this.hrmStatusDot = this.add.arc(515, 50, 4, 0, 360, false, 0x555566);
-    this.hrmStatusLabel = this.add.text(523, 50, 'DISCONNECTED', {
+    this.hrmStatusLabel = this.add.text(523, 50, i18n.t('menu.device.disconnected'), {
       fontFamily: 'monospace', fontSize: '10px', color: '#888899',
     }).setOrigin(0, 0.5);
     this.devicesSection.add([this.hrmStatusDot, this.hrmStatusLabel]);
@@ -901,27 +907,27 @@ export class MenuScene extends Phaser.Scene {
     });
     btnHrm.on('pointerdown', async () => {
       btnHrm.setFillStyle(0x4a1a8b);
-      btnHrmTxt.setText('CONNECTING…');
+      btnHrmTxt.setText(i18n.t('menu.device.connecting'));
       this.hrmStatusDot.setFillStyle(0x888888);
-      this.hrmStatusLabel.setText('CONNECTING…').setColor('#888888');
+      this.hrmStatusLabel.setText(i18n.t('menu.device.connecting')).setColor('#888888');
       try {
         const svc = new HeartRateService();
         await svc.connect();
         this.hrmService = svc;
         SessionService.setHrm(svc);
         this.hrmStatusDot.setFillStyle(0xff4488);
-        this.hrmStatusLabel.setText('CONNECTED').setColor('#ff4488');
+        this.hrmStatusLabel.setText(i18n.t('menu.device.connected')).setColor('#ff4488');
         btnHrm.setFillStyle(0x5a1a5a);
-        btnHrmTxt.setText('RECONNECT HRM');
+        btnHrmTxt.setText(i18n.t('menu.device.reconnect_hrm'));
       } catch (err: any) {
         const msg = err?.message || JSON.stringify(err);
         console.error('[MenuScene] HRM connection failed:', msg);
         this.hrmService = null;
         SessionService.setHrm(null);
         this.hrmStatusDot.setFillStyle(0xff4444);
-        this.hrmStatusLabel.setText('FAILED').setColor('#ff4444');
+        this.hrmStatusLabel.setText(i18n.t('menu.device.failed')).setColor('#ff4444');
         btnHrm.setFillStyle(0x3a1a5a);
-        btnHrmTxt.setText('CONNECT HRM');
+        btnHrmTxt.setText(i18n.t('menu.device.connect_hrm'));
       }
     });
   }
@@ -951,7 +957,12 @@ export class MenuScene extends Phaser.Scene {
     const elevStr = rd.units === 'imperial'
       ? `${Math.round(totalElevationM * 3.28084)} ft`
       : `${Math.round(totalElevationM)} m`;
-    const bannerText = `SAVED RUN  ·  Floor ${clearedEdges}/${rd.runLength}  ·  ${rd.gold}g  ·  ${elevStr} gain  ·  ${dateStr}`;
+
+    const savedRun = i18n.t('menu.save_banner.saved_run');
+    const floor = i18n.t('menu.save_banner.floor');
+    const gain = i18n.t('menu.save_banner.gain');
+
+    const bannerText = `${savedRun}  ·  ${floor} ${clearedEdges}/${rd.runLength}  ·  ${rd.gold}g  ·  ${elevStr} ${gain}  ·  ${dateStr}`;
 
     this.saveBannerContainer.add(this.add.text(-BANNER_W / 2 + 16, 0, bannerText, {
       fontFamily: 'monospace',
@@ -960,7 +971,7 @@ export class MenuScene extends Phaser.Scene {
       letterSpacing: 1,
     }).setOrigin(0, 0.5));
 
-    this.saveBannerContainer.add(this.add.text(BANNER_W / 2 - 16, 0, '▲ SAVED', {
+    this.saveBannerContainer.add(this.add.text(BANNER_W / 2 - 16, 0, i18n.t('menu.save_banner.saved'), {
       fontFamily: 'monospace',
       fontSize: '10px',
       color: '#44aa66',
@@ -979,7 +990,7 @@ export class MenuScene extends Phaser.Scene {
     const notice = this.add.container(0, 0);
     notice.add(bg);
     notice.add(this.add.text(0, 0,
-      'SAVE INCOMPATIBLE  ·  Game was updated  ·  Previous run discarded  ·  Start a fresh run',
+      i18n.t('menu.save_banner.incompatible'),
       { fontFamily: 'monospace', fontSize: '11px', color: '#ffcc44', letterSpacing: 1 },
     ).setOrigin(0.5, 0.5));
 
@@ -994,7 +1005,8 @@ export class MenuScene extends Phaser.Scene {
     const btn = this.add.rectangle(0, 0, 100, 24, this.isDevMode ? 0x224422 : 0x444444)
       .setInteractive({ useHandCursor: true });
     
-    const txt = this.add.text(0, 0, this.isDevMode ? 'DEV MODE: ON' : 'DEV MODE: OFF', {
+    const getDevLabel = () => this.isDevMode ? i18n.t('menu.dev_mode.on') : i18n.t('menu.dev_mode.off');
+    const txt = this.add.text(0, 0, getDevLabel(), {
       fontFamily: 'monospace', fontSize: '10px', 
       color: this.isDevMode ? '#00ff00' : '#aaaaaa', 
       fontStyle: 'bold'
@@ -1005,10 +1017,39 @@ export class MenuScene extends Phaser.Scene {
     btn.on('pointerdown', () => {
       this.isDevMode = !this.isDevMode;
       RunStateManager.setDevMode(this.isDevMode);
-      txt.setText(this.isDevMode ? 'DEV MODE: ON' : 'DEV MODE: OFF');
+      txt.setText(getDevLabel());
       txt.setColor(this.isDevMode ? '#00ff00' : '#aaaaaa');
       btn.setFillStyle(this.isDevMode ? 0x224422 : 0x444444);
     });
+  }
+
+  private buildLanguageToggle(): void {
+    this.languageToggle = this.add.container(0, 0);
+
+    const currentLang = i18n.language;
+    const isEn = currentLang.startsWith('en');
+    const label = isEn ? 'LANG: EN' : 'LANG: FR';
+
+    const btn = this.add.rectangle(0, 0, 80, 24, 0x444444)
+      .setInteractive({ useHandCursor: true });
+
+    const txt = this.add.text(0, 0, label, {
+      fontFamily: 'monospace', fontSize: '11px',
+      color: '#ffffff',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+
+    this.languageToggle.add([btn, txt]);
+
+    btn.on('pointerdown', () => {
+      const newLang = isEn ? 'fr-CA' : 'en';
+      i18n.changeLanguage(newLang).then(() => {
+        this.scene.restart();
+      });
+    });
+
+    btn.on('pointerover', () => btn.setFillStyle(0x666666));
+    btn.on('pointerout', () => btn.setFillStyle(0x444444));
   }
 
   // ── Start buttons ──────────────────────────────────────────────────────────
@@ -1036,7 +1077,7 @@ export class MenuScene extends Phaser.Scene {
     const btn = this.add
       .rectangle(x, 0, btnW, 52, 0x1a7040)
       .setInteractive({ useHandCursor: true });
-    const txt = this.add.text(x, 0, '▶  CONTINUE RUN', {
+    const txt = this.add.text(x, 0, i18n.t('menu.start.continue'), {
       fontFamily: 'monospace', fontSize: '13px',
       color: '#ffffff', fontStyle: 'bold', letterSpacing: 1,
     }).setOrigin(0.5);
@@ -1050,9 +1091,9 @@ export class MenuScene extends Phaser.Scene {
       // If the run was started with a real trainer, require reconnecting before continuing
       if (saved.runData.isRealTrainerRun && !this.trainerService && !this.isDevMode) {
         new ConfirmationModal(this, {
-          title: 'TRAINER REQUIRED',
-          message: 'This run was started with a real trainer.\nPlease connect your trainer before continuing.',
-          confirmLabel: 'OK',
+          title: i18n.t('menu.start.trainer_required_title'),
+          message: i18n.t('menu.start.trainer_required_msg'),
+          confirmLabel: i18n.t('menu.start.ok'),
           onConfirm: () => {},
         });
         return;
@@ -1068,7 +1109,7 @@ export class MenuScene extends Phaser.Scene {
     const btn = this.add
       .rectangle(x, 0, btnW, 52, 0x6b3a00)
       .setInteractive({ useHandCursor: true });
-    const txt = this.add.text(x, 0, '▶  START NEW RUN', {
+    const txt = this.add.text(x, 0, i18n.t('menu.start.new_run'), {
       fontFamily: 'monospace', fontSize: '12px',
       color: '#ffcc88', fontStyle: 'bold', letterSpacing: 1,
     }).setOrigin(0.5);
@@ -1082,22 +1123,22 @@ export class MenuScene extends Phaser.Scene {
     btn.on('pointerdown', () => {
       if (!this.trainerService && !this.isDevMode && !trainerCheckPassed) {
         new ConfirmationModal(this, {
-          title: 'NO TRAINER?',
-          message: 'Playing without a smart trainer means no resistance and no exercise. Are you sure?',
-          confirmLabel: 'PLAY ANYWAY',
+          title: i18n.t('menu.start.no_trainer_title'),
+          message: i18n.t('menu.start.no_trainer_msg'),
+          confirmLabel: i18n.t('menu.start.play_anyway'),
           confirmColor: 0xaa5a00,
           onConfirm: () => {
             trainerCheckPassed = true;
             // Auto-advance to the erase save warning
             if (!confirmPending) {
               confirmPending = true;
-              txt.setText('ERASE SAVE? CONFIRM');
+              txt.setText(i18n.t('menu.start.erase_confirm'));
               btn.setFillStyle(0xaa2222);
               this.time.delayedCall(2500, () => {
                 if (confirmPending) {
                   confirmPending = false;
                   trainerCheckPassed = false;
-                  txt.setText('▶  START NEW RUN');
+                  txt.setText(i18n.t('menu.start.new_run'));
                   btn.setFillStyle(0x6b3a00);
                 }
               });
@@ -1113,14 +1154,14 @@ export class MenuScene extends Phaser.Scene {
       if (!confirmPending) {
         // First click: ask for confirmation
         confirmPending = true;
-        txt.setText('ERASE SAVE? CONFIRM');
+        txt.setText(i18n.t('menu.start.erase_confirm'));
         btn.setFillStyle(0xaa2222);
         this.time.delayedCall(2500, () => {
           if (confirmPending) {
             confirmPending = false;
             // Only reset trainer check if we timeout
             trainerCheckPassed = false;
-            txt.setText('▶  START NEW RUN');
+            txt.setText(i18n.t('menu.start.new_run'));
             btn.setFillStyle(0x6b3a00);
           }
         });
@@ -1137,7 +1178,7 @@ export class MenuScene extends Phaser.Scene {
     const runBtn = this.add
       .rectangle(x, 0, btnW, 52, 0x8b5a00)
       .setInteractive({ useHandCursor: true });
-    const runTxt = this.add.text(x, 0, '▶  START RUN', {
+    const runTxt = this.add.text(x, 0, i18n.t('menu.start.start_run'), {
       fontFamily: 'monospace', fontSize: '15px',
       color: '#ffffff', fontStyle: 'bold', letterSpacing: 1,
     }).setOrigin(0.5);
@@ -1152,9 +1193,9 @@ export class MenuScene extends Phaser.Scene {
     runBtn.on('pointerdown', () => {
       if (!this.trainerService && !this.isDevMode) {
         new ConfirmationModal(this, {
-          title: 'NO TRAINER?',
-          message: 'Playing without a smart trainer means no resistance and no exercise. Are you sure?',
-          confirmLabel: 'PLAY ANYWAY',
+          title: i18n.t('menu.start.no_trainer_title'),
+          message: i18n.t('menu.start.no_trainer_msg'),
+          confirmLabel: i18n.t('menu.start.play_anyway'),
           confirmColor: 0xaa5a00,
           onConfirm: () => this.doStartRun(),
         });
@@ -1177,7 +1218,7 @@ export class MenuScene extends Phaser.Scene {
     bg.fillRoundedRect(0, 0, PW, PH, 6);
     this.unitsSection.add(bg);
 
-    this.unitsSection.add(this.add.text(14, 10, 'UNITS', {
+    this.unitsSection.add(this.add.text(14, 10, i18n.t('menu.units'), {
       fontFamily: 'monospace', fontSize: '10px', color: '#aaaaaa', letterSpacing: 3,
     }));
 
@@ -1185,7 +1226,6 @@ export class MenuScene extends Phaser.Scene {
     const BTN_H = 32;
 
     const unitOrder: Units[] = ['imperial', 'metric'];
-    const labels: Record<Units, string> = { imperial: 'IMPERIAL', metric: 'METRIC' };
     const ys = [52, 96];
 
     unitOrder.forEach((u, i) => {
@@ -1193,7 +1233,8 @@ export class MenuScene extends Phaser.Scene {
         .rectangle(CX, ys[i], BTN_W, BTN_H, 0x1a1a3a)
         .setInteractive({ useHandCursor: true });
 
-      const btnTxt = this.add.text(CX, ys[i], labels[u], {
+      const label = u === 'imperial' ? i18n.t('menu.units_label.imperial') : i18n.t('menu.units_label.metric');
+      const btnTxt = this.add.text(CX, ys[i], label, {
         fontFamily: 'monospace', fontSize: '11px',
         color: '#ffffff', fontStyle: 'bold', letterSpacing: 1,
       }).setOrigin(0.5);

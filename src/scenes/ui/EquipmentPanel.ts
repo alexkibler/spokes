@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { RunStateManager } from '../../roguelike/RunState';
-import { ITEM_REGISTRY, ALL_SLOTS, SLOT_LABELS, formatModifierLines, type EquipmentSlot } from '../../roguelike/ItemRegistry';
+import { ITEM_REGISTRY, ALL_SLOTS, formatModifierLines, type EquipmentSlot } from '../../roguelike/ItemRegistry';
 import { THEME } from '../../theme';
+import i18n from '../../i18n';
 
 // ─── layout ────────────────────────────────────────────────────────────────
 const PANEL_W = 520;
@@ -59,7 +60,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
     this.contentGroup.push(panel);
 
     // Title
-    const title = this.scene.add.text(PANEL_W / 2, 24, 'EQUIPMENT', {
+    const title = this.scene.add.text(PANEL_W / 2, 24, i18n.t('pause.equipment.title'), {
       fontFamily: THEME.fonts.main,
       fontSize: THEME.fonts.sizes.title,
       color: THEME.colors.text.gold,
@@ -86,7 +87,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
       this.add(slotBg);
       this.contentGroup.push(slotBg);
 
-      const slotLabel = this.scene.add.text(sx + SLOT_W / 2, slotsY + 8, SLOT_LABELS[slot], {
+      const slotLabel = this.scene.add.text(sx + SLOT_W / 2, slotsY + 8, i18n.t(`slots.${slot}`), {
         fontFamily: THEME.fonts.main, fontSize: '9px',
         color: isEmpty ? '#555577' : '#66aa66', fontStyle: 'bold', letterSpacing: 1,
       }).setOrigin(0.5, 0);
@@ -95,7 +96,18 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
 
       if (equippedId) {
         const def = ITEM_REGISTRY[equippedId];
-        const nameLines = this.wrapText(def?.label ?? equippedId, 9);
+
+        // Translation for item label happens via ITEM_REGISTRY (if refactored) or direct key lookup
+        // Assuming ITEM_REGISTRY.label will be updated or we use i18n key logic.
+        // For now, let's assume ITEM_REGISTRY returns a key or we translate it here.
+        // Plan step 6 is Refactor ItemRegistry.
+        // Let's use i18n.t if the label looks like a key, or just use the label if not?
+        // Actually, best to wait for ItemRegistry refactor.
+        // But to be safe, I'll wrap it in i18n.t just in case the label becomes a key.
+        const labelKey = def?.label ?? equippedId;
+        const translatedLabel = i18n.exists(`item.${equippedId}`) ? i18n.t(`item.${equippedId}`) : labelKey;
+
+        const nameLines = this.wrapText(translatedLabel, 9);
 
         const nameText = this.scene.add.text(sx + SLOT_W / 2, slotsY + 22, nameLines.join('\n'), {
           fontFamily: THEME.fonts.main, fontSize: '9px', color: '#ccffcc',
@@ -137,7 +149,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
         this.add(hitZone);
         this.contentGroup.push(hitZone);
       } else {
-        const emptyText = this.scene.add.text(sx + SLOT_W / 2, slotsY + SLOT_H / 2, 'EMPTY', {
+        const emptyText = this.scene.add.text(sx + SLOT_W / 2, slotsY + SLOT_H / 2, i18n.t('pause.equipment.empty'), {
           fontFamily: THEME.fonts.main, fontSize: '9px', color: '#333355',
         }).setOrigin(0.5);
         this.add(emptyText);
@@ -147,7 +159,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
 
     // Inventory
     const invTitleY = slotsY + SLOT_H + 16;
-    const invTitle = this.scene.add.text(16, invTitleY, 'INVENTORY', {
+    const invTitle = this.scene.add.text(16, invTitleY, i18n.t('pause.equipment.inventory_title'), {
       fontFamily: THEME.fonts.main, fontSize: '11px', color: THEME.colors.text.muted,
       fontStyle: 'bold', letterSpacing: 2,
     }).setOrigin(0, 0.5);
@@ -163,7 +175,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
     const rowsStartY = invTitleY + INV_TITLE_H;
 
     if (invIds.length === 0) {
-      const empty = this.scene.add.text(PANEL_W / 2, rowsStartY + 12, 'Inventory is empty.', {
+      const empty = this.scene.add.text(PANEL_W / 2, rowsStartY + 12, i18n.t('pause.equipment.inventory_empty'), {
         fontFamily: THEME.fonts.main, fontSize: '11px', color: '#444466',
       }).setOrigin(0.5, 0);
       this.add(empty);
@@ -182,7 +194,10 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
          this.contentGroup.push(rowBg);
 
          const countStr = count > 1 ? ` ×${count}` : '';
-         const nameText = this.scene.add.text(22, ry + ROW_H / 2, `${def?.label ?? itemId}${countStr}`, {
+         const labelKey = def?.label ?? itemId;
+         const translatedLabel = i18n.exists(`item.${itemId}`) ? i18n.t(`item.${itemId}`) : labelKey;
+
+         const nameText = this.scene.add.text(22, ry + ROW_H / 2, `${translatedLabel}${countStr}`, {
            fontFamily: THEME.fonts.main, fontSize: '11px', color: '#ccccdd',
          }).setOrigin(0, 0.5);
          this.add(nameText);
@@ -205,7 +220,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
 
            const btnBg = this.scene.add.rectangle(btnX, btnY, btnW, btnH, THEME.colors.buttons.primary)
              .setInteractive({ useHandCursor: true });
-           const btnLabel = this.scene.add.text(btnX, btnY, 'EQUIP', {
+           const btnLabel = this.scene.add.text(btnX, btnY, i18n.t('pause.equipment.equip_btn'), {
              fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ffffff', fontStyle: 'bold',
            }).setOrigin(0.5);
 
@@ -276,15 +291,18 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
     modalGroup.push(mpanel);
 
     // Warning header
-    const headerTxt = scene.add.text(cx, my + 18, `REPLACE ${SLOT_LABELS[slot]}?`, {
+    const slotName = i18n.t(`slots.${slot}`);
+    const replaceTitle = i18n.t('pause.equipment.replace_title').replace('{{slot}}', slotName);
+    const headerTxt = scene.add.text(cx, my + 18, replaceTitle, {
       fontFamily: THEME.fonts.main, fontSize: '14px', color: '#ffaa44', fontStyle: 'bold',
     }).setOrigin(0.5, 0).setDepth(3001);
     modalGroup.push(headerTxt);
 
     // Current
+    const curLabel = i18n.exists(`item.${currentId}`) ? i18n.t(`item.${currentId}`) : (currentDef?.label ?? currentId);
     const curLines = currentDef?.modifier ? formatModifierLines(currentDef.modifier) : [];
     const curBlock = [
-      `UNEQUIPPING: ${currentDef?.label ?? currentId}`,
+      `${i18n.t('pause.equipment.unequipping')} ${curLabel}`,
       ...curLines.map(l => `  − ${l}`),
     ].join('\n');
     const curTxt = scene.add.text(cx - 80, my + 50, curBlock, {
@@ -294,9 +312,10 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
     modalGroup.push(curTxt);
 
     // Incoming
+    const incLabel = i18n.exists(`item.${incomingId}`) ? i18n.t(`item.${incomingId}`) : (incomingDef?.label ?? incomingId);
     const incLines = incomingDef?.modifier ? formatModifierLines(incomingDef.modifier) : [];
     const incBlock = [
-      `EQUIPPING: ${incomingDef?.label ?? incomingId}`,
+      `${i18n.t('pause.equipment.equipping')} ${incLabel}`,
       ...incLines.map(l => `  + ${l}`),
     ].join('\n');
     const incTxt = scene.add.text(cx - 80, my + 50 + 16 + curLines.length * 14, incBlock, {
@@ -312,7 +331,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
     // Confirm button
     const confirmBg = scene.add.rectangle(cx - 70, my + MODAL_H - 28, 120, 30, 0x1a4a1a)
       .setInteractive({ useHandCursor: true }).setDepth(3001);
-    const confirmLbl = scene.add.text(cx - 70, my + MODAL_H - 28, 'CONFIRM SWAP', {
+    const confirmLbl = scene.add.text(cx - 70, my + MODAL_H - 28, i18n.t('pause.equipment.confirm_swap'), {
       fontFamily: THEME.fonts.main, fontSize: '10px', color: '#88ff88', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(3001);
 
@@ -328,7 +347,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
     // Cancel button
     const cancelBg = scene.add.rectangle(cx + 70, my + MODAL_H - 28, 100, 30, 0x3a2a2a)
       .setInteractive({ useHandCursor: true }).setDepth(3001);
-    const cancelLbl = scene.add.text(cx + 70, my + MODAL_H - 28, 'CANCEL', {
+    const cancelLbl = scene.add.text(cx + 70, my + MODAL_H - 28, i18n.t('pause.equipment.cancel'), {
       fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ff8888', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(3001);
 
