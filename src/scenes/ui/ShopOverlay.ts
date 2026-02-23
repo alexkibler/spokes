@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { RunStateManager } from '../../roguelike/RunState';
 import { THEME } from '../../theme';
 import { Button } from '../../ui/Button';
+import { EQUIPMENT_DATABASE } from '../../roguelike/Equipment';
 
 export class ShopOverlay extends Phaser.GameObjects.Container {
   private goldTxt: Phaser.GameObjects.Text;
@@ -30,18 +31,16 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
       basePrice: number;
       color: number;
       hoverColor: number;
-      /** false = one per run (tailwind), true = stackable with scaling price */
-      stackable: boolean;
+      type: 'passive' | 'equipment';
     }
     const CATALOG: ShopItem[] = [
-      { id: 'tailwind',        label: 'TAILWIND',          description: '2× power toggle during ride',     basePrice: 100, color: 0x2a2a44, hoverColor: 0x3a3a5a, stackable: false },
-      { id: 'teleport',        label: 'TELEPORT SCROLL',   description: 'Warp to any visited node',         basePrice: 10,  color: 0x442244, hoverColor: 0x553355, stackable: true  },
-      { id: 'reroll_voucher',  label: 'REROLL VOUCHER',    description: 'Reroll reward choices once',       basePrice: 50,  color: 0x2a2a08, hoverColor: 0x3a3a10, stackable: true  },
-      { id: 'aero_helmet',     label: 'AERO HELMET',       description: '+3% drag reduction (stacks)',      basePrice: 60,  color: 0x1a2a3a, hoverColor: 0x2a3a4a, stackable: true  },
-      { id: 'gold_crank',      label: 'SOLID GOLD CRANK',  description: '×1.25 permanent power (stacks)',   basePrice: 120, color: 0x3a2a00, hoverColor: 0x4a3a00, stackable: true  },
-      { id: 'antigrav_pedals', label: 'ANTIGRAV PEDALS',   description: '-8% rider weight (stacks)',         basePrice: 90,  color: 0x1a3a1a, hoverColor: 0x2a4a2a, stackable: true  },
-      { id: 'dirt_tires',      label: 'DIRT TIRES',        description: '-35% rolling resistance (stacks)', basePrice: 70,  color: 0x1a1a0a, hoverColor: 0x2a2a14, stackable: true  },
-      { id: 'carbon_frame',    label: 'CARBON FRAME',      description: '-12% weight, +3% aero (stacks)',   basePrice: 150, color: 0x0a1a2a, hoverColor: 0x142030, stackable: true  },
+      { id: 'tailwind',        label: 'TAILWIND',          description: '2× power toggle during ride',     basePrice: 100, color: 0x2a2a44, hoverColor: 0x3a3a5a, type: 'passive' },
+      { id: 'teleport',        label: 'TELEPORT SCROLL',   description: 'Warp to any visited node',         basePrice: 10,  color: 0x442244, hoverColor: 0x553355, type: 'passive' },
+      { id: 'reroll_voucher',  label: 'REROLL VOUCHER',    description: 'Reroll reward choices once',       basePrice: 50,  color: 0x2a2a08, hoverColor: 0x3a3a10, type: 'passive' },
+      { id: 'aero_helmet',     label: 'AERO HELMET',       description: 'Sleek design to cut wind',         basePrice: 60,  color: 0x1a2a3a, hoverColor: 0x2a3a4a, type: 'equipment' },
+      { id: 'carbon_shoes',    label: 'CARBON SHOES',      description: 'Ultra-stiff carbon soles',         basePrice: 120, color: 0x3a2a00, hoverColor: 0x4a3a00, type: 'equipment' },
+      { id: 'gravel_knobbies', label: 'GRAVEL TIRES',      description: 'Roubaix Gravel Knobbies',          basePrice: 70,  color: 0x1a1a0a, hoverColor: 0x2a2a14, type: 'equipment' },
+      { id: 'carbon_frame',    label: 'CARBON FRAME',      description: 'Lightweight and aerodynamic',      basePrice: 150, color: 0x0a1a2a, hoverColor: 0x142030, type: 'equipment' },
     ];
 
     const ITEM_H = 52;
@@ -76,8 +75,12 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
     const itemPrice = (item: ShopItem): number => {
       const runData = RunStateManager.getRun();
       if (!runData) return item.basePrice;
-      const count = runData.inventory.filter(i => i === item.id).length;
-      return Math.round(item.basePrice * Math.pow(1.5, count));
+      if (item.type === 'passive') {
+        const count = runData.passiveItems.filter(i => i === item.id).length;
+        return Math.round(item.basePrice * Math.pow(1.5, count));
+      } else {
+        return item.basePrice;
+      }
     };
 
     const refreshShop = () => {
@@ -90,20 +93,30 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
         const item = CATALOG[i];
         const btn  = btns[i];
         const price = itemPrice(item);
-        const owned = runData.inventory.filter(i2 => i2 === item.id).length;
-        const soldOut = !item.stackable && owned > 0;
+
+        let owned = false;
+        let count = 0;
+        if (item.type === 'passive') {
+            count = runData.passiveItems.filter(i => i === item.id).length;
+        } else {
+            const eqItem = EQUIPMENT_DATABASE[item.id];
+            if (eqItem) {
+                owned = runData.equipment[eqItem.slot] === item.id;
+            }
+        }
+
         const canAfford = runData.gold >= price;
 
-        if (soldOut) {
-          btn.setText(`${item.label}\n✓ OWNED`);
+        if (item.type === 'equipment' && owned) {
+          btn.setText(`${item.label}\n✓ EQUIPPED`);
           btn.setEnabled(false);
         } else if (!canAfford) {
-          const ownedStr = owned > 0 ? ` (×${owned})` : '';
-          btn.setText(`${item.label}${ownedStr}\n${item.description} — ${price} GOLD`);
+          const countStr = count > 0 ? ` (×${count})` : '';
+          btn.setText(`${item.label}${countStr}\n${item.description} — ${price} GOLD`);
           btn.setEnabled(false);
         } else {
-          const ownedStr = owned > 0 ? ` (×${owned})` : '';
-          btn.setText(`${item.label}${ownedStr}\n${item.description} — ${price} GOLD`);
+          const countStr = count > 0 ? ` (×${count})` : '';
+          btn.setText(`${item.label}${countStr}\n${item.description} — ${price} GOLD`);
           btn.setEnabled(true);
         }
       }
@@ -125,33 +138,12 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
           const price = itemPrice(item);
           if (!RunStateManager.spendGold(price)) return;
 
-          switch (item.id) {
-            case 'tailwind':
-            case 'teleport':
-            case 'reroll_voucher':
-              RunStateManager.addToInventory(item.id);
-              break;
-            case 'aero_helmet':
-              RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ dragReduction: 0.03 }, 'AERO HELMET (shop)');
-              break;
-            case 'gold_crank':
-              RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ powerMult: 1.25 }, 'GOLD CRANK (shop)');
-              break;
-            case 'antigrav_pedals':
-              RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ weightMult: 0.92 }, 'ANTIGRAV PEDALS (shop)');
-              break;
-            case 'dirt_tires':
-              RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ crrMult: 0.65 }, 'DIRT TIRES (shop)');
-              break;
-            case 'carbon_frame':
-              RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ weightMult: 0.88, dragReduction: 0.03 }, 'CARBON FRAME (shop)');
-              break;
+          if (item.type === 'passive') {
+              RunStateManager.addPassiveItem(item.id);
+          } else {
+              RunStateManager.equipItem(item.id);
           }
+
           refreshShop();
           this.onAction();
         }

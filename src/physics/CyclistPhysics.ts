@@ -34,9 +34,10 @@ const G = 9.80665; // m/s²
 
 /** Subset of RunModifiers needed by the physics engine (avoids a circular import). */
 export interface PhysicsModifiers {
-  powerMult: number;
-  dragReduction: number;
-  weightMult: number;
+  powerMult?: number;
+  cdA_add?: number;
+  mass_add?: number;
+  crr_add?: number;
 }
 
 /**
@@ -51,8 +52,10 @@ export function calculateAcceleration(
 ): number {
   const { cdA, rhoAir, crr, grade } = config; // massKg accessed via effectiveMass below
   const effectivePower = powerW * (modifiers?.powerMult ?? 1);
-  const effectiveCdA   = cdA * (1 - (modifiers?.dragReduction ?? 0));
-  const effectiveMass  = config.massKg * (modifiers?.weightMult ?? 1);
+  const effectiveCdA   = Math.max(0.1, cdA + (modifiers?.cdA_add ?? 0));
+  const effectiveMass  = Math.max(40, config.massKg + (modifiers?.mass_add ?? 0));
+  const effectiveCrr   = Math.max(0.001, crr + (modifiers?.crr_add ?? 0));
+
   const theta = Math.atan(grade);
   const cosTheta = Math.cos(theta);
   const sinTheta = Math.sin(theta);
@@ -66,7 +69,7 @@ export function calculateAcceleration(
   // Drag = ½ρCdA·v²
   const aeroForce = 0.5 * rhoAir * effectiveCdA * currentVelocityMs * currentVelocityMs;
   // Rolling resistance = Crr·m·g·cosθ
-  const rollingForce = crr * effectiveMass * G * cosTheta;
+  const rollingForce = effectiveCrr * effectiveMass * G * cosTheta;
   // Gravity = m·g·sinθ
   const gradeForce = effectiveMass * G * sinTheta;
 

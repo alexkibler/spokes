@@ -32,7 +32,17 @@ vi.stubGlobal('localStorage', localStorageMock);
 function makeRunData(overrides: Partial<RunData> = {}): RunData {
   return {
     gold: 50,
-    inventory: ['tailwind'],
+    equipment: {
+      head: 'foam_helmet',
+      body: 'basic_kit',
+      shoes: 'sneakers',
+      frame: 'steel_frame',
+      wheels: 'aluminum_box_wheels',
+      tires: 'slicks',
+      driveset: 'budget_3x7',
+      cockpit: 'drop_bars',
+    },
+    passiveItems: ['tailwind'],
     modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 },
     modifierLog: [],
     currentNodeId: 'node-3',
@@ -70,10 +80,18 @@ describe('SaveService.save', () => {
     expect(saved?.runData.gold).toBe(99);
   });
 
-  it('stores inventory correctly', () => {
-    SaveService.save(makeRunData({ inventory: ['gel', 'tailwind'] }), 72, 'metric');
+  it('stores passiveItems correctly', () => {
+    SaveService.save(makeRunData({ passiveItems: ['gel', 'tailwind'] }), 72, 'metric');
     const saved = SaveService.load();
-    expect(saved?.runData.inventory).toEqual(['gel', 'tailwind']);
+    expect(saved?.runData.passiveItems).toEqual(['gel', 'tailwind']);
+  });
+
+  it('stores equipment correctly', () => {
+    const run = makeRunData();
+    run.equipment.head = 'aero_helmet';
+    SaveService.save(run, 72, 'metric');
+    const saved = SaveService.load();
+    expect(saved?.runData.equipment.head).toBe('aero_helmet');
   });
 
   it('stores currentNodeId correctly', () => {
@@ -93,7 +111,7 @@ describe('SaveService.save', () => {
 
   it('stores the correct schema version', () => {
     SaveService.save(makeRunData(), 72, 'metric');
-    expect(SaveService.load()?.version).toBe(1);
+    expect(SaveService.load()?.version).toBe(2);
   });
 
   it('stores a savedAt ISO date string', () => {

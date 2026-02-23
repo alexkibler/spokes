@@ -221,7 +221,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
     // ── Reroll ────────────────────────────────────────────────────────────────
     if (onReroll !== null) {
       const run = RunStateManager.getRun();
-      const rerollCount = run?.inventory.filter(i => i === 'reroll_voucher').length ?? 0;
+      const rerollCount = run?.passiveItems.filter(i => i === 'reroll_voucher').length ?? 0;
       const rerollBtn = new Button(scene, {
         x: cx,
         y: cardsTop + CARD_H + REROLL_SECTION_H / 2,

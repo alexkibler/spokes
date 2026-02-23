@@ -6,6 +6,7 @@
  */
 
 import { RunStateManager } from './RunState';
+import { EQUIPMENT_DATABASE } from './Equipment';
 
 export type RewardRarity = 'common' | 'uncommon' | 'rare';
 
@@ -19,31 +20,28 @@ export interface RewardDefinition {
   apply: () => void;
 }
 
-// Target: 200W FTP → ~500W by end of a full run (≈2.5× powerMult with optimal play)
-// Assumes ~10 first-clear segments. Power-focused player + 1 gold crank ≈ 1.07^10 × 1.25 ≈ 2.46×
-
 const POOL: RewardDefinition[] = [
   // ── Common ────────────────────────────────────────────────────────────────
   {
-    id: 'power_4',
-    label: 'POWER BOOST',
-    description: '+4% permanent power\n(stacks)',
+    id: 'vented_helmet',
+    label: 'VENTED HELMET',
+    description: EQUIPMENT_DATABASE['vented_helmet'].description,
     rarity: 'common',
-    apply: () => RunStateManager.applyModifier({ powerMult: 1.04 }, 'POWER BOOST'),
+    apply: () => RunStateManager.equipItem('vented_helmet'),
   },
   {
-    id: 'aero_2',
-    label: 'AERO TWEAK',
-    description: '+2% drag reduction\n(stacks)',
+    id: 'sneakers',
+    label: 'SNEAKERS',
+    description: EQUIPMENT_DATABASE['sneakers'].description,
     rarity: 'common',
-    apply: () => RunStateManager.applyModifier({ dragReduction: 0.02 }, 'AERO TWEAK'),
+    apply: () => RunStateManager.equipItem('sneakers'),
   },
   {
-    id: 'weight_3',
-    label: 'LIGHTER LOAD',
-    description: '-3% rider weight\n(stacks)',
+    id: 'puncture_proof_tires',
+    label: 'COMMUTER TIRES',
+    description: EQUIPMENT_DATABASE['puncture_proof_tires'].description,
     rarity: 'common',
-    apply: () => RunStateManager.applyModifier({ weightMult: 0.97 }, 'LIGHTER LOAD'),
+    apply: () => RunStateManager.equipItem('puncture_proof_tires'),
   },
   {
     id: 'gold_20',
@@ -57,41 +55,44 @@ const POOL: RewardDefinition[] = [
     label: 'TELEPORT SCROLL',
     description: 'Warp to any\nvisited node',
     rarity: 'common',
-    apply: () => RunStateManager.addToInventory('teleport'),
-  },
-
-  {
-    id: 'dirt_tires',
-    label: 'DIRT TIRES',
-    description: '-35% rolling resistance\n(all surfaces, stacks)',
-    rarity: 'uncommon',
-    apply: () => {
-      RunStateManager.addToInventory('dirt_tires');
-      RunStateManager.applyModifier({ crrMult: 0.65 }, 'DIRT TIRES');
-    },
+    apply: () => RunStateManager.addPassiveItem('teleport'),
   },
 
   // ── Uncommon ──────────────────────────────────────────────────────────────
   {
-    id: 'power_7',
-    label: 'POWER SURGE',
-    description: '+7% permanent power\n(stacks)',
+    id: 'aero_helmet',
+    label: 'AERO HELMET',
+    description: EQUIPMENT_DATABASE['aero_helmet'].description,
     rarity: 'uncommon',
-    apply: () => RunStateManager.applyModifier({ powerMult: 1.07 }, 'POWER SURGE'),
+    apply: () => RunStateManager.equipItem('aero_helmet'),
   },
   {
-    id: 'aero_3',
-    label: 'AERO UPGRADE',
-    description: '+3% drag reduction\n(stacks)',
+    id: 'elite_skinsuit',
+    label: 'ELITE SKINSUIT',
+    description: EQUIPMENT_DATABASE['elite_skinsuit'].description,
     rarity: 'uncommon',
-    apply: () => RunStateManager.applyModifier({ dragReduction: 0.03 }, 'AERO UPGRADE'),
+    apply: () => RunStateManager.equipItem('elite_skinsuit'),
   },
   {
-    id: 'weight_6',
-    label: 'WEIGHT SHED',
-    description: '-6% rider weight\n(stacks)',
+    id: 'cycling_shoes',
+    label: 'CYCLING SHOES',
+    description: EQUIPMENT_DATABASE['cycling_shoes'].description,
     rarity: 'uncommon',
-    apply: () => RunStateManager.applyModifier({ weightMult: 0.94 }, 'WEIGHT SHED'),
+    apply: () => RunStateManager.equipItem('cycling_shoes'),
+  },
+  {
+    id: 'shallow_carbon_rims',
+    label: 'CLIMBING WHEELS',
+    description: EQUIPMENT_DATABASE['shallow_carbon_rims'].description,
+    rarity: 'uncommon',
+    apply: () => RunStateManager.equipItem('shallow_carbon_rims'),
+  },
+  {
+    id: 'aluminum_crit_frame',
+    label: 'CRIT FRAME',
+    description: EQUIPMENT_DATABASE['aluminum_crit_frame'].description,
+    rarity: 'uncommon',
+    apply: () => RunStateManager.equipItem('aluminum_crit_frame'),
   },
   {
     id: 'gold_40',
@@ -100,52 +101,43 @@ const POOL: RewardDefinition[] = [
     rarity: 'uncommon',
     apply: () => RunStateManager.addGold(40),
   },
-  {
-    id: 'aero_helmet',
-    label: 'AERO HELMET',
-    description: '+3% drag reduction\n(adds to inventory)',
-    rarity: 'uncommon',
-    apply: () => {
-      RunStateManager.addToInventory('aero_helmet');
-      RunStateManager.applyModifier({ dragReduction: 0.03 }, 'AERO HELMET');
-    },
-  },
 
   // ── Rare ──────────────────────────────────────────────────────────────────
   {
     id: 'carbon_frame',
     label: 'CARBON FRAME',
-    description: '-12% rider weight\n+3% drag reduction\n(stacks)',
+    description: EQUIPMENT_DATABASE['carbon_frame'].description,
     rarity: 'rare',
-    apply: () => {
-      RunStateManager.addToInventory('carbon_frame');
-      RunStateManager.applyModifier({ weightMult: 0.88, dragReduction: 0.03 }, 'CARBON FRAME');
-    },
+    apply: () => RunStateManager.equipItem('carbon_frame'),
   },
   {
-    id: 'power_12',
-    label: 'OVERDRIVE',
-    description: '+12% permanent power\n(stacks)',
+    id: 'deep_aero_wheels',
+    label: 'DEEP AERO WHEELS',
+    description: EQUIPMENT_DATABASE['deep_aero_wheels'].description,
     rarity: 'rare',
-    apply: () => RunStateManager.applyModifier({ powerMult: 1.12 }, 'OVERDRIVE'),
+    apply: () => RunStateManager.equipItem('deep_aero_wheels'),
   },
   {
-    id: 'antigrav_pedals',
-    label: 'ANTIGRAV PEDALS',
-    description: '-8% rider weight\n(stacks)',
+    id: 'electronic_2x12',
+    label: 'ELECTRONIC SHIFTING',
+    description: EQUIPMENT_DATABASE['electronic_2x12'].description,
     rarity: 'rare',
-    apply: () => {
-      RunStateManager.addToInventory('antigrav_pedals');
-      RunStateManager.applyModifier({ weightMult: 0.92 }, 'ANTIGRAV PEDALS');
-    },
+    apply: () => RunStateManager.equipItem('electronic_2x12'),
+  },
+  {
+    id: 'carbon_shoes',
+    label: 'CARBON SHOES',
+    description: EQUIPMENT_DATABASE['carbon_shoes'].description,
+    rarity: 'rare',
+    apply: () => RunStateManager.equipItem('carbon_shoes'),
   },
   {
     id: 'tailwind',
     label: 'TAILWIND',
     description: '2× power toggle\nduring next ride',
     rarity: 'rare',
-    available: () => !(RunStateManager.getRun()?.inventory.includes('tailwind') ?? false),
-    apply: () => RunStateManager.addToInventory('tailwind'),
+    available: () => !(RunStateManager.getRun()?.passiveItems.includes('tailwind') ?? false),
+    apply: () => RunStateManager.addPassiveItem('tailwind'),
   },
   {
     id: 'gold_75',

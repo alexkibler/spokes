@@ -331,7 +331,7 @@ describe('grantChallengeReward', () => {
       reward: { type: 'item', item: 'tailwind', description: 'receive a Tailwind' },
     };
     grantChallengeReward(challenge);
-    expect(RunStateManager.getRun()!.inventory).toContain('tailwind');
+    expect(RunStateManager.getRun()!.passiveItems).toContain('tailwind');
   });
 
   it('does not crash when reward.goldAmount is undefined', () => {

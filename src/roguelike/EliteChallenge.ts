@@ -134,7 +134,7 @@ export function grantChallengeReward(challenge: EliteChallenge): void {
   if (reward.type === 'gold' && reward.goldAmount !== undefined) {
     RunStateManager.addGold(reward.goldAmount);
   } else if (reward.type === 'item' && reward.item !== undefined) {
-    RunStateManager.addToInventory(reward.item);
+    RunStateManager.addPassiveItem(reward.item);
   }
 }
 

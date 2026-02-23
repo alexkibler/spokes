@@ -449,7 +449,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.isRoguelike) {
       const run = RunStateManager.getRun();
-      if (run && run.inventory.includes('tailwind')) {
+      if (run && run.passiveItems.includes('tailwind')) {
         this.triggerEffect('tailwind');
       }
       this.runModifiers = RunStateManager.getModifiers();
@@ -550,10 +550,27 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Physics
-    const draftModifiers: RunModifiers = this.playerDraftFactor > 0
-      ? { ...this.runModifiers, dragReduction: Math.min(0.99, this.runModifiers.dragReduction + this.playerDraftFactor) }
-      : this.runModifiers;
-    const acceleration = calculateAcceleration(this.latestPower, this.smoothVelocityMs, this.physicsConfig, draftModifiers);
+    const equipStats = RunStateManager.getEffectiveEquipmentStats();
+
+    // Draft: effectiveCdA = baseCdA * (1 - draftFactor) => add = -base * draftFactor
+    const baseCdA = this.basePhysics.cdA;
+    const draftCdA_add = -baseCdA * this.playerDraftFactor;
+
+    // Legacy RunModifiers support (for old saves or non-equipment modifiers)
+    const runMods = this.runModifiers;
+    const legacyCdA_add = -baseCdA * (runMods.dragReduction ?? 0);
+    const legacyMass_add = this.basePhysics.massKg * ((runMods.weightMult ?? 1) - 1);
+    // crrMult applies to base crr. crr_add = baseCrr * (mult - 1)
+    const legacyCrr_add = this.basePhysics.crr * ((runMods.crrMult ?? 1) - 1);
+
+    const modifiers: import('../physics/CyclistPhysics').PhysicsModifiers = {
+      powerMult: (equipStats.powerMult ?? 1.0) * (runMods.powerMult ?? 1.0),
+      mass_add: (equipStats.mass_add ?? 0) + legacyMass_add,
+      cdA_add: (equipStats.cdA_add ?? 0) + draftCdA_add + legacyCdA_add,
+      crr_add: (equipStats.crr_add ?? 0) + legacyCrr_add,
+    };
+
+    const acceleration = calculateAcceleration(this.latestPower, this.smoothVelocityMs, this.physicsConfig, modifiers);
 
     this.smoothVelocityMs += acceleration * dt;
     if (this.smoothVelocityMs < 0) this.smoothVelocityMs = 0;
@@ -1270,7 +1287,7 @@ export class GameScene extends Phaser.Scene {
 
     const showOverlay = (headerStats?: RideStats) => {
       const run = RunStateManager.getRun();
-      const rerollCount = run?.inventory.filter(i => i === 'reroll_voucher').length ?? 0;
+      const rerollCount = run?.passiveItems.filter(i => i === 'reroll_voucher').length ?? 0;
       const picks = pickRewards(3);
 
       const overlay = new RewardOverlay(
@@ -1282,7 +1299,7 @@ export class GameScene extends Phaser.Scene {
           goToMap();
         },
         rerollCount > 0 ? () => {
-          RunStateManager.removeFromInventory('reroll_voucher');
+          RunStateManager.removePassiveItem('reroll_voucher');
           overlay.destroy();
           // On reroll, drop the stats header so focus stays on the new cards
           showOverlay();

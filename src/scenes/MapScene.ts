@@ -221,7 +221,7 @@ export class MapScene extends Phaser.Scene {
     this.goldText.setText(`GOLD: ${run.gold}`);
     this.goldText.setX(this.scale.width - 20);
 
-    const teleCount = run.inventory.filter(i => i === 'teleport').length;
+    const teleCount = run.passiveItems.filter(i => i === 'teleport').length;
     const teleX = this.scale.width - 90;
 
     if (teleCount > 0) {
@@ -807,7 +807,7 @@ export class MapScene extends Phaser.Scene {
 
     if (this.isTeleportMode) {
       if (run.visitedNodeIds.includes(node.id)) {
-        if (RunStateManager.removeFromInventory('teleport')) {
+        if (RunStateManager.removePassiveItem('teleport')) {
           RunStateManager.setCurrentNode(node.id);
           this.isTeleportMode = false;
           this.drawMap();

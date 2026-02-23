@@ -91,9 +91,14 @@ describe('RunStateManager.startNewRun', () => {
     expect(RunStateManager.getRun()?.units).toBe('metric');
   });
 
-  it('initialises empty inventory', () => {
+  it('initialises empty passiveItems', () => {
     RunStateManager.startNewRun(3, 10, 'normal');
-    expect(RunStateManager.getRun()?.inventory).toEqual([]);
+    expect(RunStateManager.getRun()?.passiveItems).toEqual([]);
+  });
+
+  it('initialises default equipment', () => {
+    RunStateManager.startNewRun(3, 10, 'normal');
+    expect(RunStateManager.getRun()?.equipment.head).toBe('foam_helmet');
   });
 
   it('initialises modifiers to neutral (1, 0, 1)', () => {
@@ -218,42 +223,42 @@ describe('RunStateManager.spendGold', () => {
   });
 });
 
-// ─── addToInventory / removeFromInventory ────────────────────────────────────
+// ─── addPassiveItem / removePassiveItem ────────────────────────────────────
 
-describe('RunStateManager inventory', () => {
+describe('RunStateManager passiveItems', () => {
   beforeEach(() => {
     localStorageMock.clear();
     RunStateManager.startNewRun(3, 10, 'normal');
   });
 
-  it('addToInventory appends an item', () => {
-    RunStateManager.addToInventory('tailwind');
-    expect(RunStateManager.getRun()?.inventory).toContain('tailwind');
+  it('addPassiveItem appends an item', () => {
+    RunStateManager.addPassiveItem('tailwind');
+    expect(RunStateManager.getRun()?.passiveItems).toContain('tailwind');
   });
 
-  it('addToInventory allows duplicate items', () => {
-    RunStateManager.addToInventory('energy_gel');
-    RunStateManager.addToInventory('energy_gel');
-    const inv = RunStateManager.getRun()?.inventory ?? [];
+  it('addPassiveItem allows duplicate items', () => {
+    RunStateManager.addPassiveItem('energy_gel');
+    RunStateManager.addPassiveItem('energy_gel');
+    const inv = RunStateManager.getRun()?.passiveItems ?? [];
     expect(inv.filter(i => i === 'energy_gel')).toHaveLength(2);
   });
 
-  it('removeFromInventory removes the first occurrence and returns true', () => {
-    RunStateManager.addToInventory('tailwind');
-    const result = RunStateManager.removeFromInventory('tailwind');
+  it('removePassiveItem removes the first occurrence and returns true', () => {
+    RunStateManager.addPassiveItem('tailwind');
+    const result = RunStateManager.removePassiveItem('tailwind');
     expect(result).toBe(true);
-    expect(RunStateManager.getRun()?.inventory).not.toContain('tailwind');
+    expect(RunStateManager.getRun()?.passiveItems).not.toContain('tailwind');
   });
 
-  it('removeFromInventory returns false for a missing item', () => {
-    expect(RunStateManager.removeFromInventory('nonexistent')).toBe(false);
+  it('removePassiveItem returns false for a missing item', () => {
+    expect(RunStateManager.removePassiveItem('nonexistent')).toBe(false);
   });
 
-  it('removeFromInventory removes only one occurrence when duplicates exist', () => {
-    RunStateManager.addToInventory('gel');
-    RunStateManager.addToInventory('gel');
-    RunStateManager.removeFromInventory('gel');
-    const inv = RunStateManager.getRun()?.inventory ?? [];
+  it('removePassiveItem removes only one occurrence when duplicates exist', () => {
+    RunStateManager.addPassiveItem('gel');
+    RunStateManager.addPassiveItem('gel');
+    RunStateManager.removePassiveItem('gel');
+    const inv = RunStateManager.getRun()?.passiveItems ?? [];
     expect(inv).toHaveLength(1);
     expect(inv[0]).toBe('gel');
   });
@@ -496,7 +501,7 @@ describe('RunStateManager.loadFromSave', () => {
     expect(RunStateManager.getRun()?.gold).toBe(77);
   });
 
-  it('restores inventory from saved data', () => {
+  it('restores passiveItems from saved data (migration)', () => {
     RunStateManager.loadFromSave({
       version: 1,
       savedAt: new Date().toISOString(),
@@ -514,9 +519,9 @@ describe('RunStateManager.loadFromSave', () => {
         ftpW: 200,
         weightKg: 68,
         units: 'imperial',
-      },
+      } as any,
     });
-    expect(RunStateManager.getRun()?.inventory).toEqual(['tailwind', 'gel']);
+    expect(RunStateManager.getRun()?.passiveItems).toEqual(['tailwind', 'gel']);
   });
 
   it('initialises activeEdge to null regardless of saved data', () => {

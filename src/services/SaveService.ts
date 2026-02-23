@@ -8,6 +8,7 @@
 
 import type { RunData, MapNode, MapEdge } from '../roguelike/RunState';
 import type { Units } from '../scenes/MenuScene';
+import type { EquipmentSlot } from '../roguelike/Equipment';
 
 const SAVE_KEY = 'paperPeloton_runSave';
 
@@ -21,13 +22,15 @@ const SAVE_KEY = 'paperPeloton_runSave';
  *
  * Version history:
  *   1 – initial schema
+ *   2 - slotted equipment system
  */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /** RunData fields that are safe to JSON-serialize (excludes fitWriter) */
 export interface SerializedRunData {
   gold: number;
-  inventory: string[];
+  equipment: Record<EquipmentSlot, string>;
+  passiveItems: string[];
   currentNodeId: string;
   visitedNodeIds: string[];
   activeEdge: null; // always null — never save mid-ride state
@@ -52,7 +55,8 @@ export class SaveService {
     try {
       const serialized: SerializedRunData = {
         gold: run.gold,
-        inventory: [...run.inventory],
+        equipment: { ...run.equipment },
+        passiveItems: [...run.passiveItems],
         currentNodeId: run.currentNodeId,
         visitedNodeIds: [...run.visitedNodeIds],
         activeEdge: null,

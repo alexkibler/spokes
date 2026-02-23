@@ -10,6 +10,7 @@ import type { EliteChallenge } from './EliteChallenge';
 import { FitWriter } from '../fit/FitWriter';
 import { SaveService } from '../services/SaveService';
 import type { Units } from '../scenes/MenuScene';
+import { EquipmentSlot, EquipmentStats, EQUIPMENT_DATABASE } from './Equipment';
 
 export type NodeType = 'start' | 'standard' | 'hard' | 'shop' | 'event' | 'elite' | 'finish';
 
@@ -54,7 +55,8 @@ export interface ModifierLogEntry {
 
 export interface RunData {
   gold: number;
-  inventory: string[];
+  equipment: Record<EquipmentSlot, string>;
+  passiveItems: string[];
   modifiers: RunModifiers;
   /** Session-only log of individual modifier applications, for the stats bar tooltip. */
   modifierLog: ModifierLogEntry[];
@@ -94,7 +96,17 @@ export class RunStateManager {
     SaveService.clear();
     this.instance = {
       gold: 0,
-      inventory: [],
+      equipment: {
+        head: 'foam_helmet',
+        body: 'basic_kit',
+        shoes: 'sneakers',
+        frame: 'steel_frame',
+        wheels: 'aluminum_box_wheels',
+        tires: 'slicks',
+        driveset: 'budget_3x7',
+        cockpit: 'drop_bars',
+      },
+      passiveItems: [],
       modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 },
       modifierLog: [],
       currentNodeId: '', // Set by map generator
@@ -117,12 +129,28 @@ export class RunStateManager {
   }
 
   static loadFromSave(saved: import('../services/SaveService').SavedRun): RunData {
+    // Migration helper: if save has inventory but no passiveItems/equipment
+    const anySaved = saved.runData as any;
+    const passiveItems = anySaved.passiveItems || anySaved.inventory || [];
+    const equipment = anySaved.equipment || {
+      head: 'foam_helmet',
+      body: 'basic_kit',
+      shoes: 'sneakers',
+      frame: 'steel_frame',
+      wheels: 'aluminum_box_wheels',
+      tires: 'slicks',
+      driveset: 'budget_3x7',
+      cockpit: 'drop_bars',
+    };
+
     this.instance = {
       modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 }, // default for old saves
       modifierLog: [], // session-only, not persisted
       stats: { totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
       pendingNodeAction: null, // default for old saves
       ...saved.runData,
+      equipment,
+      passiveItems,
       activeEdge: null,
       fitWriter: new FitWriter(Date.now()),
     };
@@ -143,11 +171,11 @@ export class RunStateManager {
     }
   }
 
-  static removeFromInventory(item: string): boolean {
+  static removePassiveItem(item: string): boolean {
     if (this.instance) {
-      const idx = this.instance.inventory.indexOf(item);
+      const idx = this.instance.passiveItems.indexOf(item);
       if (idx !== -1) {
-        this.instance.inventory.splice(idx, 1);
+        this.instance.passiveItems.splice(idx, 1);
         this.persist();
         return true;
       }
@@ -222,11 +250,45 @@ export class RunStateManager {
     return false;
   }
 
-  static addToInventory(item: string): void {
+  static addPassiveItem(item: string): void {
     if (this.instance) {
-      this.instance.inventory.push(item);
+      this.instance.passiveItems.push(item);
       this.persist();
     }
+  }
+
+  static equipItem(itemId: string): void {
+    if (!this.instance) return;
+    const item = EQUIPMENT_DATABASE[itemId];
+    if (!item) {
+      console.warn(`[RunStateManager] Unknown item ${itemId}`);
+      return;
+    }
+    this.instance.equipment[item.slot] = itemId;
+    this.persist();
+  }
+
+  static getEffectiveEquipmentStats(): EquipmentStats {
+    const stats: EquipmentStats = {
+      mass_add: 0,
+      cdA_add: 0,
+      crr_add: 0,
+      powerMult: 1.0,
+    };
+
+    if (!this.instance) return stats;
+
+    for (const slot of Object.keys(this.instance.equipment) as EquipmentSlot[]) {
+      const itemId = this.instance.equipment[slot];
+      const item = EQUIPMENT_DATABASE[itemId];
+      if (item && item.stats) {
+        if (item.stats.mass_add) stats.mass_add = (stats.mass_add ?? 0) + item.stats.mass_add;
+        if (item.stats.cdA_add) stats.cdA_add = (stats.cdA_add ?? 0) + item.stats.cdA_add;
+        if (item.stats.crr_add) stats.crr_add = (stats.crr_add ?? 0) + item.stats.crr_add;
+        if (item.stats.powerMult) stats.powerMult = (stats.powerMult ?? 1.0) * item.stats.powerMult;
+      }
+    }
+    return stats;
   }
 
   static getModifiers(): RunModifiers {
