@@ -269,22 +269,69 @@ function renderRide() {
                 </div>
             </div>
 
-            <button id="tailwind-btn" style="
-                background-color: ${COLORS.gold};
-                border: none;
-                padding: 15px;
-                width: 100%;
-                font-size: 16px;
-                font-weight: bold;
-                border-radius: 4px;
-                color: #2a2018;
-                box-shadow: 0 0 10px ${COLORS.gold}44;
-            ">ACTIVATE TAILWIND</button>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;">
+                <button id="pause-btn" style="
+                    background-color: ${COLORS.btnPrimary};
+                    border: 1px solid ${COLORS.textMuted};
+                    padding: 15px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    border-radius: 4px;
+                    color: ${COLORS.text};
+                ">PAUSE</button>
+                <button id="tailwind-btn" style="
+                    background-color: ${COLORS.gold};
+                    border: none;
+                    padding: 15px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    border-radius: 4px;
+                    color: #2a2018;
+                    box-shadow: 0 0 10px ${COLORS.gold}44;
+                ">TAILWIND</button>
+            </div>
+
+            <div class="dpad-grid">
+                <div></div>
+                <button id="up-btn" class="dpad-btn">▲</button>
+                <div></div>
+
+                <button id="left-btn" class="dpad-btn">◀</button>
+                <button id="ok-btn" class="dpad-btn" style="color:${COLORS.gold}; border-color:${COLORS.gold};">OK</button>
+                <button id="right-btn" class="dpad-btn">▶</button>
+
+                <div></div>
+                <button id="down-btn" class="dpad-btn">▼</button>
+                <div></div>
+            </div>
         </div>
     `;
+
+    document.getElementById('pause-btn')!.onclick = () => {
+        sendInput('action', { action: 'pause' });
+        if (navigator.vibrate) navigator.vibrate(20);
+    };
 
     document.getElementById('tailwind-btn')!.onclick = () => {
         sendInput('item', { itemId: 'tailwind' });
         if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+    };
+
+    const bind = (id: string, dir: string) => {
+        const btn = document.getElementById(id);
+        if (btn) {
+            btn.onclick = () => {
+                sendInput('dpad', { direction: dir });
+                if (navigator.vibrate) navigator.vibrate(10);
+            };
+        }
+    };
+    bind('up-btn', 'up');
+    bind('down-btn', 'down');
+    bind('left-btn', 'left');
+    bind('right-btn', 'right');
+    document.getElementById('ok-btn')!.onclick = () => {
+        sendInput('action', { action: 'select' });
+        if (navigator.vibrate) navigator.vibrate(20);
     };
 }

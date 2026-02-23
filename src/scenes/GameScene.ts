@@ -11,7 +11,7 @@ import type { ITrainerService, TrainerData } from '../services/ITrainerService';
 import { MockTrainerService } from '../services/MockTrainerService';
 import { HeartRateService } from '../services/HeartRateService';
 import type { HeartRateData } from '../services/HeartRateService';
-import { RemoteService } from '../services/RemoteService';
+import { RemoteService, type CursorDirection } from '../services/RemoteService';
 import { RunStateManager, type RunModifiers } from '../roguelike/RunState';
 import { evaluateChallenge, grantChallengeReward, type EliteChallenge } from '../roguelike/EliteChallenge';
 import type { RacerProfile } from '../race/RacerProfile';
@@ -236,6 +236,8 @@ export class GameScene extends Phaser.Scene {
   private btnMenu!: Button;
   private btnRemote!: Phaser.GameObjects.Text;
 
+  private activePauseOverlay: PauseOverlay | null = null;
+
   // Challenge status panel
   private challengePanel!: Phaser.GameObjects.Graphics;
   private challengePanelTitle!: Phaser.GameObjects.Text;
@@ -249,6 +251,9 @@ export class GameScene extends Phaser.Scene {
 
   private lastStateUpdateMs = 0;
   private onRemoteUseItemBound = this.onRemoteUseItem.bind(this);
+  private onRemotePauseBound = this.onRemotePause.bind(this);
+  private onRemoteCursorMoveBound = this.onRemoteCursorMove.bind(this);
+  private onRemoteCursorSelectBound = this.onRemoteCursorSelect.bind(this);
 
   constructor() {
     super({ key: 'GameScene' });
@@ -483,6 +488,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     RemoteService.getInstance().onUseItem(this.onRemoteUseItemBound);
+    RemoteService.getInstance().onPause(this.onRemotePauseBound);
+    RemoteService.getInstance().onCursorMove(this.onRemoteCursorMoveBound);
+    RemoteService.getInstance().onCursorSelect(this.onRemoteCursorSelectBound);
   }
 
   update(_time: number, delta: number): void {
@@ -1018,19 +1026,7 @@ export class GameScene extends Phaser.Scene {
       hoverColor: THEME.colors.buttons.primaryHover,
       textColor: '#ffffff',
       onClick: () => {
-        this.overlayVisible = true;
-        new PauseOverlay(this, {
-          onResume: () => { this.overlayVisible = false; },
-          onBackToMap: () => {
-            this.overlayVisible = false;
-            this.showRideEndOverlay(false);
-          },
-          onQuit: () => {
-            this.trainer.disconnect();
-            this.preConnectedHrm?.disconnect();
-            this.scene.start('MenuScene');
-          }
-        }, this.ftpW);
+        this.showPauseOverlay();
       },
     });
     this.btnMenu.setDepth(11);
@@ -1407,6 +1403,45 @@ export class GameScene extends Phaser.Scene {
     bg.on('pointerout',  () => bg.setFillStyle(this.isDevMode ? 0x224422 : 0x333333));
   }
 
+  private showPauseOverlay(): void {
+    if (this.activePauseOverlay) return;
+    this.overlayVisible = true;
+    this.activePauseOverlay = new PauseOverlay(this, {
+      onResume: () => {
+        this.overlayVisible = false;
+        this.activePauseOverlay = null;
+      },
+      onBackToMap: () => {
+        this.overlayVisible = false;
+        this.activePauseOverlay = null;
+        this.showRideEndOverlay(false);
+      },
+      onQuit: () => {
+        this.trainer.disconnect();
+        this.preConnectedHrm?.disconnect();
+        this.scene.start('MenuScene');
+      }
+    }, this.ftpW);
+  }
+
+  private onRemotePause(): void {
+    if (!this.activePauseOverlay) {
+      this.showPauseOverlay();
+    }
+  }
+
+  private onRemoteCursorMove(dir: CursorDirection): void {
+    if (this.activePauseOverlay) {
+      this.activePauseOverlay.handleCursorMove(dir);
+    }
+  }
+
+  private onRemoteCursorSelect(): void {
+    if (this.activePauseOverlay) {
+      this.activePauseOverlay.handleCursorSelect();
+    }
+  }
+
   private onRemoteUseItem(itemId: string): void {
     if (itemId === 'tailwind') {
       this.triggerEffect('tailwind');
@@ -1418,6 +1453,9 @@ export class GameScene extends Phaser.Scene {
     this.trainer?.disconnect();
     this.preConnectedHrm?.disconnect();
     RemoteService.getInstance().offUseItem(this.onRemoteUseItemBound);
+    RemoteService.getInstance().offPause(this.onRemotePauseBound);
+    RemoteService.getInstance().offCursorMove(this.onRemoteCursorMoveBound);
+    RemoteService.getInstance().offCursorSelect(this.onRemoteCursorSelectBound);
     // Cleanup UI components if they need it (Phaser usually handles children cleanup)
     this.hud?.destroy();
     this.elevGraph?.destroy();
