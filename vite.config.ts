@@ -17,9 +17,10 @@ export default defineConfig({
   server: {
     port: 3200,
     open: true,
+    allowedHosts: ['macmini.local', 'paperpeloton.com'],
     proxy: {
       '/socket.io': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:3201',
         ws: true,
       },
     },
