@@ -12,6 +12,7 @@ import { getRandomChallenge, generateEliteCourseProfile, type EliteChallenge } f
 import type { Units } from './MenuScene';
 import type { ITrainerService } from '../services/ITrainerService';
 import { HeartRateService } from '../services/HeartRateService';
+import { RemoteService } from '../services/RemoteService';
 import { createBossRacers, type RacerProfile } from '../race/RacerProfile';
 import { THEME } from '../theme';
 import { ShopOverlay } from './ui/ShopOverlay';
@@ -76,6 +77,10 @@ export class MapScene extends Phaser.Scene {
   private dragStartScrollY = 0;
   private overlayActive = false;
 
+  private focusedNodeId: string | null = null;
+  private onRemoteCursorMoveBound = this.onRemoteCursorMove.bind(this);
+  private onRemoteCursorSelectBound = this.onRemoteCursorSelect.bind(this);
+
   constructor() {
     super({ key: 'MapScene' });
   }
@@ -119,6 +124,17 @@ export class MapScene extends Phaser.Scene {
     this.graphics = this.add.graphics();
     this.mapContainer.add(this.graphics);
 
+    // Initialize focus
+    const run = RunStateManager.getRun();
+    if (run) {
+        if (run.currentNodeId) {
+            this.focusedNodeId = run.currentNodeId;
+        } else {
+            const start = run.nodes.find(n => n.type === 'start');
+            this.focusedNodeId = start ? start.id : (run.nodes[0]?.id ?? null);
+        }
+    }
+
     this.drawMap();
 
     this.add.text(this.scale.width / 2, 30, 'ROGUELIKE RUN', {
@@ -128,7 +144,6 @@ export class MapScene extends Phaser.Scene {
       fontStyle: 'bold',
     }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
 
-    const run = RunStateManager.getRun();
     this.goldText = this.add.text(this.scale.width - 20, 20, `GOLD: ${run?.gold ?? 0}`, {
       fontFamily: THEME.fonts.main, fontSize: '20px', color: THEME.colors.text.gold, fontStyle: 'bold',
     }).setOrigin(1, 0).setScrollFactor(0).setDepth(20);
@@ -147,6 +162,9 @@ export class MapScene extends Phaser.Scene {
     this.scrollToCurrentNode();
 
     this.checkPendingNodeAction();
+
+    RemoteService.getInstance().onCursorMove(this.onRemoteCursorMoveBound);
+    RemoteService.getInstance().onCursorSelect(this.onRemoteCursorSelectBound);
   }
 
   private setupScrolling(): void {
@@ -175,20 +193,25 @@ export class MapScene extends Phaser.Scene {
 
   private scrollToCurrentNode(): void {
     const run = RunStateManager.getRun();
-    const cam = this.cameras.main;
-    const vh = this.virtualHeight;
-    const sh = this.scale.height;
-    const maxScroll = Math.max(0, vh - sh);
-
     if (run?.currentNodeId) {
-      const node = run.nodes.find(n => n.id === run.currentNodeId);
-      if (node) {
-        const worldY = node.y * vh;
-        cam.scrollY = Phaser.Math.Clamp(worldY - sh / 2, 0, maxScroll);
-        return;
-      }
+        this.scrollToNode(run.currentNodeId);
+    } else {
+        const vh = this.virtualHeight;
+        const sh = this.scale.height;
+        this.cameras.main.scrollY = Math.max(0, vh - sh);
     }
-    cam.scrollY = maxScroll;
+  }
+
+  private scrollToNode(nodeId: string): void {
+      const run = RunStateManager.getRun();
+      const node = run?.nodes.find(n => n.id === nodeId);
+      if (node) {
+        const vh = this.virtualHeight;
+        const sh = this.scale.height;
+        const maxScroll = Math.max(0, vh - sh);
+        const worldY = node.y * vh;
+        this.cameras.main.scrollY = Phaser.Math.Clamp(worldY - sh / 2, 0, maxScroll);
+      }
   }
 
   private updateGoldUI(): void {
@@ -480,18 +503,19 @@ export class MapScene extends Phaser.Scene {
       const isReachable = this.isNodeReachable(node.id);
       const isCurrent = run.currentNodeId === node.id;
       const isCompleted = node.floor < (run.nodes.find(n => n.id === run.currentNodeId)?.floor ?? -1);
+      const isFocused = this.focusedNodeId === node.id;
 
       const circle = container.getAt(0) as Phaser.GameObjects.Arc;
       
       if (isCurrent) {
-        circle.setStrokeStyle(4, 0xffffff, 1);
+        circle.setStrokeStyle(isFocused ? 4 : 4, isFocused ? 0x00ff00 : 0xffffff, 1);
         circle.setScale(1.2);
         circle.setAlpha(1.0);
         circle.disableInteractive();
       } else if (isReachable) {
         const outlineColor = this.isTeleportMode ? 0xff88ff : 0xffd700;
-        circle.setStrokeStyle(3, outlineColor, 1);
-        circle.setScale(1.1);
+        circle.setStrokeStyle(isFocused ? 4 : 3, isFocused ? 0x00ff88 : outlineColor, 1);
+        circle.setScale(isFocused ? 1.3 : 1.1);
         circle.setAlpha(1.0);
         circle.setInteractive({ useHandCursor: true });
       } else if (isCompleted) {
@@ -499,11 +523,17 @@ export class MapScene extends Phaser.Scene {
         circle.setScale(0.9);
         circle.setAlpha(0.6);
         circle.disableInteractive();
+        if (isFocused) {
+            circle.setStrokeStyle(3, 0xaaaaaa, 0.8);
+        }
       } else {
         circle.setStrokeStyle(1, 0x000000, 0.3);
         circle.setScale(0.9);
         circle.setAlpha(0.5);
         circle.disableInteractive();
+        if (isFocused) {
+            circle.setStrokeStyle(3, 0xffaa00, 0.8);
+        }
       }
     });
   }
@@ -517,6 +547,83 @@ export class MapScene extends Phaser.Scene {
       const py = y1 + Math.sin(angle) * d;
       this.graphics.fillCircle(px, py, size / 2);
     }
+  }
+
+  private onRemoteCursorMove(direction: 'up' | 'down' | 'left' | 'right'): void {
+    if (this.overlayActive) return;
+    const run = RunStateManager.getRun();
+    if (!run || !this.focusedNodeId) return;
+
+    const current = run.nodes.find(n => n.id === this.focusedNodeId);
+    if (!current) return;
+
+    // Filter candidates
+    let candidates = run.nodes.filter(n => n.id !== current.id);
+
+    if (direction === 'up') {
+        candidates = candidates.filter(n => n.floor > current.floor);
+    } else if (direction === 'down') {
+        candidates = candidates.filter(n => n.floor < current.floor);
+    } else if (direction === 'left') {
+        candidates = candidates.filter(n => n.col < current.col);
+    } else if (direction === 'right') {
+        candidates = candidates.filter(n => n.col > current.col);
+    }
+
+    if (candidates.length === 0) return;
+
+    let closest = candidates[0];
+    let minDist = Number.MAX_VALUE;
+
+    candidates.forEach(n => {
+        const dx = n.x - current.x;
+        const dy = n.y - current.y;
+        let score = dx*dx + dy*dy;
+
+        // Bias towards same "lane" for vertical moves, same "floor" for horizontal
+        if (direction === 'left' || direction === 'right') {
+            score += Math.abs(n.floor - current.floor) * 0.5;
+        } else {
+            score += Math.abs(n.col - current.col) * 0.1;
+        }
+
+        if (score < minDist) {
+            minDist = score;
+            closest = n;
+        }
+    });
+
+    this.focusedNodeId = closest.id;
+    this.drawMap();
+    this.scrollToNode(this.focusedNodeId);
+  }
+
+  private onRemoteCursorSelect(): void {
+      if (this.overlayActive) return;
+      if (!this.focusedNodeId) return;
+      const run = RunStateManager.getRun();
+      const node = run?.nodes.find(n => n.id === this.focusedNodeId);
+      if (node) {
+        // Allow clicking even if not reachable? The original onNodeClick handles logic,
+        // but typically we only click reachable nodes.
+        // However, onNodeClick checks isDevMode etc.
+        // Let's call onNodeClick directly, but we should verify reachability if we want to simulate a click.
+        // Or just let onNodeClick decide.
+
+        // Wait, onNodeClick is:
+        // if (this.isTeleportMode) ...
+        // const connectingEdge = ...
+        // if (this.isDevMode ...)
+
+        // But the original CLICK handler `circle.on('pointerdown')` checked `isNodeReachable`.
+        if (this.isNodeReachable(node.id)) {
+             this.onNodeClick(node);
+        } else if (this.isDevMode) {
+             // In dev mode we can click anything if we want, but logic inside onNodeClick handles it?
+             // onNodeClick handles dev mode warp.
+             this.onNodeClick(node);
+        }
+      }
   }
 
   private buildStatsPanel(): void {
@@ -1115,5 +1222,8 @@ export class MapScene extends Phaser.Scene {
     this.edgeObjects.clear();
     if (this.statsContainer) this.statsContainer.destroy();
     if (this.tooltipContainer) this.tooltipContainer.destroy();
+
+    RemoteService.getInstance().offCursorMove(this.onRemoteCursorMoveBound);
+    RemoteService.getInstance().offCursorSelect(this.onRemoteCursorSelectBound);
   }
 }

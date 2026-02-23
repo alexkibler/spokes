@@ -12,10 +12,12 @@
  */
 
 import Phaser from 'phaser';
+import QRCode from 'qrcode';
 import { RunStateManager } from '../roguelike/RunState';
 import type { ITrainerService } from '../services/ITrainerService';
 import { TrainerService } from '../services/TrainerService';
 import { HeartRateService } from '../services/HeartRateService';
+import { RemoteService } from '../services/RemoteService';
 import { SaveService } from '../services/SaveService';
 import {
   KM_TO_MI,
@@ -820,6 +822,49 @@ export class MenuScene extends Phaser.Scene {
       }
     });
 
+
+    // ── Remote Control (Center) ──────────────────────────────────────────────
+
+    const btnRemote = this.add
+      .rectangle(295, 50, 80, 32, 0x4a4a5a)
+      .setInteractive({ useHandCursor: true });
+
+    const btnRemoteTxt = this.add.text(295, 50, 'REMOTE', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#ffffff',
+    }).setOrigin(0.5);
+
+    this.devicesSection.add([btnRemote, btnRemoteTxt]);
+
+    btnRemote.on('pointerover', () => {
+      const code = RemoteService.getInstance().getRoomCode();
+      if (!code) btnRemote.setFillStyle(0x5a5a6a);
+    });
+    btnRemote.on('pointerout', () => {
+      const code = RemoteService.getInstance().getRoomCode();
+      if (!code) btnRemote.setFillStyle(0x4a4a5a);
+    });
+    btnRemote.on('pointerdown', async () => {
+      const existingCode = RemoteService.getInstance().getRoomCode();
+      if (existingCode) {
+        this.showRemoteQR(existingCode);
+        return;
+      }
+
+      btnRemote.setFillStyle(0x6a6a7a);
+      btnRemoteTxt.setText('...');
+
+      try {
+        const roomCode = await RemoteService.getInstance().initHost();
+        btnRemoteTxt.setText(roomCode).setFontSize(14).setColor('#00ff88');
+        btnRemote.setFillStyle(0x222233).setStrokeStyle(1, 0x00ff88);
+        this.showRemoteQR(roomCode);
+      } catch (e) {
+        console.error('Remote init failed', e);
+        btnRemoteTxt.setText('ERR');
+        this.time.delayedCall(2000, () => btnRemoteTxt.setText('REMOTE'));
+      }
+    });
+
     // ── Heart Rate Monitor (right half) ────────────────────────────────────
 
     this.devicesSection.add(this.add.text(330, 11, 'HEART RATE', {
@@ -1252,6 +1297,68 @@ export class MenuScene extends Phaser.Scene {
     btn.on('pointerout',  () => btn.setFillStyle(colorNormal));
 
     return txt;
+  }
+
+  private async showRemoteQR(roomCode: string): Promise<void> {
+    const remoteUrl = `${window.location.protocol}//${window.location.host}/remote.html?code=${roomCode}`;
+    const CW = 960, CH = 540;
+    const QR_SIZE = 200;
+    const PANEL_W = 300, PANEL_H = 300;
+    const cx = CW / 2, cy = CH / 2;
+
+    // Backdrop
+    const backdrop = this.add.rectangle(cx, cy, CW, CH, 0x000000, 0.7)
+      .setDepth(100)
+      .setInteractive(); // blocks clicks through
+
+    // Panel
+    const panel = this.add.rectangle(cx, cy, PANEL_W, PANEL_H, 0x1a1a2a)
+      .setStrokeStyle(2, 0x00ff88)
+      .setDepth(101);
+
+    // Title
+    const title = this.add.text(cx, cy - PANEL_H / 2 + 20, 'SCAN TO CONNECT', {
+      fontFamily: 'monospace', fontSize: '12px', color: '#00ff88', letterSpacing: 2,
+    }).setOrigin(0.5, 0).setDepth(102);
+
+    // Code label
+    const codeLabel = this.add.text(cx, cy + PANEL_H / 2 - 20, `CODE: ${roomCode}`, {
+      fontFamily: 'monospace', fontSize: '14px', color: '#ffffff',
+    }).setOrigin(0.5, 1).setDepth(102);
+
+    // Close hint
+    const closeHint = this.add.text(cx + PANEL_W / 2 - 8, cy - PANEL_H / 2 + 8, '✕', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#aaaaaa',
+    }).setOrigin(1, 0).setDepth(102).setInteractive({ useHandCursor: true });
+
+    const destroy = () => {
+      backdrop.destroy(); panel.destroy(); title.destroy();
+      codeLabel.destroy(); closeHint.destroy(); qrImage?.destroy();
+    };
+
+    backdrop.on('pointerdown', destroy);
+    closeHint.on('pointerdown', destroy);
+
+    let qrImage: Phaser.GameObjects.Image | null = null;
+
+    try {
+      const dataUrl = await QRCode.toDataURL(remoteUrl, {
+        width: QR_SIZE, margin: 1,
+        color: { dark: '#000000', light: '#e8dcc8' },
+      });
+
+      const texKey = `qr_${roomCode}`;
+      if (this.textures.exists(texKey)) this.textures.remove(texKey);
+      this.textures.addBase64(texKey, dataUrl);
+
+      this.textures.once(`addtexture-${texKey}`, () => {
+        qrImage = this.add.image(cx, cy - 4, texKey)
+          .setDisplaySize(QR_SIZE, QR_SIZE)
+          .setDepth(102);
+      });
+    } catch (e) {
+      console.error('QR generation failed', e);
+    }
   }
 
   shutdown(): void {
