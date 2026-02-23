@@ -496,7 +496,7 @@ describe('RunStateManager.loadFromSave', () => {
         ftpW: 250,
         weightKg: 70,
         units: 'metric',
-      },
+      } as any,
     });
     expect(RunStateManager.getRun()?.gold).toBe(77);
   });
@@ -542,7 +542,7 @@ describe('RunStateManager.loadFromSave', () => {
         ftpW: 200,
         weightKg: 68,
         units: 'imperial',
-      },
+      } as any,
     });
     expect(RunStateManager.getRun()?.activeEdge).toBeNull();
   });
@@ -565,7 +565,7 @@ describe('RunStateManager.loadFromSave', () => {
         ftpW: 200,
         weightKg: 68,
         units: 'imperial',
-      },
+      } as any,
     });
     expect(RunStateManager.getRun()?.fitWriter).toBeDefined();
   });

@@ -70,34 +70,34 @@ describe('calculateAcceleration – modifiers', () => {
   const config = { ...DEFAULT_PHYSICS, grade: 0 };
 
   it('powerMult > 1 gives higher acceleration than no modifier', () => {
-    const noMod: PhysicsModifiers = { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 };
-    const boost: PhysicsModifiers = { powerMult: 2.0, dragReduction: 0.0, weightMult: 1.0 };
+    const noMod: PhysicsModifiers = { powerMult: 1.0, cdA_add: 0.0, mass_add: 0.0 };
+    const boost: PhysicsModifiers = { powerMult: 2.0, cdA_add: 0.0, mass_add: 0.0 };
     expect(calculateAcceleration(200, 5, config, boost))
       .toBeGreaterThan(calculateAcceleration(200, 5, config, noMod));
   });
 
-  it('dragReduction > 0 reduces aero losses and increases acceleration at speed', () => {
-    const noMod:    PhysicsModifiers = { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 };
-    const slippery: PhysicsModifiers = { powerMult: 1.0, dragReduction: 0.5, weightMult: 1.0 };
+  it('cdA_add < 0 reduces aero losses and increases acceleration at speed', () => {
+    const noMod:    PhysicsModifiers = { powerMult: 1.0, cdA_add: 0.0, mass_add: 0.0 };
+    const slippery: PhysicsModifiers = { powerMult: 1.0, cdA_add: -0.1, mass_add: 0.0 };
     expect(calculateAcceleration(0, 10, config, slippery))
       .toBeGreaterThan(calculateAcceleration(0, 10, config, noMod));
   });
 
-  it('weightMult < 1 reduces effective mass and improves acceleration', () => {
-    const noMod:   PhysicsModifiers = { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 };
-    const lighter: PhysicsModifiers = { powerMult: 1.0, dragReduction: 0.0, weightMult: 0.5 };
+  it('mass_add < 0 reduces effective mass and improves acceleration', () => {
+    const noMod:   PhysicsModifiers = { powerMult: 1.0, cdA_add: 0.0, mass_add: 0.0 };
+    const lighter: PhysicsModifiers = { powerMult: 1.0, cdA_add: 0.0, mass_add: -10.0 };
     expect(calculateAcceleration(200, 5, config, lighter))
       .toBeGreaterThan(calculateAcceleration(200, 5, config, noMod));
   });
 
   it('powerMult of 0 is equivalent to zero power input', () => {
-    const zeroMod: PhysicsModifiers = { powerMult: 0.0, dragReduction: 0.0, weightMult: 1.0 };
+    const zeroMod: PhysicsModifiers = { powerMult: 0.0, cdA_add: 0.0, mass_add: 0.0 };
     expect(calculateAcceleration(300, 5, config, zeroMod))
       .toBeCloseTo(calculateAcceleration(0, 5, config), 5);
   });
 
   it('neutral modifiers produce the same result as no modifiers', () => {
-    const neutral: PhysicsModifiers = { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0 };
+    const neutral: PhysicsModifiers = { powerMult: 1.0, cdA_add: 0.0, mass_add: 0.0 };
     expect(calculateAcceleration(200, 8, config, neutral))
       .toBeCloseTo(calculateAcceleration(200, 8, config), 10);
   });
