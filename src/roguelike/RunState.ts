@@ -10,6 +10,9 @@ import type { EliteChallenge } from './EliteChallenge';
 import { FitWriter } from '../fit/FitWriter';
 import { SaveService } from '../services/SaveService';
 import type { Units } from '../scenes/MenuScene';
+import { ITEM_REGISTRY, type EquipmentSlot } from './ItemRegistry';
+
+export type { EquipmentSlot };
 
 export type NodeType = 'start' | 'standard' | 'hard' | 'shop' | 'event' | 'elite' | 'finish';
 
@@ -54,7 +57,10 @@ export interface ModifierLogEntry {
 
 export interface RunData {
   gold: number;
+  /** Unequipped items. Consumables always live here; equipment items live here when not in a slot. */
   inventory: string[];
+  /** Equipment currently in each slot. Key = slot name, value = item id. */
+  equipped: Partial<Record<EquipmentSlot, string>>;
   modifiers: RunModifiers;
   /** Session-only log of individual modifier applications, for the stats bar tooltip. */
   modifierLog: ModifierLogEntry[];
@@ -95,6 +101,7 @@ export class RunStateManager {
     this.instance = {
       gold: 0,
       inventory: [],
+      equipped: {},
       modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 },
       modifierLog: [],
       currentNodeId: '', // Set by map generator
@@ -122,10 +129,19 @@ export class RunStateManager {
       modifierLog: [], // session-only, not persisted
       stats: { totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
       pendingNodeAction: null, // default for old saves
+      equipped: {},
       ...saved.runData,
       activeEdge: null,
       fitWriter: new FitWriter(Date.now()),
     };
+    // Re-apply modifiers from equipped items (modifiers are not persisted).
+    for (const itemId of Object.values(this.instance.equipped)) {
+      if (!itemId) continue;
+      const def = ITEM_REGISTRY[itemId];
+      if (def?.modifier) {
+        this.applyModifier(def.modifier, `${def.label} (equipped)`);
+      }
+    }
     return this.instance;
   }
 
@@ -247,6 +263,67 @@ export class RunStateManager {
     if (delta.crrMult !== undefined)      m.crrMult       = Math.max(0.01, m.crrMult * delta.crrMult);
     if (label) this.instance.modifierLog.push({ label, ...delta });
     this.persist();
+  }
+
+  /** Reverses a previously-applied modifier delta (used when unequipping). */
+  private static reverseModifier(delta: Partial<RunModifiers>): void {
+    if (!this.instance) return;
+    const m = this.instance.modifiers;
+    if (delta.powerMult    !== undefined) m.powerMult     = m.powerMult / delta.powerMult;
+    if (delta.dragReduction !== undefined) m.dragReduction = Math.max(0, m.dragReduction - delta.dragReduction);
+    if (delta.weightMult   !== undefined) m.weightMult    = m.weightMult / delta.weightMult;
+    if (delta.crrMult      !== undefined) m.crrMult       = m.crrMult / delta.crrMult;
+  }
+
+  /**
+   * Equips an item from inventory into its designated slot, applying its modifier.
+   * If the slot is already occupied, the existing item is unequipped first.
+   * Returns false if the item is not in inventory or not equippable.
+   */
+  static equipItem(itemId: string): boolean {
+    if (!this.instance) return false;
+    const def = ITEM_REGISTRY[itemId];
+    if (!def?.slot) return false;
+
+    const idx = this.instance.inventory.indexOf(itemId);
+    if (idx === -1) return false;
+
+    // Unequip whatever is currently in the slot (if anything).
+    if (this.instance.equipped[def.slot]) {
+      this.unequipItem(def.slot);
+    }
+
+    this.instance.inventory.splice(idx, 1);
+    this.instance.equipped[def.slot] = itemId;
+    if (def.modifier) {
+      this.applyModifier(def.modifier, `${def.label} (equipped)`);
+    }
+    this.persist();
+    return true;
+  }
+
+  /**
+   * Removes the item in the given slot, reverses its modifier, and returns it to inventory.
+   * Returns the item id, or undefined if the slot was empty.
+   */
+  static unequipItem(slot: EquipmentSlot): string | undefined {
+    if (!this.instance) return undefined;
+    const itemId = this.instance.equipped[slot];
+    if (!itemId) return undefined;
+
+    const def = ITEM_REGISTRY[itemId];
+    if (def?.modifier) {
+      this.reverseModifier(def.modifier);
+      // Remove the corresponding modifierLog entry.
+      const logLabel = `${def.label} (equipped)`;
+      const logIdx = this.instance.modifierLog.findIndex(e => e.label === logLabel);
+      if (logIdx !== -1) this.instance.modifierLog.splice(logIdx, 1);
+    }
+
+    delete this.instance.equipped[slot];
+    this.instance.inventory.push(itemId);
+    this.persist();
+    return itemId;
   }
 
   static recordSegmentStats(distanceM: number, recordCount: number, powerSum: number, cadenceSum: number): void {
