@@ -129,7 +129,6 @@ export class RunStateManager {
       modifierLog: [], // session-only, not persisted
       stats: { totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
       pendingNodeAction: null, // default for old saves
-      equipped: {},
       ...saved.runData,
       activeEdge: null,
       fitWriter: new FitWriter(Date.now()),

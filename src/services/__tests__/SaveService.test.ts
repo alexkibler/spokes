@@ -47,6 +47,7 @@ function makeRunData(overrides: Partial<RunData> = {}): RunData {
     ftpW: 220,
     weightKg: 72,
     units: 'metric',
+    equipped: {},
     fitWriter: new FitWriter(Date.now()),
     stats: { totalRiddenDistanceM: 5000, totalRecordCount: 300, totalPowerSum: 60000, totalCadenceSum: 27000 },
     ...overrides,
@@ -93,7 +94,7 @@ describe('SaveService.save', () => {
 
   it('stores the correct schema version', () => {
     SaveService.save(makeRunData(), 72, 'metric');
-    expect(SaveService.load()?.version).toBe(1);
+    expect(SaveService.load()?.version).toBe(2);
   });
 
   it('stores a savedAt ISO date string', () => {

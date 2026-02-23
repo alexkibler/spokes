@@ -475,11 +475,12 @@ describe('RunStateManager.loadFromSave', () => {
 
   it('restores gold from saved data', () => {
     RunStateManager.loadFromSave({
-      version: 1,
+      version: 2,
       savedAt: new Date().toISOString(),
       runData: {
         gold: 77,
         inventory: [],
+        equipped: {},
         currentNodeId: 'node-x',
         visitedNodeIds: ['node-x'],
         activeEdge: null,
@@ -498,11 +499,12 @@ describe('RunStateManager.loadFromSave', () => {
 
   it('restores inventory from saved data', () => {
     RunStateManager.loadFromSave({
-      version: 1,
+      version: 2,
       savedAt: new Date().toISOString(),
       runData: {
         gold: 0,
         inventory: ['tailwind', 'gel'],
+        equipped: {},
         currentNodeId: '',
         visitedNodeIds: [],
         activeEdge: null,
@@ -521,11 +523,12 @@ describe('RunStateManager.loadFromSave', () => {
 
   it('initialises activeEdge to null regardless of saved data', () => {
     RunStateManager.loadFromSave({
-      version: 1,
+      version: 2,
       savedAt: new Date().toISOString(),
       runData: {
         gold: 0,
         inventory: [],
+        equipped: {},
         currentNodeId: '',
         visitedNodeIds: [],
         activeEdge: null,
@@ -544,11 +547,12 @@ describe('RunStateManager.loadFromSave', () => {
 
   it('creates a fresh FitWriter (not null)', () => {
     RunStateManager.loadFromSave({
-      version: 1,
+      version: 2,
       savedAt: new Date().toISOString(),
       runData: {
         gold: 0,
         inventory: [],
+        equipped: {},
         currentNodeId: '',
         visitedNodeIds: [],
         activeEdge: null,
