@@ -18,6 +18,7 @@ import { THEME } from '../theme';
 import { ShopOverlay } from './ui/ShopOverlay';
 import { EventOverlay } from './ui/EventOverlay';
 import { EliteChallengeOverlay } from './ui/EliteChallengeOverlay';
+import { EquipmentOverlay } from './ui/EquipmentOverlay';
 
 const SURFACE_LABELS: Record<SurfaceType, string> = {
   asphalt: 'ASPHALT',
@@ -70,6 +71,8 @@ export class MapScene extends Phaser.Scene {
   private teleportTxt: Phaser.GameObjects.Text | null = null;
   private devToggleBg:  Phaser.GameObjects.Rectangle | null = null;
   private devToggleTxt: Phaser.GameObjects.Text | null = null;
+  private gearBtnBg:   Phaser.GameObjects.Rectangle | null = null;
+  private gearBtnTxt:  Phaser.GameObjects.Text | null = null;
 
   private static readonly FLOOR_SPACING = 80;
   private isDragging = false;
@@ -154,6 +157,7 @@ export class MapScene extends Phaser.Scene {
     this.setupScrolling();
 
     this.buildDevToggle();
+    this.buildGearButton();
 
     this.scale.on('resize', this.onResize, this);
 
@@ -1119,6 +1123,32 @@ export class MapScene extends Phaser.Scene {
       this.devToggleBg!.setFillStyle(this.isDevMode ? 0x336633 : 0x555555));
     this.devToggleBg.on('pointerout', () =>
       this.devToggleBg!.setFillStyle(this.isDevMode ? 0x224422 : 0x333333));
+  }
+
+  private buildGearButton(): void {
+    this.gearBtnBg?.destroy();
+    this.gearBtnTxt?.destroy();
+
+    // Position at top-left, below the dev-mode toggle.
+    this.gearBtnBg = this.add.rectangle(70, 52, 130, 26, THEME.colors.buttons.primary)
+      .setScrollFactor(0).setDepth(30)
+      .setInteractive({ useHandCursor: true });
+    this.gearBtnTxt = this.add.text(70, 52, '⚙ EQUIPMENT', {
+      fontFamily: THEME.fonts.main, fontSize: '11px', color: '#ccccff', fontStyle: 'bold',
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(31);
+
+    this.gearBtnBg.on('pointerover', () => this.gearBtnBg!.setFillStyle(THEME.colors.buttons.primaryHover));
+    this.gearBtnBg.on('pointerout',  () => this.gearBtnBg!.setFillStyle(THEME.colors.buttons.primary));
+    this.gearBtnBg.on('pointerdown', () => {
+      if (this.overlayActive) return;
+      this.overlayActive = true;
+      const overlay = new EquipmentOverlay(this, this.cameras.main.scrollY, () => {
+        this.overlayActive = false;
+        this.updateGoldUI();
+      });
+      // Ensure depth above the map (which is at depth 0-20ish).
+      overlay.setDepth(2100);
+    });
   }
 
   private showBossEncounterSplash(racer: RacerProfile, onProceed: () => void): void {

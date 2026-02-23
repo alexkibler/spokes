@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { THEME } from '../../theme';
 import type { RewardDefinition, RewardRarity } from '../../roguelike/RewardPool';
 import { RunStateManager } from '../../roguelike/RunState';
+import { ITEM_REGISTRY, SLOT_LABELS, formatModifierLines } from '../../roguelike/ItemRegistry';
 import { Button } from '../../ui/Button';
 import { msToKmh, msToMph } from '../../physics/CyclistPhysics';
 import type { RideStats } from './RideOverlay';
@@ -215,7 +216,18 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
 
       hitRect.on('pointerover', () => { cardFill.setFillStyle(0x26263a); });
       hitRect.on('pointerout',  () => { cardFill.setFillStyle(0x1a1a2c); });
-      hitRect.on('pointerdown', () => { onPick(reward); });
+      hitRect.on('pointerdown', () => {
+        if (reward.equipmentSlot) {
+          // Apply reward now (adds item to inventory), then let the player
+          // decide whether to equip it before leaving.  We pass a shell reward
+          // (no-op apply) to onPick so GameScene doesn't double-apply.
+          reward.apply();
+          const shell: typeof reward = { ...reward, apply: () => {} };
+          this.showEquipPrompt(reward.id, reward.label, reward.equipmentSlot, () => onPick(shell));
+        } else {
+          onPick(reward);
+        }
+      });
     });
 
     // ── Reroll ────────────────────────────────────────────────────────────────
@@ -237,5 +249,234 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
     }
 
     scene.add.existing(this);
+  }
+
+  // ── Equipment equip-now prompt ──────────────────────────────────────────────
+
+  /**
+   * Shows an inline "Equip now?" panel over the reward cards.
+   * onDone is called when the player finishes (equip or skip).
+   */
+  private showEquipPrompt(
+    itemId: string,
+    itemLabel: string,
+    slot: import('../../roguelike/ItemRegistry').EquipmentSlot,
+    onDone: () => void,
+  ): void {
+    const scene = this.scene;
+    const w = scene.scale.width;
+    const h = scene.scale.height;
+    const cx = w / 2;
+
+    const run = RunStateManager.getRun();
+    const occupantId = run?.equipped[slot];
+
+    const PROMPT_W = 340;
+    const PROMPT_H = occupantId ? 190 : 130;
+    const px = cx - PROMPT_W / 2;
+    const py = (h - PROMPT_H) / 2;
+
+    const layer: Phaser.GameObjects.GameObject[] = [];
+
+    // Block all input underneath the prompt.
+    const blocker = scene.add.graphics();
+    blocker.fillStyle(0x000000, 0.6);
+    blocker.fillRect(0, 0, w, h);
+    blocker.setInteractive(new Phaser.Geom.Rectangle(0, 0, w, h), Phaser.Geom.Rectangle.Contains);
+    this.add(blocker);
+    layer.push(blocker);
+
+    const panel = scene.add.graphics();
+    panel.fillStyle(0x0d0d1e, 1);
+    panel.fillRoundedRect(px, py, PROMPT_W, PROMPT_H, 10);
+    panel.lineStyle(2, 0x3a3a5a, 1);
+    panel.strokeRoundedRect(px, py, PROMPT_W, PROMPT_H, 10);
+    this.add(panel);
+    layer.push(panel);
+
+    const headerTxt = scene.add.text(cx, py + 18, `EQUIP ${itemLabel}?`, {
+      fontFamily: THEME.fonts.main, fontSize: '14px', color: THEME.colors.text.gold, fontStyle: 'bold',
+    }).setOrigin(0.5, 0);
+    this.add(headerTxt);
+    layer.push(headerTxt);
+
+    const slotLabel = SLOT_LABELS[slot];
+    if (occupantId) {
+      const occupantDef = ITEM_REGISTRY[occupantId];
+      const warnTxt = scene.add.text(cx, py + 46, [
+        `Slot: ${slotLabel}`,
+        `Currently equipped: ${occupantDef?.label ?? occupantId}`,
+        `This will be unequipped and returned to inventory.`,
+      ].join('\n'), {
+        fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ffaa44',
+        align: 'center', lineSpacing: 3,
+      }).setOrigin(0.5, 0);
+      this.add(warnTxt);
+      layer.push(warnTxt);
+    } else {
+      const slotTxt = scene.add.text(cx, py + 46, `Slot: ${slotLabel}  (empty)`, {
+        fontFamily: THEME.fonts.main, fontSize: '10px', color: '#aaaacc',
+      }).setOrigin(0.5, 0);
+      this.add(slotTxt);
+      layer.push(slotTxt);
+    }
+
+    const destroyLayer = () => {
+      for (const obj of layer) {
+        if (obj && (obj as Phaser.GameObjects.GameObject).active) {
+          (obj as Phaser.GameObjects.GameObject).destroy();
+        }
+      }
+    };
+
+    const doEquipAndDone = () => {
+      destroyLayer();
+      RunStateManager.equipItem(itemId);
+      onDone();
+    };
+
+    // "Equip now" button
+    const equipBtnY = py + PROMPT_H - 44;
+    const equipBg = scene.add.rectangle(cx - 72, equipBtnY, 130, 30, 0x1a4a1a)
+      .setInteractive({ useHandCursor: true });
+    const equipLbl = scene.add.text(cx - 72, equipBtnY, 'EQUIP NOW', {
+      fontFamily: THEME.fonts.main, fontSize: '11px', color: '#88ff88', fontStyle: 'bold',
+    }).setOrigin(0.5);
+    equipBg.on('pointerover', () => equipBg.setFillStyle(0x2a6a2a));
+    equipBg.on('pointerout',  () => equipBg.setFillStyle(0x1a4a1a));
+    equipBg.on('pointerdown', () => {
+      if (occupantId) {
+        // Show stat comparison before confirming swap.
+        destroyLayer();
+        this.showSwapWarning(itemId, slot, occupantId, onDone);
+      } else {
+        doEquipAndDone();
+      }
+    });
+    this.add(equipBg);
+    this.add(equipLbl);
+    layer.push(equipBg);
+    layer.push(equipLbl);
+
+    // "Skip" button
+    const skipBg = scene.add.rectangle(cx + 72, equipBtnY, 130, 30, 0x2a2a3a)
+      .setInteractive({ useHandCursor: true });
+    const skipLbl = scene.add.text(cx + 72, equipBtnY, 'EQUIP LATER', {
+      fontFamily: THEME.fonts.main, fontSize: '11px', color: '#aaaacc', fontStyle: 'bold',
+    }).setOrigin(0.5);
+    skipBg.on('pointerover', () => skipBg.setFillStyle(0x3a3a5a));
+    skipBg.on('pointerout',  () => skipBg.setFillStyle(0x2a2a3a));
+    skipBg.on('pointerdown', () => { destroyLayer(); onDone(); });
+    this.add(skipBg);
+    this.add(skipLbl);
+    layer.push(skipBg);
+    layer.push(skipLbl);
+  }
+
+  /**
+   * Swap-warning modal: shows what will be unequipped and what will be gained,
+   * then confirms the swap.
+   */
+  private showSwapWarning(
+    incomingId: string,
+    slot: import('../../roguelike/ItemRegistry').EquipmentSlot,
+    currentId: string,
+    onDone: () => void,
+  ): void {
+    const scene = this.scene;
+    const w = scene.scale.width;
+    const h = scene.scale.height;
+    const cx = w / 2;
+
+    const incomingDef = ITEM_REGISTRY[incomingId];
+    const currentDef  = ITEM_REGISTRY[currentId];
+
+    const MODAL_W = 360;
+    const MODAL_H = 220;
+    const mx = cx - MODAL_W / 2;
+    const my = (h - MODAL_H) / 2;
+
+    const modal: Phaser.GameObjects.GameObject[] = [];
+
+    const dim = scene.add.graphics();
+    dim.fillStyle(0x000000, 0.7);
+    dim.fillRect(0, 0, w, h);
+    dim.setInteractive(new Phaser.Geom.Rectangle(0, 0, w, h), Phaser.Geom.Rectangle.Contains);
+    this.add(dim);
+    modal.push(dim);
+
+    const mpanel = scene.add.graphics();
+    mpanel.fillStyle(0x0d0d1e, 1);
+    mpanel.fillRoundedRect(mx, my, MODAL_W, MODAL_H, 10);
+    mpanel.lineStyle(2, 0xcc6600, 1);
+    mpanel.strokeRoundedRect(mx, my, MODAL_W, MODAL_H, 10);
+    this.add(mpanel);
+    modal.push(mpanel);
+
+    const headerTxt = scene.add.text(cx, my + 18, `REPLACE ${SLOT_LABELS[slot]}?`, {
+      fontFamily: THEME.fonts.main, fontSize: '14px', color: '#ffaa44', fontStyle: 'bold',
+    }).setOrigin(0.5, 0);
+    this.add(headerTxt);
+    modal.push(headerTxt);
+
+    const curLines = currentDef?.modifier ? formatModifierLines(currentDef.modifier) : [];
+    const curBlock = [
+      `UNEQUIPPING: ${currentDef?.label ?? currentId}`,
+      ...curLines.map(l => `  − ${l}`),
+    ].join('\n');
+    const curTxt = scene.add.text(cx - 80, my + 50, curBlock, {
+      fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ff8888', lineSpacing: 3,
+    }).setOrigin(0, 0);
+    this.add(curTxt);
+    modal.push(curTxt);
+
+    const incLines = incomingDef?.modifier ? formatModifierLines(incomingDef.modifier) : [];
+    const incBlock = [
+      `EQUIPPING: ${incomingDef?.label ?? incomingId}`,
+      ...incLines.map(l => `  + ${l}`),
+    ].join('\n');
+    const incTxt = scene.add.text(cx - 80, my + 50 + 16 + curLines.length * 14, incBlock, {
+      fontFamily: THEME.fonts.main, fontSize: '10px', color: '#88ff88', lineSpacing: 3,
+    }).setOrigin(0, 0);
+    this.add(incTxt);
+    modal.push(incTxt);
+
+    const destroyModal = () => {
+      for (const obj of modal) {
+        if (obj && (obj as Phaser.GameObjects.GameObject).active) {
+          (obj as Phaser.GameObjects.GameObject).destroy();
+        }
+      }
+    };
+
+    const confirmBg = scene.add.rectangle(cx - 70, my + MODAL_H - 28, 130, 30, 0x1a4a1a)
+      .setInteractive({ useHandCursor: true });
+    const confirmLbl = scene.add.text(cx - 70, my + MODAL_H - 28, 'CONFIRM SWAP', {
+      fontFamily: THEME.fonts.main, fontSize: '10px', color: '#88ff88', fontStyle: 'bold',
+    }).setOrigin(0.5);
+    confirmBg.on('pointerover', () => confirmBg.setFillStyle(0x2a6a2a));
+    confirmBg.on('pointerout',  () => confirmBg.setFillStyle(0x1a4a1a));
+    confirmBg.on('pointerdown', () => {
+      destroyModal();
+      RunStateManager.equipItem(incomingId);
+      onDone();
+    });
+    this.add(confirmBg);
+    this.add(confirmLbl);
+    modal.push(confirmBg);
+    modal.push(confirmLbl);
+
+    const cancelBg = scene.add.rectangle(cx + 70, my + MODAL_H - 28, 100, 30, 0x3a2a2a)
+      .setInteractive({ useHandCursor: true });
+    const cancelLbl = scene.add.text(cx + 70, my + MODAL_H - 28, 'CANCEL', {
+      fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ff8888', fontStyle: 'bold',
+    }).setOrigin(0.5);
+    cancelBg.on('pointerover', () => cancelBg.setFillStyle(0x5a3a3a));
+    cancelBg.on('pointerout',  () => cancelBg.setFillStyle(0x3a2a2a));
+    cancelBg.on('pointerdown', () => { destroyModal(); onDone(); });
+    this.add(cancelBg);
+    this.add(cancelLbl);
+    modal.push(cancelBg);
+    modal.push(cancelLbl);
   }
 }

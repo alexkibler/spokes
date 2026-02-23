@@ -6,6 +6,7 @@
  */
 
 import { RunStateManager } from './RunState';
+import type { EquipmentSlot } from './ItemRegistry';
 
 export type RewardRarity = 'common' | 'uncommon' | 'rare';
 
@@ -14,6 +15,8 @@ export interface RewardDefinition {
   label: string;
   description: string;
   rarity: RewardRarity;
+  /** Set for equipment items — the slot this item occupies. */
+  equipmentSlot?: EquipmentSlot;
   /** Optional: return false to exclude this reward from the pool this run */
   available?: () => boolean;
   apply: () => void;
@@ -63,12 +66,10 @@ const POOL: RewardDefinition[] = [
   {
     id: 'dirt_tires',
     label: 'DIRT TIRES',
-    description: '-35% rolling resistance\n(all surfaces, stacks)',
+    description: '-35% rolling resistance\n(equip to activate)',
     rarity: 'uncommon',
-    apply: () => {
-      RunStateManager.addToInventory('dirt_tires');
-      RunStateManager.applyModifier({ crrMult: 0.65 }, 'DIRT TIRES');
-    },
+    equipmentSlot: 'tires',
+    apply: () => RunStateManager.addToInventory('dirt_tires'),
   },
 
   // ── Uncommon ──────────────────────────────────────────────────────────────
@@ -103,24 +104,20 @@ const POOL: RewardDefinition[] = [
   {
     id: 'aero_helmet',
     label: 'AERO HELMET',
-    description: '+3% drag reduction\n(adds to inventory)',
+    description: '+3% drag reduction\n(equip to activate)',
     rarity: 'uncommon',
-    apply: () => {
-      RunStateManager.addToInventory('aero_helmet');
-      RunStateManager.applyModifier({ dragReduction: 0.03 }, 'AERO HELMET');
-    },
+    equipmentSlot: 'helmet',
+    apply: () => RunStateManager.addToInventory('aero_helmet'),
   },
 
   // ── Rare ──────────────────────────────────────────────────────────────────
   {
     id: 'carbon_frame',
     label: 'CARBON FRAME',
-    description: '-12% rider weight\n+3% drag reduction\n(stacks)',
+    description: '-12% rider weight\n+3% drag reduction\n(equip to activate)',
     rarity: 'rare',
-    apply: () => {
-      RunStateManager.addToInventory('carbon_frame');
-      RunStateManager.applyModifier({ weightMult: 0.88, dragReduction: 0.03 }, 'CARBON FRAME');
-    },
+    equipmentSlot: 'frame',
+    apply: () => RunStateManager.addToInventory('carbon_frame'),
   },
   {
     id: 'power_12',
@@ -132,12 +129,10 @@ const POOL: RewardDefinition[] = [
   {
     id: 'antigrav_pedals',
     label: 'ANTIGRAV PEDALS',
-    description: '-8% rider weight\n(stacks)',
+    description: '-8% rider weight\n(equip to activate)',
     rarity: 'rare',
-    apply: () => {
-      RunStateManager.addToInventory('antigrav_pedals');
-      RunStateManager.applyModifier({ weightMult: 0.92 }, 'ANTIGRAV PEDALS');
-    },
+    equipmentSlot: 'pedals',
+    apply: () => RunStateManager.addToInventory('antigrav_pedals'),
   },
   {
     id: 'tailwind',

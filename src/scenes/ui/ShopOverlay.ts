@@ -73,11 +73,17 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
     // ── Build rows ──────────────────────────────────────────────────────────
     const btns: Button[] = [];
 
-    const itemPrice = (item: ShopItem): number => {
+    /** Total owned (inventory + equipped) for price scaling and sold-out checks. */
+    const totalOwned = (itemId: string): number => {
       const runData = RunStateManager.getRun();
-      if (!runData) return item.basePrice;
-      const count = runData.inventory.filter(i => i === item.id).length;
-      return Math.round(item.basePrice * Math.pow(1.5, count));
+      if (!runData) return 0;
+      const inInv = runData.inventory.filter(i => i === itemId).length;
+      const inSlot = Object.values(runData.equipped).filter(id => id === itemId).length;
+      return inInv + inSlot;
+    };
+
+    const itemPrice = (item: ShopItem): number => {
+      return Math.round(item.basePrice * Math.pow(1.5, totalOwned(item.id)));
     };
 
     const refreshShop = () => {
@@ -90,7 +96,7 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
         const item = CATALOG[i];
         const btn  = btns[i];
         const price = itemPrice(item);
-        const owned = runData.inventory.filter(i2 => i2 === item.id).length;
+        const owned = totalOwned(item.id);
         const soldOut = !item.stackable && owned > 0;
         const canAfford = runData.gold >= price;
 
@@ -125,33 +131,9 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
           const price = itemPrice(item);
           if (!RunStateManager.spendGold(price)) return;
 
-          switch (item.id) {
-            case 'tailwind':
-            case 'teleport':
-            case 'reroll_voucher':
-              RunStateManager.addToInventory(item.id);
-              break;
-            case 'aero_helmet':
-              RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ dragReduction: 0.03 }, 'AERO HELMET (shop)');
-              break;
-            case 'gold_crank':
-              RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ powerMult: 1.25 }, 'GOLD CRANK (shop)');
-              break;
-            case 'antigrav_pedals':
-              RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ weightMult: 0.92 }, 'ANTIGRAV PEDALS (shop)');
-              break;
-            case 'dirt_tires':
-              RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ crrMult: 0.65 }, 'DIRT TIRES (shop)');
-              break;
-            case 'carbon_frame':
-              RunStateManager.addToInventory(item.id);
-              RunStateManager.applyModifier({ weightMult: 0.88, dragReduction: 0.03 }, 'CARBON FRAME (shop)');
-              break;
-          }
+          // All items (equipment and consumable alike) go into inventory unequipped.
+          // Equipment items are activated via the Equipment overlay.
+          RunStateManager.addToInventory(item.id);
           refreshShop();
           this.onAction();
         }

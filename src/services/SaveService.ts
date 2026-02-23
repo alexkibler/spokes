@@ -6,7 +6,7 @@
  * fresh on load.
  */
 
-import type { RunData, MapNode, MapEdge } from '../roguelike/RunState';
+import type { RunData, MapNode, MapEdge, EquipmentSlot } from '../roguelike/RunState';
 import type { Units } from '../scenes/MenuScene';
 
 const SAVE_KEY = 'paperPeloton_runSave';
@@ -21,13 +21,15 @@ const SAVE_KEY = 'paperPeloton_runSave';
  *
  * Version history:
  *   1 – initial schema
+ *   2 – added equipped (Partial<Record<EquipmentSlot, string>>)
  */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /** RunData fields that are safe to JSON-serialize (excludes fitWriter) */
 export interface SerializedRunData {
   gold: number;
   inventory: string[];
+  equipped: Partial<Record<EquipmentSlot, string>>;
   currentNodeId: string;
   visitedNodeIds: string[];
   activeEdge: null; // always null — never save mid-ride state
@@ -53,6 +55,7 @@ export class SaveService {
       const serialized: SerializedRunData = {
         gold: run.gold,
         inventory: [...run.inventory],
+        equipped: { ...run.equipped },
         currentNodeId: run.currentNodeId,
         visitedNodeIds: [...run.visitedNodeIds],
         activeEdge: null,
