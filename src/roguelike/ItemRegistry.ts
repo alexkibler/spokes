@@ -16,19 +16,20 @@ export interface ItemDef {
   label: string;
   /** Undefined for consumables. */
   slot?: EquipmentSlot;
+  rarity?: 'common' | 'uncommon' | 'rare';
   /** The modifier applied to RunModifiers when this item is equipped. */
   modifier?: Partial<RunModifiers>;
 }
 
 export const ITEM_REGISTRY: Record<string, ItemDef> = {
-  tailwind:        { id: 'tailwind',        label: 'TAILWIND' },
-  teleport:        { id: 'teleport',        label: 'TELEPORT SCROLL' },
-  reroll_voucher:  { id: 'reroll_voucher',  label: 'REROLL VOUCHER' },
-  aero_helmet:     { id: 'aero_helmet',     label: 'AERO HELMET',      slot: 'helmet', modifier: { dragReduction: 0.03 } },
-  gold_crank:      { id: 'gold_crank',      label: 'SOLID GOLD CRANK', slot: 'cranks', modifier: { powerMult: 1.25 } },
-  antigrav_pedals: { id: 'antigrav_pedals', label: 'ANTIGRAV PEDALS',  slot: 'pedals', modifier: { weightMult: 0.92 } },
-  dirt_tires:      { id: 'dirt_tires',      label: 'DIRT TIRES',       slot: 'tires',  modifier: { crrMult: 0.65 } },
-  carbon_frame:    { id: 'carbon_frame',    label: 'CARBON FRAME',     slot: 'frame',  modifier: { weightMult: 0.88, dragReduction: 0.03 } },
+  tailwind:        { id: 'tailwind',        label: 'TAILWIND',         rarity: 'rare' },
+  teleport:        { id: 'teleport',        label: 'TELEPORT SCROLL',  rarity: 'common' },
+  reroll_voucher:  { id: 'reroll_voucher',  label: 'REROLL VOUCHER',   rarity: 'common' },
+  aero_helmet:     { id: 'aero_helmet',     label: 'AERO HELMET',      slot: 'helmet', rarity: 'uncommon', modifier: { dragReduction: 0.03 } },
+  gold_crank:      { id: 'gold_crank',      label: 'SOLID GOLD CRANK', slot: 'cranks', rarity: 'rare',     modifier: { powerMult: 1.25 } },
+  antigrav_pedals: { id: 'antigrav_pedals', label: 'ANTIGRAV PEDALS',  slot: 'pedals', rarity: 'rare',     modifier: { weightMult: 0.92 } },
+  dirt_tires:      { id: 'dirt_tires',      label: 'DIRT TIRES',       slot: 'tires',  rarity: 'common',   modifier: { crrMult: 0.65 } },
+  carbon_frame:    { id: 'carbon_frame',    label: 'CARBON FRAME',     slot: 'frame',  rarity: 'rare',     modifier: { weightMult: 0.88, dragReduction: 0.03 } },
 };
 
 export const SLOT_LABELS: Record<EquipmentSlot, string> = {

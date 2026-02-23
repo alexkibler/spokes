@@ -1018,7 +1018,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildRemoteButton(): void {
-    this.btnRemote = this.add.text(0, 0, '📱', { fontSize: '24px' })
+    this.btnRemote = this.add.text(0, 0, '📡', { fontSize: '24px' })
       .setInteractive({ useHandCursor: true })
       .setDepth(50); // High depth
 
@@ -1039,6 +1039,7 @@ export class GameScene extends Phaser.Scene {
 
   public setFtp(w: number): void {
     this.ftpW = w;
+    this.updateChallengePanel();
     if (this.trainer instanceof MockTrainerService) {
       this.trainer.setPower(w);
       this.setStatus('demo', `SIM ${w}W`);
