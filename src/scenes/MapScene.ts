@@ -10,9 +10,8 @@ import { RunStateManager, type MapNode, type MapEdge, type NodeType, type Modifi
 import { generateCourseProfile, invertCourseProfile, type SurfaceType, type CourseProfile } from '../course/CourseProfile';
 import { getRandomChallenge, generateEliteCourseProfile, type EliteChallenge } from '../roguelike/EliteChallenge';
 import type { Units } from './MenuScene';
-import type { ITrainerService } from '../services/ITrainerService';
-import { HeartRateService } from '../services/HeartRateService';
 import { RemoteService } from '../services/RemoteService';
+import { SessionService } from '../services/SessionService';
 import { createBossRacers, type RacerProfile } from '../race/RacerProfile';
 import { THEME } from '../theme';
 import { ShopOverlay } from './ui/ShopOverlay';
@@ -50,9 +49,6 @@ const NODE_DESCRIPTIONS: Record<NodeType, string> = {
 
 export class MapScene extends Phaser.Scene {
   private units: Units = 'imperial';
-  private weightKg = 75;
-  private trainer: ITrainerService | null = null;
-  private hrm: HeartRateService | null = null;
   private isDevMode = false;
 
   private ftpW = 200;
@@ -91,21 +87,10 @@ export class MapScene extends Phaser.Scene {
     super({ key: 'MapScene' });
   }
 
-  init(data: {
-    weightKg: number;
-    units: Units;
-    trainer: ITrainerService | null;
-    hrm: HeartRateService | null;
-    isDevMode?: boolean;
-    ftpW?: number;
-  }): void {
-    console.log('[MapScene] init data:', data);
-    this.weightKg = data.weightKg;
-    this.units = data.units;
-    this.trainer = data.trainer;
-    this.hrm = data.hrm;
+  init(): void {
+    this.units    = SessionService.units;
     this.isDevMode = RunStateManager.getDevMode();
-    this.ftpW = data.ftpW ?? RunStateManager.getRun()?.ftpW ?? 200;
+    this.ftpW = RunStateManager.getRun()?.ftpW ?? 200;
 
     const run = RunStateManager.getRun();
     if (run && run.nodes.length === 0) {
@@ -891,20 +876,13 @@ export class MapScene extends Phaser.Scene {
         this.showBossEncounterSplash(racers[4], () => {
           this.scene.start('GameScene', {
             course, isBackwards,
-            weightKg: this.weightKg, units: this.units,
-            trainer: this.trainer, hrm: this.hrm,
-            isRoguelike: true, isDevMode: this.isDevMode,
-            ftpW: this.ftpW, activeChallenge: null, racers,
+            isRoguelike: true, activeChallenge: null, racers,
           });
         });
       } else {
-        console.log('[MapScene] Starting GameScene. isDevMode:', this.isDevMode);
         this.scene.start('GameScene', {
           course, isBackwards,
-          weightKg: this.weightKg, units: this.units,
-          trainer: this.trainer, hrm: this.hrm,
-          isRoguelike: true, isDevMode: this.isDevMode,
-          ftpW: this.ftpW, activeChallenge: null,
+          isRoguelike: true, activeChallenge: null,
         });
       }
     }
@@ -984,13 +962,7 @@ export class MapScene extends Phaser.Scene {
     this.scene.start('GameScene', {
       course,
       isBackwards: false,
-      weightKg: this.weightKg,
-      units: this.units,
-      trainer: this.trainer,
-      hrm: this.hrm,
       isRoguelike: true,
-      isDevMode: this.isDevMode,
-      ftpW: this.ftpW,
       activeChallenge: challenge,
     });
   }

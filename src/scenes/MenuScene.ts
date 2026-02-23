@@ -20,6 +20,7 @@ import { TrainerService } from '../services/TrainerService';
 import { HeartRateService } from '../services/HeartRateService';
 import { RemoteService } from '../services/RemoteService';
 import { SaveService } from '../services/SaveService';
+import { SessionService } from '../services/SessionService';
 import {
   KM_TO_MI,
   MI_TO_KM,
@@ -140,8 +141,9 @@ export class MenuScene extends Phaser.Scene {
     // Refresh FTP from storage (it might have changed in the pause menu)
     this.ftpW = RunStateManager.getLastFtp();
 
-    // Reset device state each time the menu starts — the game scene disconnects
-    // both services on shutdown, so we start fresh.
+    // Disconnect any lingering BT devices from a previous run, then clear
+    // the session so the player starts fresh.
+    SessionService.disconnectAll();
     this.trainerService = null;
     this.hrmService     = null;
 
@@ -811,6 +813,7 @@ export class MenuScene extends Phaser.Scene {
         const svc = new TrainerService();
         await svc.connect();
         this.trainerService = svc;
+        SessionService.setTrainer(svc);
         this.trainerStatusDot.setFillStyle(0x00ff88);
         this.trainerStatusLabel.setText('CONNECTED').setColor('#00ff88');
         btnTrainer.setFillStyle(0x1a5a3a);
@@ -819,6 +822,7 @@ export class MenuScene extends Phaser.Scene {
         const msg = err?.message || JSON.stringify(err);
         console.error('[MenuScene] Trainer connection failed:', msg);
         this.trainerService = null;
+        SessionService.setTrainer(null);
         this.trainerStatusDot.setFillStyle(0xff4444);
         this.trainerStatusLabel.setText('FAILED').setColor('#ff4444');
         btnTrainer.setFillStyle(0x1a3a6b);
@@ -904,6 +908,7 @@ export class MenuScene extends Phaser.Scene {
         const svc = new HeartRateService();
         await svc.connect();
         this.hrmService = svc;
+        SessionService.setHrm(svc);
         this.hrmStatusDot.setFillStyle(0xff4488);
         this.hrmStatusLabel.setText('CONNECTED').setColor('#ff4488');
         btnHrm.setFillStyle(0x5a1a5a);
@@ -912,6 +917,7 @@ export class MenuScene extends Phaser.Scene {
         const msg = err?.message || JSON.stringify(err);
         console.error('[MenuScene] HRM connection failed:', msg);
         this.hrmService = null;
+        SessionService.setHrm(null);
         this.hrmStatusDot.setFillStyle(0xff4444);
         this.hrmStatusLabel.setText('FAILED').setColor('#ff4444');
         btnHrm.setFillStyle(0x3a1a5a);
@@ -1052,13 +1058,9 @@ export class MenuScene extends Phaser.Scene {
         return;
       }
       const run = RunStateManager.loadFromSave(saved);
-      this.scene.start('MapScene', {
-        weightKg: run.weightKg,
-        units:    run.units,
-        trainer:  this.trainerService,
-        hrm:      this.hrmService,
-        isDevMode: this.isDevMode,
-      });
+      SessionService.setUnits(run.units);
+      SessionService.setWeightKg(run.weightKg);
+      this.scene.start('MapScene');
     });
   }
 
@@ -1307,13 +1309,9 @@ export class MenuScene extends Phaser.Scene {
       this.weightKg,
       this.units,
     );
-    this.scene.start('MapScene', {
-      weightKg: this.weightKg,
-      units:    this.units,
-      trainer:  this.trainerService,
-      hrm:      this.hrmService,
-      isDevMode: this.isDevMode,
-    });
+    SessionService.setUnits(this.units);
+    SessionService.setWeightKg(this.weightKg);
+    this.scene.start('MapScene');
   }
 
   private doStartRun(): void {
@@ -1326,13 +1324,9 @@ export class MenuScene extends Phaser.Scene {
       this.weightKg,
       this.units,
     );
-    this.scene.start('MapScene', {
-      weightKg: this.weightKg,
-      units:    this.units,
-      trainer:  this.trainerService,
-      hrm:      this.hrmService,
-      isDevMode: this.isDevMode,
-    });
+    SessionService.setUnits(this.units);
+    SessionService.setWeightKg(this.weightKg);
+    this.scene.start('MapScene');
   }
 
   shutdown(): void {

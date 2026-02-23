@@ -9,9 +9,9 @@ import { FitWriter } from '../fit/FitWriter';
 import type { RideRecord } from '../fit/FitWriter';
 import type { ITrainerService, TrainerData } from '../services/ITrainerService';
 import { MockTrainerService } from '../services/MockTrainerService';
-import { HeartRateService } from '../services/HeartRateService';
 import type { HeartRateData } from '../services/HeartRateService';
 import { RemoteService, type CursorDirection } from '../services/RemoteService';
+import { SessionService } from '../services/SessionService';
 import { RunStateManager, type RunModifiers } from '../roguelike/RunState';
 import { evaluateChallenge, grantChallengeReward, type EliteChallenge } from '../roguelike/EliteChallenge';
 import type { RacerProfile } from '../race/RacerProfile';
@@ -214,11 +214,7 @@ export class GameScene extends Phaser.Scene {
   private layerNearGround!: Phaser.GameObjects.TileSprite;
   private roadLayers!: Record<SurfaceType, Phaser.GameObjects.TileSprite>;
 
-  private preConnectedTrainer: ITrainerService | null = null;
-  private preConnectedHrm: HeartRateService | null = null;
   private isRealTrainer = false;
-  /** Set before scene.start('MapScene') so shutdown() doesn't disconnect the trainer. */
-  private keepTrainerForNextScene = false;
 
   private fitWriter!: FitWriter;
   private rideStartTime = 0;
@@ -329,27 +325,19 @@ export class GameScene extends Phaser.Scene {
 
   init(data?: {
     course?: CourseProfile;
-    weightKg?: number;
-    units?: Units;
-    trainer?: ITrainerService | null;
-    hrm?: HeartRateService | null;
     isRoguelike?: boolean;
-    isDevMode?: boolean;
     isBackwards?: boolean;
-    ftpW?: number;
     activeChallenge?: EliteChallenge | null;
     racers?: RacerProfile[];
     racer?: RacerProfile | null;
   }): void {
     this.course = data?.course ?? DEFAULT_COURSE;
-    this.units  = data?.units  ?? 'imperial';
-    this.weightKg = data?.weightKg ?? 75;
-    this.preConnectedTrainer = data?.trainer ?? null;
-    this.preConnectedHrm     = data?.hrm     ?? null;
+    this.units    = SessionService.units;
+    this.weightKg = SessionService.weightKg;
     this.isRoguelike         = data?.isRoguelike ?? false;
     this.isDevMode           = RunStateManager.getDevMode();
     this.isBackwards         = data?.isBackwards ?? false;
-    this.ftpW                = data?.ftpW ?? 200;
+    this.ftpW                = RunStateManager.getRun()?.ftpW ?? 200;
     this.activeChallenge     = data?.activeChallenge ?? null;
     this.racerProfiles = data?.racers ?? (data?.racer ? [data.racer] : []);
 
@@ -454,14 +442,14 @@ export class GameScene extends Phaser.Scene {
     this.onResize();
 
     // ── Trainer ─────────────────────────────────────────────────────────────
-    // Safety check: Disconnect any lingering mock trainer from previous scene
-    // (e.g. from an Elite Challenge where dev mode was enabled) to prevent toggling.
-    if (this.preConnectedTrainer && this.preConnectedTrainer instanceof MockTrainerService) {
-      this.preConnectedTrainer.disconnect();
-    }
+    // SessionService holds whatever trainer was connected in MenuScene.
+    // Mock trainers from a previous scene are discarded here (e.g. dev-mode
+    // trainer from an Elite Challenge won't bleed into the next ride).
+    SessionService.disconnectMock();
+    const preConnectedTrainer = SessionService.trainer;
 
-    if (this.preConnectedTrainer && !(this.preConnectedTrainer instanceof MockTrainerService)) {
-      this.trainer = this.preConnectedTrainer;
+    if (preConnectedTrainer) {
+      this.trainer = preConnectedTrainer;
       this.trainer.onData((data) => this.handleData(data));
       this.isDemoMode = false;
       this.isRealTrainer = true;
@@ -483,8 +471,9 @@ export class GameScene extends Phaser.Scene {
       this.setStatus('demo', `SIM ${this.ftpW}W`);
     }
 
-    if (this.preConnectedHrm) {
-      this.preConnectedHrm.onData((data) => this.handleHrmData(data));
+    const preConnectedHrm = SessionService.hrm;
+    if (preConnectedHrm) {
+      preConnectedHrm.onData((data) => this.handleHrmData(data));
     }
 
     if (this.isRoguelike) {
@@ -1298,14 +1287,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    const mapData = {
-      weightKg: this.weightKg,
-      units: this.units,
-      trainer: this.trainer,
-      hrm: this.preConnectedHrm,
-      isDevMode: this.isDevMode,
-    };
-
     this.rideOverlay = new RideOverlay(
       this,
       stats,
@@ -1318,8 +1299,7 @@ export class GameScene extends Phaser.Scene {
         if (isFinishNode) {
           this.scene.start('VictoryScene');
         } else {
-          this.keepTrainerForNextScene = true;
-          this.scene.start('MapScene', mapData);
+          this.scene.start('MapScene');
         }
       },
       () => {
@@ -1333,17 +1313,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showRewardSelection(initialStats?: RideStats): void {
-    const mapData = {
-      weightKg: this.weightKg,
-      units: this.units,
-      trainer: this.trainer,
-      hrm: this.preConnectedHrm,
-      isDevMode: this.isDevMode,
-    };
-
     const goToMap = () => {
-      this.keepTrainerForNextScene = true;
-      this.scene.start('MapScene', mapData);
+      this.scene.start('MapScene');
     };
 
     const showOverlay = (headerStats?: RideStats) => {
@@ -1428,15 +1399,7 @@ export class GameScene extends Phaser.Scene {
         this.overlayVisible = false;
         this.activePauseOverlay = null;
         if (this.isRoguelike) {
-          this.keepTrainerForNextScene = true;
-          this.scene.start('MapScene', {
-            weightKg: this.weightKg,
-            units: this.units,
-            trainer: this.trainer,
-            hrm: this.preConnectedHrm,
-            isDevMode: this.isDevMode,
-            ftpW: this.ftpW,
-          });
+          this.scene.start('MapScene');
         } else {
           // Non-roguelike: no map to return to, go to menu
           this.scene.start('MenuScene');
@@ -1499,15 +1462,7 @@ export class GameScene extends Phaser.Scene {
     this.activePauseOverlay.destroy();
     this.activePauseOverlay = null;
     if (this.isRoguelike) {
-      this.keepTrainerForNextScene = true;
-      this.scene.start('MapScene', {
-        weightKg: this.weightKg,
-        units: this.units,
-        trainer: this.trainer,
-        hrm: this.preConnectedHrm,
-        isDevMode: this.isDevMode,
-        ftpW: this.ftpW,
-      });
+      this.scene.start('MapScene');
     } else {
       this.scene.start('MenuScene');
     }
@@ -1523,11 +1478,12 @@ export class GameScene extends Phaser.Scene {
 
   shutdown(): void {
     this.scale.off('resize', this.onResize, this);
-    if (!this.keepTrainerForNextScene) {
-      this.trainer?.disconnect();
-      this.preConnectedHrm?.disconnect();
+    // Only disconnect mock trainers — real BT trainers persist in SessionService
+    // across scenes and are cleaned up by MenuScene.create() when the player
+    // returns to the main menu.
+    if (this.trainer instanceof MockTrainerService) {
+      this.trainer.disconnect();
     }
-    this.keepTrainerForNextScene = false;
     RemoteService.getInstance().offUseItem(this.onRemoteUseItemBound);
     RemoteService.getInstance().offPause(this.onRemotePauseBound);
     RemoteService.getInstance().offCursorMove(this.onRemoteCursorMoveBound);
