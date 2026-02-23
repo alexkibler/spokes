@@ -14,15 +14,16 @@
 6. [Scene Flow & Data Passing](#6-scene-flow--data-passing)
 7. [The Physics Loop (GameScene.update)](#7-the-physics-loop-gamesceneupdate)
 8. [The Trainer Service Abstraction](#8-the-trainer-service-abstraction)
-9. [Course Profiles & Elevation](#9-course-profiles--elevation)
-10. [The Roguelike Map (MapScene)](#10-the-roguelike-map-mapscene)
-11. [Roguelike State (RunStateManager)](#11-roguelike-state-runstatemanager)
-12. [FIT File Export](#12-fit-file-export)
-13. [Units & Display Conventions](#13-units--display-conventions)
-14. [Dev Mode & Mock Mode](#14-dev-mode--mock-mode)
-15. [Testing](#15-testing)
-16. [Common Tasks & Where to Look](#16-common-tasks--where-to-look)
-17. [Gotchas & Things That Will Bite You](#17-gotchas--things-that-will-bite-you)
+9. [Mobile Remote Control](#9-mobile-remote-control)
+10. [Course Profiles & Elevation](#10-course-profiles--elevation)
+11. [The Roguelike Map (MapScene)](#11-the-roguelike-map-mapscene)
+12. [Roguelike State (RunStateManager)](#12-roguelike-state-runstatemanager)
+13. [FIT File Export](#13-fit-file-export)
+14. [Units & Display Conventions](#14-units--display-conventions)
+15. [Dev Mode & Mock Mode](#15-dev-mode--mock-mode)
+16. [Testing](#16-testing)
+17. [Common Tasks & Where to Look](#17-common-tasks--where-to-look)
+18. [Gotchas & Things That Will Bite You](#18-gotchas--things-that-will-bite-you)
 
 ---
 
@@ -52,6 +53,7 @@ TypeScript       — strict mode, ES2020
 Vite             — dev server + bundler
 Vitest           — unit tests
 Web Bluetooth    — FTMS trainer + heart rate monitor
+Node.js + Socket.io — Backend server for mobile remote control
 ```
 
 There is no React, no DOM manipulation beyond Phaser's own canvas, and no external physics engine. Everything visual is drawn with Phaser's built-in drawing primitives (Graphics, Text, TileSprite, etc.) onto a canvas element.
@@ -128,6 +130,8 @@ someGameObject.on('pointerdown', () => { ... });
 ```
 src/
 ├── main.ts                  # Phaser game config + scene registration
+├── remote/                  # Mobile remote client (remote.html logic)
+│   └── main.ts              # Socket.io client + Remote UI
 ├── scenes/
 │   ├── MenuScene.ts         # Form UI, BT pairing, mode selection
 │   ├── MapScene.ts          # Roguelike node map, shop
@@ -137,7 +141,8 @@ src/
 │   ├── ITrainerService.ts   # Interface (what scenes depend on)
 │   ├── TrainerService.ts    # Real FTMS BLE implementation
 │   ├── MockTrainerService.ts # Fake 200W emitter for offline use
-│   └── HeartRateService.ts  # Standard BLE heart rate monitor
+│   ├── HeartRateService.ts  # Standard BLE heart rate monitor
+│   └── RemoteService.ts     # Socket.io connection for remote control
 ├── physics/
 │   └── CyclistPhysics.ts    # Pure function: watts + velocity + config → acceleration
 ├── course/
@@ -148,6 +153,7 @@ src/
 │   └── FitWriter.ts         # Binary FIT encoder, no external deps
 └── utils/
     └── UnitConversions.ts   # Metric ↔ imperial helpers
+server.js                    # Node.js backend for socket.io + serving dist
 ```
 
 ---
@@ -360,7 +366,29 @@ The game loop sends grade to the trainer every frame; the trainer adjusts its ma
 
 ---
 
-## 9. Course Profiles & Elevation
+## 9. Mobile Remote Control
+
+The game supports a "Jackbox-style" mobile controller.
+
+### Architecture
+- **Backend (`server.js`)**: A Node.js Express + Socket.io server. Handles room creation (`HOST_CREATE_ROOM`) and input relaying.
+- **Frontend Game (`RemoteService.ts`)**: Connects as HOST. Displays a 4-letter room code.
+- **Mobile Web (`remote.html`)**: Connects as CLIENT. Sends D-Pad inputs and Item triggers.
+
+### Running in Development
+Because the remote feature requires a backend server, you must run two processes:
+
+1. **Frontend (Vite):** `npm run dev` (runs on port 3200)
+2. **Backend (Server):** `npm run server` (runs on port 3000)
+
+Access the game at `http://localhost:3200`.
+Access the remote at `http://localhost:3000/remote.html`.
+
+Vite proxies `/socket.io` requests to port 3000, so the game client can connect seamlessly during development.
+
+---
+
+## 10. Course Profiles & Elevation
 
 ### The data structure
 
@@ -417,7 +445,7 @@ The elevation is "balanced" — what goes up must come down, approximately.
 
 ---
 
-## 10. The Roguelike Map (MapScene)
+## 11. The Roguelike Map (MapScene)
 
 ### Structure
 
@@ -464,7 +492,7 @@ GameScene completes the ride, then returns to MapScene.
 
 ---
 
-## 11. Roguelike State (RunStateManager)
+## 12. Roguelike State (RunStateManager)
 
 A static singleton that holds all run state. Any scene can read/write it.
 
@@ -494,7 +522,7 @@ The `fitWriter` is shared across all edges of a run so the exported FIT file is 
 
 ---
 
-## 12. FIT File Export
+## 13. FIT File Export
 
 The `FitWriter` class encodes a Garmin-compatible binary `.fit` file from scratch — no external library.
 
@@ -523,7 +551,7 @@ FIT is a binary format with a custom header, message definitions, and a CRC. The
 
 ---
 
-## 13. Units & Display Conventions
+## 14. Units & Display Conventions
 
 **Golden rule:** All internal calculations use SI (metric) units. Convert only for display.
 
@@ -546,7 +574,7 @@ The `units` preference is a `'imperial' | 'metric'` string threaded through scen
 
 ---
 
-## 14. Dev Mode & Mock Mode
+## 15. Dev Mode & Mock Mode
 
 ### Mock Mode (offline simulation)
 - Available in all builds
@@ -578,7 +606,7 @@ The `false` on line 147 of `GameScene.ts` that was selected when you started thi
 
 ---
 
-## 15. Testing
+## 16. Testing
 
 All tests use **Vitest** (same API as Jest).
 
@@ -601,7 +629,7 @@ Nothing about Phaser rendering is unit-tested (that's typical — visual output 
 
 ---
 
-## 16. Common Tasks & Where to Look
+## 17. Common Tasks & Where to Look
 
 ### Change how the course is generated
 → `src/course/CourseProfile.ts` → `generateCourseProfile()`
@@ -631,7 +659,7 @@ Nothing about Phaser rendering is unit-tested (that's typical — visual output 
 
 ---
 
-## 17. Gotchas & Things That Will Bite You
+## 18. Gotchas & Things That Will Bite You
 
 ### delta is in milliseconds, not seconds
 ```typescript
