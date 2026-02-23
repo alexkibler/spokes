@@ -20,7 +20,7 @@ export default defineConfig({
     allowedHosts: ['macmini.local', 'paperpeloton.com'],
     proxy: {
       '/socket.io': {
-        target: 'http://localhost:3201',
+        target: 'http://localhost:3000',
         ws: true,
       },
     },
