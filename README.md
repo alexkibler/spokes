@@ -76,6 +76,162 @@ MenuScene → MapScene → GameScene → VictoryScene
 
 ---
 
+## Game Mechanics
+
+### The Roguelike Map
+
+Each run generates a **directed acyclic graph (DAG)** of nodes across a configurable number of floors (run length). 3–4 paths branch from the start node and reconnect at a single finish node. The player navigates by clicking any node connected to their current position.
+
+**Node types:**
+
+| Icon | Type | What happens |
+|------|------|-------------|
+| `S` | **Start** | Where the run begins |
+| `·` | **Standard** | A regular ride segment; rewards on first clear |
+| `!` | **Hard** | A steeper ride segment with tougher grades |
+| `$` | **Shop** | Open the Trail Shop; spend gold on items |
+| `?` | **Event** | A gamble: attempt it for a chance at an equipment item, or leave |
+| `★` | **Elite** | A special challenge ride with a specific performance condition |
+| `F` | **Finish** | The boss encounter; a 5-mile ride against a peloton of ghost racers |
+
+The **edge** between two nodes carries a procedurally generated `CourseProfile`. Boss edges are always 5 miles; standard edges are 1–2 km. Node type weights shift as the run progresses: elite nodes become more likely on later floors, hard nodes replace standard nodes as the map deepens.
+
+---
+
+### Riding & Physics
+
+The game simulates road cycling using real physics equations. Each game tick:
+
+1. Power from the trainer (or mock service) is read in watts.
+2. `calculateAcceleration()` computes net force: **propulsion minus aerodynamic drag, rolling resistance, and gravitational grade force**.
+3. Velocity updates via `v += a × dt`, clamped to zero.
+4. Distance accumulates each tick.
+5. The current grade is sent back to the trainer via FTMS (`0x2AD9`) for resistance feedback.
+
+**Physics formula:**
+
+```
+P = (½ρCdA·v² + Crr·m·g·cosθ + m·g·sinθ) × v
+```
+
+Parameters at baseline: 83 kg system mass (75 kg rider + 8 kg bike), CdA 0.325, Crr 0.005, sea-level air density.
+
+**Surface types** affect rolling resistance (Crr):
+
+| Surface | Crr | Relative resistance |
+|---------|-----|---------------------|
+| Asphalt | 0.005 | 1× (baseline) |
+| Gravel | 0.012 | ~2.4× |
+| Dirt | 0.020 | ~4× |
+| Mud | 0.040 | ~8× |
+
+---
+
+### Run Modifiers
+
+Every item, reward, and upgrade the player picks up changes one or more **run modifiers** that are applied multiplicatively or additively every physics tick:
+
+| Modifier | Stacking | Effect |
+|----------|----------|--------|
+| `powerMult` | Multiplicative | Scales raw watt output |
+| `dragReduction` | Additive (cap 0.99) | Reduces effective CdA |
+| `weightMult` | Multiplicative (floor 0.01) | Scales system mass |
+| `crrMult` | Multiplicative (floor 0.01) | Scales rolling resistance |
+
+The **stats bar** at the top of the MapScene shows chips for any non-baseline modifier; hovering a chip shows a per-source breakdown of everything stacking into that value.
+
+---
+
+### Rewards (Post-Ride)
+
+After completing any edge for the **first time** in roguelike mode, a **Hades-style 3-card reward screen** appears. The player picks one of three offers drawn from a weighted pool:
+
+| Rarity | Weight | Examples |
+|--------|--------|---------|
+| Common (60%) | · | +4% power, +2% aero, −3% weight, 20 gold, Teleport Scroll |
+| Uncommon (30%) | · | +7% power, +3% aero, −6% weight, 40 gold, Aero Helmet |
+| Rare (10%) | · | +12% power, Carbon Frame, Anti-Grav Pedals, Tailwind, 75 gold |
+
+If the player holds a **Reroll Voucher**, a reroll button appears; using it consumes one voucher and draws a new set of three.
+
+Re-riding a cleared edge grants no reward.
+
+---
+
+### Equipment
+
+Equipment items occupy a named **slot** (helmet, frame, cranks, pedals, tires). Only one item can be in each slot at a time — equipping a second item into an occupied slot automatically unequips the first, reversing its modifier.
+
+| Item | Slot | Effect |
+|------|------|--------|
+| Aero Helmet | Helmet | −3% drag |
+| Carbon Frame | Frame | −12% weight, −3% drag |
+| Solid Gold Crank | Cranks | ×1.25 power |
+| Anti-Grav Pedals | Pedals | −8% weight |
+| Dirt Tires | Tires | −35% rolling resistance |
+
+Equipment is managed via the **Equipment panel** (accessible from the pause screen or MapScene HUD).
+
+---
+
+### Gold & the Shop
+
+Gold is the run's currency. It is earned by completing elite challenges and through rewards. Shop nodes open the **Trail Shop**, where gold buys consumables and equipment:
+
+| Item | Base price | Notes |
+|------|-----------|-------|
+| Tailwind | 100g | One per run; toggles 2× power during a ride |
+| Teleport Scroll | 10g | Warp to any previously visited node |
+| Reroll Voucher | 50g | Reroll reward card choices; stackable |
+| Aero Helmet | 60g | Equipment; stacks with reward copies |
+| Solid Gold Crank | 120g | Equipment; buying duplicates stacks power |
+| Anti-Grav Pedals | 90g | Equipment |
+| Dirt Tires | 70g | Equipment |
+| Carbon Frame | 150g | Equipment |
+
+Repeated purchases of the same equipment item scale in price with quantity owned.
+
+---
+
+### Elite Challenges
+
+Elite nodes present a performance condition before the ride starts. Meet the condition to earn the bonus reward; fail it and you complete the ride normally but receive nothing extra.
+
+| Challenge | Condition | Reward |
+|-----------|-----------|--------|
+| Threshold Push | Average power ≥ 110% FTP | 60 gold |
+| Sprint Finish | Peak power ≥ 150% FTP at any point | Tailwind item |
+| Clean Ascent | Never come to a full stop | 40 gold |
+| Time Trial Effort | Finish in under 3 minutes | 80 gold |
+| Red Zone Ramp | Average power ≥ 120% FTP | 100 gold |
+
+Each challenge has a **custom course** designed to reward the target behavior (e.g., a sustained climb for Threshold Push; a short flat with a steep sprint kick for Sprint Finish).
+
+---
+
+### Event Nodes
+
+Event nodes present a **gamble**: the game offers an equipment item and shows a success percentage based on rarity (common items succeed more often than rare ones). The player can attempt it or leave. Success adds the item to inventory; failure gives nothing. Later floors offer rarer items.
+
+---
+
+### Boss Encounter
+
+The finish node triggers a 5-mile race against **LE FANTÔME** — a peloton of 10 ghost racers whose power ranges from 1.75× to 2.25× the player's FTP. Each ghost is simulated independently using the same physics engine as the player (constant power, no run modifiers). Ghost positions are shown relative to the player:
+
+- Ghost **behind** the player: player is winning that head-to-head.
+- Ghost **ahead** of the player: that ghost has beaten you.
+
+A race gap panel in the top-right corner shows the nearest ghost's name and distance gap in metres.
+
+---
+
+### FIT File Export
+
+Every ride is recorded to a binary **Garmin FIT file** using `FitWriter`, capturing power, speed, cadence, heart rate, and elevation at 1-second intervals. At VictoryScene, the file can be downloaded and uploaded to Strava, Garmin Connect, or similar platforms. FIT export is only offered for runs involving a real Bluetooth trainer (not mock simulation).
+
+---
+
 ## Project structure
 
 ```
