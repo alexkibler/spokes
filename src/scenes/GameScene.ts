@@ -443,6 +443,12 @@ export class GameScene extends Phaser.Scene {
     this.onResize();
 
     // ── Trainer ─────────────────────────────────────────────────────────────
+    // Safety check: Disconnect any lingering mock trainer from previous scene
+    // (e.g. from an Elite Challenge where dev mode was enabled) to prevent toggling.
+    if (this.preConnectedTrainer && this.preConnectedTrainer instanceof MockTrainerService) {
+      this.preConnectedTrainer.disconnect();
+    }
+
     if (this.preConnectedTrainer && !(this.preConnectedTrainer instanceof MockTrainerService)) {
       this.trainer = this.preConnectedTrainer;
       this.trainer.onData((data) => this.handleData(data));
