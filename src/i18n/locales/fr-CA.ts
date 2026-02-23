@@ -103,41 +103,6 @@ export const frCA = {
       cancel: 'ANNULER'
     },
 
-    reward: {
-      title: 'CHOISISSEZ VOTRE RÉCOMPENSE',
-      subtitle: 'Sélectionnez-en une à garder',
-      ride_complete: 'COURSE TERMINÉE',
-      challenge_complete: '★ DÉFI TERMINÉ — {{reward}}',
-      challenge_failed: '✗ DÉFI ÉCHOUÉ',
-      reroll: 'RELANCER  ({{count}} restants)',
-      equip_now: 'ÉQUIPER MAINTENANT',
-      equip_later: 'ÉQUIPER PLUS TARD',
-      equip_prompt: 'ÉQUIPER {{item}} ?',
-      slot_label: 'Emplacement : {{slot}}',
-      slot_empty: 'Emplacement : {{slot}}  (vide)',
-      currently_equipped: 'Actuellement équipé : {{item}}',
-      unequip_warning: 'Ceci sera déséquipé et renvoyé dans l\'inventaire.',
-
-      pool: {
-        power_boost: { label: 'BOOST PUISSANCE', desc: '+4% puissance permanente\n(cumulable)' },
-        aero_tweak: { label: 'AJUSTEMENT AÉRO', desc: '+2% réduction traînée\n(cumulable)' },
-        lighter_load: { label: 'CHARGE ALLÉGÉE', desc: '-3% poids cycliste\n(cumulable)' },
-        coin_cache: { label: 'CACHE DE PIÈCES', desc: '+20 or' },
-        teleport: { desc: 'Se téléporter à un nœud visité' },
-        dirt_tires: { desc: '-35% résistance roulement\n(équiper pour activer)' },
-        power_surge: { label: 'SURTENSION', desc: '+7% puissance permanente\n(cumulable)' },
-        aero_upgrade: { label: 'AMÉLIORATION AÉRO', desc: '+3% réduction traînée\n(cumulable)' },
-        weight_shed: { label: 'PERTE DE POIDS', desc: '-6% poids cycliste\n(cumulable)' },
-        gold_cache: { label: 'CACHE D\'OR', desc: '+40 or' },
-        aero_helmet: { desc: '+3% réduction traînée\n(équiper pour activer)' },
-        carbon_frame: { desc: '-12% poids cycliste\n+3% réduction traînée\n(équiper pour activer)' },
-        overdrive: { label: 'OVERDRIVE', desc: '+12% puissance permanente\n(cumulable)' },
-        antigrav_pedals: { desc: '-8% poids cycliste\n(équiper pour activer)' },
-        tailwind: { desc: '2× puissance\npendant la prochaine course' },
-        treasure_trove: { label: 'TRÉSOR', desc: '+75 or' }
-      }
-    },
-
     event: {
       title: 'CACHE MYSTÉRIEUSE',
       description: 'Vous apercevez une caisse usée cachée dans les broussailles. À l\'intérieur, vous entrevoyez... {{item}}.\n\nCela semble risqué à récupérer.',
@@ -149,6 +114,41 @@ export const frCA = {
       failure_msg_gold: 'La caisse était piégée ! Vous avez perdu {{amount}} or en vous échappant.',
       failure_msg_injury: 'La caisse s\'est effondrée sur vous ! Vous avez subi une blessure mineure (-5% Puissance).',
       continue: 'CONTINUER'
+    }
+  },
+
+  reward: {
+    title: 'CHOISISSEZ VOTRE RÉCOMPENSE',
+    subtitle: 'Sélectionnez-en une à garder',
+    ride_complete: 'COURSE TERMINÉE',
+    challenge_complete: '★ DÉFI TERMINÉ — {{reward}}',
+    challenge_failed: '✗ DÉFI ÉCHOUÉ',
+    reroll: 'RELANCER  ({{count}} restants)',
+    equip_now: 'ÉQUIPER MAINTENANT',
+    equip_later: 'ÉQUIPER PLUS TARD',
+    equip_prompt: 'ÉQUIPER {{item}} ?',
+    slot_label: 'Emplacement : {{slot}}',
+    slot_empty: 'Emplacement : {{slot}}  (vide)',
+    currently_equipped: 'Actuellement équipé : {{item}}',
+    unequip_warning: 'Ceci sera déséquipé et renvoyé dans l\'inventaire.',
+
+    pool: {
+      power_boost: { label: 'BOOST PUISSANCE', desc: '+4% puissance permanente\n(cumulable)' },
+      aero_tweak: { label: 'AJUSTEMENT AÉRO', desc: '+2% réduction traînée\n(cumulable)' },
+      lighter_load: { label: 'CHARGE ALLÉGÉE', desc: '-3% poids cycliste\n(cumulable)' },
+      coin_cache: { label: 'CACHE DE PIÈCES', desc: '+20 or' },
+      teleport: { desc: 'Se téléporter à un nœud visité' },
+      dirt_tires: { desc: '-35% résistance roulement\n(équiper pour activer)' },
+      power_surge: { label: 'SURTENSION', desc: '+7% puissance permanente\n(cumulable)' },
+      aero_upgrade: { label: 'AMÉLIORATION AÉRO', desc: '+3% réduction traînée\n(cumulable)' },
+      weight_shed: { label: 'PERTE DE POIDS', desc: '-6% poids cycliste\n(cumulable)' },
+      gold_cache: { label: 'CACHE D\'OR', desc: '+40 or' },
+      aero_helmet: { desc: '+3% réduction traînée\n(équiper pour activer)' },
+      carbon_frame: { desc: '-12% poids cycliste\n+3% réduction traînée\n(équiper pour activer)' },
+      overdrive: { label: 'OVERDRIVE', desc: '+12% puissance permanente\n(cumulable)' },
+      antigrav_pedals: { desc: '-8% poids cycliste\n(équiper pour activer)' },
+      tailwind: { desc: '2× puissance\npendant la prochaine course' },
+      treasure_trove: { label: 'TRÉSOR', desc: '+75 or' }
     }
   },
 

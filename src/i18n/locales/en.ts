@@ -103,41 +103,6 @@ export const en = {
       cancel: 'CANCEL'
     },
 
-    reward: {
-      title: 'CHOOSE YOUR REWARD',
-      subtitle: 'Select one to keep',
-      ride_complete: 'RIDE COMPLETE',
-      challenge_complete: '★ CHALLENGE COMPLETE — {{reward}}',
-      challenge_failed: '✗ CHALLENGE FAILED',
-      reroll: 'REROLL  ({{count}} left)',
-      equip_now: 'EQUIP NOW',
-      equip_later: 'EQUIP LATER',
-      equip_prompt: 'EQUIP {{item}}?',
-      slot_label: 'Slot: {{slot}}',
-      slot_empty: 'Slot: {{slot}}  (empty)',
-      currently_equipped: 'Currently equipped: {{item}}',
-      unequip_warning: 'This will be unequipped and returned to inventory.',
-
-      pool: {
-        power_boost: { label: 'POWER BOOST', desc: '+4% permanent power\n(stacks)' },
-        aero_tweak: { label: 'AERO TWEAK', desc: '+2% drag reduction\n(stacks)' },
-        lighter_load: { label: 'LIGHTER LOAD', desc: '-3% rider weight\n(stacks)' },
-        coin_cache: { label: 'COIN CACHE', desc: '+20 gold' },
-        teleport: { desc: 'Warp to any\nvisited node' },
-        dirt_tires: { desc: '-35% rolling resistance\n(equip to activate)' },
-        power_surge: { label: 'POWER SURGE', desc: '+7% permanent power\n(stacks)' },
-        aero_upgrade: { label: 'AERO UPGRADE', desc: '+3% drag reduction\n(stacks)' },
-        weight_shed: { label: 'WEIGHT SHED', desc: '-6% rider weight\n(stacks)' },
-        gold_cache: { label: 'GOLD CACHE', desc: '+40 gold' },
-        aero_helmet: { desc: '+3% drag reduction\n(equip to activate)' },
-        carbon_frame: { desc: '-12% rider weight\n+3% drag reduction\n(equip to activate)' },
-        overdrive: { label: 'OVERDRIVE', desc: '+12% permanent power\n(stacks)' },
-        antigrav_pedals: { desc: '-8% rider weight\n(equip to activate)' },
-        tailwind: { desc: '2× power toggle\nduring next ride' },
-        treasure_trove: { label: 'TREASURE TROVE', desc: '+75 gold' }
-      }
-    },
-
     event: {
       title: 'MYSTERIOUS CACHE',
       description: 'You spot a weathered crate hidden in the brush. Inside, you see a glimpse of... {{item}}.\n\nIt looks risky to retrieve.',
@@ -149,6 +114,41 @@ export const en = {
       failure_msg_gold: 'The crate was trapped! You dropped {{amount}} gold while escaping.',
       failure_msg_injury: 'The crate collapsed on you! You suffered a minor injury (-5% Power).',
       continue: 'CONTINUE'
+    }
+  },
+
+  reward: {
+    title: 'CHOOSE YOUR REWARD',
+    subtitle: 'Select one to keep',
+    ride_complete: 'RIDE COMPLETE',
+    challenge_complete: '★ CHALLENGE COMPLETE — {{reward}}',
+    challenge_failed: '✗ CHALLENGE FAILED',
+    reroll: 'REROLL  ({{count}} left)',
+    equip_now: 'EQUIP NOW',
+    equip_later: 'EQUIP LATER',
+    equip_prompt: 'EQUIP {{item}}?',
+    slot_label: 'Slot: {{slot}}',
+    slot_empty: 'Slot: {{slot}}  (empty)',
+    currently_equipped: 'Currently equipped: {{item}}',
+    unequip_warning: 'This will be unequipped and returned to inventory.',
+
+    pool: {
+      power_boost: { label: 'POWER BOOST', desc: '+4% permanent power\n(stacks)' },
+      aero_tweak: { label: 'AERO TWEAK', desc: '+2% drag reduction\n(stacks)' },
+      lighter_load: { label: 'LIGHTER LOAD', desc: '-3% rider weight\n(stacks)' },
+      coin_cache: { label: 'COIN CACHE', desc: '+20 gold' },
+      teleport: { desc: 'Warp to any\nvisited node' },
+      dirt_tires: { desc: '-35% rolling resistance\n(equip to activate)' },
+      power_surge: { label: 'POWER SURGE', desc: '+7% permanent power\n(stacks)' },
+      aero_upgrade: { label: 'AERO UPGRADE', desc: '+3% drag reduction\n(stacks)' },
+      weight_shed: { label: 'WEIGHT SHED', desc: '-6% rider weight\n(stacks)' },
+      gold_cache: { label: 'GOLD CACHE', desc: '+40 gold' },
+      aero_helmet: { desc: '+3% drag reduction\n(equip to activate)' },
+      carbon_frame: { desc: '-12% rider weight\n+3% drag reduction\n(equip to activate)' },
+      overdrive: { label: 'OVERDRIVE', desc: '+12% permanent power\n(stacks)' },
+      antigrav_pedals: { desc: '-8% rider weight\n(equip to activate)' },
+      tailwind: { desc: '2× power toggle\nduring next ride' },
+      treasure_trove: { label: 'TREASURE TROVE', desc: '+75 gold' }
     }
   },
 
