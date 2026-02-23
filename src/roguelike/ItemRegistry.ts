@@ -8,6 +8,7 @@
  */
 
 import type { RunModifiers } from './RunState';
+import i18n from '../i18n';
 
 export type EquipmentSlot = 'helmet' | 'frame' | 'cranks' | 'pedals' | 'tires';
 
@@ -22,14 +23,14 @@ export interface ItemDef {
 }
 
 export const ITEM_REGISTRY: Record<string, ItemDef> = {
-  tailwind:        { id: 'tailwind',        label: 'TAILWIND',         rarity: 'rare' },
-  teleport:        { id: 'teleport',        label: 'TELEPORT SCROLL',  rarity: 'common' },
-  reroll_voucher:  { id: 'reroll_voucher',  label: 'REROLL VOUCHER',   rarity: 'common' },
-  aero_helmet:     { id: 'aero_helmet',     label: 'AERO HELMET',      slot: 'helmet', rarity: 'uncommon', modifier: { dragReduction: 0.03 } },
-  gold_crank:      { id: 'gold_crank',      label: 'SOLID GOLD CRANK', slot: 'cranks', rarity: 'rare',     modifier: { powerMult: 1.25 } },
-  antigrav_pedals: { id: 'antigrav_pedals', label: 'ANTIGRAV PEDALS',  slot: 'pedals', rarity: 'rare',     modifier: { weightMult: 0.92 } },
-  dirt_tires:      { id: 'dirt_tires',      label: 'DIRT TIRES',       slot: 'tires',  rarity: 'common',   modifier: { crrMult: 0.65 } },
-  carbon_frame:    { id: 'carbon_frame',    label: 'CARBON FRAME',     slot: 'frame',  rarity: 'rare',     modifier: { weightMult: 0.88, dragReduction: 0.03 } },
+  tailwind:        { id: 'tailwind',        label: 'item.tailwind',         rarity: 'rare' },
+  teleport:        { id: 'teleport',        label: 'item.teleport',  rarity: 'common' },
+  reroll_voucher:  { id: 'reroll_voucher',  label: 'item.reroll_voucher',   rarity: 'common' },
+  aero_helmet:     { id: 'aero_helmet',     label: 'item.aero_helmet',      slot: 'helmet', rarity: 'uncommon', modifier: { dragReduction: 0.03 } },
+  gold_crank:      { id: 'gold_crank',      label: 'item.gold_crank', slot: 'cranks', rarity: 'rare',     modifier: { powerMult: 1.25 } },
+  antigrav_pedals: { id: 'antigrav_pedals', label: 'item.antigrav_pedals',  slot: 'pedals', rarity: 'rare',     modifier: { weightMult: 0.92 } },
+  dirt_tires:      { id: 'dirt_tires',      label: 'item.dirt_tires',       slot: 'tires',  rarity: 'common',   modifier: { crrMult: 0.65 } },
+  carbon_frame:    { id: 'carbon_frame',    label: 'item.carbon_frame',     slot: 'frame',  rarity: 'rare',     modifier: { weightMult: 0.88, dragReduction: 0.03 } },
 };
 
 export const SLOT_LABELS: Record<EquipmentSlot, string> = {
@@ -47,19 +48,22 @@ export function formatModifierLines(mod: Partial<RunModifiers>): string[] {
   const lines: string[] = [];
   if (mod.powerMult !== undefined) {
     const pct = Math.round((mod.powerMult - 1) * 100);
-    lines.push(`Power: ${pct >= 0 ? '+' : ''}${pct}%`);
+    const val = (pct >= 0 ? '+' : '') + pct;
+    lines.push(i18n.t('item.modifier.power', { val }));
   }
   if (mod.dragReduction !== undefined) {
     const pct = Math.round(mod.dragReduction * 100);
-    lines.push(`Aero: +${pct}%`);
+    lines.push(i18n.t('item.modifier.aero', { val: pct }));
   }
   if (mod.weightMult !== undefined) {
     const pct = Math.round((mod.weightMult - 1) * 100);
-    lines.push(`Weight: ${pct >= 0 ? '+' : ''}${pct}%`);
+    const val = (pct >= 0 ? '+' : '') + pct;
+    lines.push(i18n.t('item.modifier.weight', { val }));
   }
   if (mod.crrMult !== undefined) {
     const pct = Math.round((mod.crrMult - 1) * 100);
-    lines.push(`Rolling resistance: ${pct >= 0 ? '+' : ''}${pct}%`);
+    const val = (pct >= 0 ? '+' : '') + pct;
+    lines.push(i18n.t('item.modifier.rolling', { val }));
   }
   return lines;
 }

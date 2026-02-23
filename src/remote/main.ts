@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client';
+import i18n from '../i18n';
 
 const socket: Socket = io();
 
@@ -317,11 +318,11 @@ function render() {
 function renderJoin() {
   app.innerHTML = `
     <div class="panel">
-      <h2>JOIN GAME</h2>
+      <h2>${i18n.t('remote.join_title')}</h2>
       <div style="margin-bottom:20px;">
-        <input type="text" id="code-input" placeholder="CODE" maxlength="4" style="text-transform:uppercase;">
+        <input type="text" id="code-input" placeholder="${i18n.t('remote.code_placeholder')}" maxlength="4" style="text-transform:uppercase;">
       </div>
-      <button id="join-btn" style="width:100%; padding:15px; font-weight:bold; font-size:16px;">CONNECT</button>
+      <button id="join-btn" style="width:100%; padding:15px; font-weight:bold; font-size:16px;">${i18n.t('remote.connect_btn')}</button>
     </div>
   `;
 
@@ -336,9 +337,9 @@ function renderJoin() {
 function renderMap() {
   app.innerHTML = `
     <div class="panel">
-      <h2>MAP CONTROL</h2>
+      <h2>${i18n.t('remote.map_control')}</h2>
       <div style="text-align:center; color:${COLORS.textMuted}; font-size:10px; margin-bottom:10px;">
-        NAVIGATE & SELECT
+        ${i18n.t('remote.navigate_select')}
       </div>
       <div class="dpad-grid">
         <div></div>
@@ -346,7 +347,7 @@ function renderMap() {
         <div></div>
 
         <button id="left-btn" class="dpad-btn">◀</button>
-        <button id="ok-btn" class="dpad-btn" style="color:${COLORS.gold}; border-color:${COLORS.gold};">OK</button>
+        <button id="ok-btn" class="dpad-btn" style="color:${COLORS.gold}; border-color:${COLORS.gold};">${i18n.t('remote.ok')}</button>
         <button id="right-btn" class="dpad-btn">▶</button>
 
         <div></div>
@@ -379,25 +380,25 @@ function renderRide() {
   if (!gameState) return;
   app.innerHTML = `
     <div class="panel">
-      <h2>RIDE DASHBOARD</h2>
+      <h2>${i18n.t('remote.dashboard')}</h2>
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
         <div class="stat-box">
-          <div class="stat-label">POWER</div>
+          <div class="stat-label">${i18n.t('remote.power')}</div>
           <div class="stat-val" style="color:${COLORS.gold}">${gameState.instantaneousPower ?? '--'} <span style="font-size:12px">W</span></div>
         </div>
         <div class="stat-box">
-          <div class="stat-label">HEART RATE</div>
+          <div class="stat-label">${i18n.t('remote.heart_rate')}</div>
           <div class="stat-val" style="color:#ff4444">${gameState.heartRateBpm ?? '--'} <span style="font-size:12px">BPM</span></div>
         </div>
         <div class="stat-box">
-          <div class="stat-label">SPEED</div>
+          <div class="stat-label">${i18n.t('remote.speed')}</div>
           ${gameState.units === 'imperial'
             ? `<div class="stat-val">${gameState.speedMs ? (gameState.speedMs * 2.23694).toFixed(1) : '--'} <span style="font-size:12px">MPH</span></div>`
             : `<div class="stat-val">${gameState.speedMs ? (gameState.speedMs * 3.6).toFixed(1) : '--'} <span style="font-size:12px">KM/H</span></div>`
           }
         </div>
         <div class="stat-box">
-          <div class="stat-label">GRADE</div>
+          <div class="stat-label">${i18n.t('remote.grade')}</div>
           <div class="stat-val">${gameState.currentGrade ? (gameState.currentGrade * 100).toFixed(1) : '0.0'} <span style="font-size:12px">%</span></div>
         </div>
       </div>
@@ -411,7 +412,7 @@ function renderRide() {
           font-weight: bold;
           border-radius: 4px;
           color: ${COLORS.text};
-        ">PAUSE</button>
+        ">${i18n.t('remote.pause')}</button>
         <button id="tailwind-btn" style="
           background-color: ${COLORS.gold};
           border: none;
@@ -421,7 +422,7 @@ function renderRide() {
           border-radius: 4px;
           color: #2a2018;
           box-shadow: 0 0 10px ${COLORS.gold}44;
-        ">TAILWIND</button>
+        ">${i18n.t('item.tailwind')}</button>
       </div>
 
       <div class="dpad-grid">
@@ -430,7 +431,7 @@ function renderRide() {
         <div></div>
 
         <button id="left-btn" class="dpad-btn">◀</button>
-        <button id="ok-btn" class="dpad-btn" style="color:${COLORS.gold}; border-color:${COLORS.gold};">OK</button>
+        <button id="ok-btn" class="dpad-btn" style="color:${COLORS.gold}; border-color:${COLORS.gold};">${i18n.t('remote.ok')}</button>
         <button id="right-btn" class="dpad-btn">▶</button>
 
         <div></div>
@@ -493,80 +494,78 @@ function renderPause() {
   const modChips: string[] = [];
   if (modifiers.powerMult !== 1.0) {
     const pct = Math.round((modifiers.powerMult - 1) * 100);
-    modChips.push(`<span class="modifier-chip" style="color:#88ffaa;">${pct >= 0 ? '+' : ''}${pct}% POWER</span>`);
+    const val = (pct >= 0 ? '+' : '') + pct;
+    modChips.push(`<span class="modifier-chip" style="color:#88ffaa;">${i18n.t('item.modifier.power', { val })}</span>`);
   }
   if (modifiers.dragReduction !== 0.0) {
     const pct = Math.round(modifiers.dragReduction * 100);
-    modChips.push(`<span class="modifier-chip" style="color:#88ddff;">+${pct}% AERO</span>`);
+    modChips.push(`<span class="modifier-chip" style="color:#88ddff;">${i18n.t('item.modifier.aero', { val: pct })}</span>`);
   }
   if (modifiers.weightMult !== 1.0) {
     const pct = Math.round((1 - modifiers.weightMult) * 100);
-    modChips.push(`<span class="modifier-chip" style="color:#ffcc66;">-${pct}% WEIGHT</span>`);
+    const val = (pct >= 0 ? '+' : '') + pct;
+    modChips.push(`<span class="modifier-chip" style="color:#ffcc66;">${i18n.t('item.modifier.weight', { val })}</span>`);
   }
   if (modifiers.crrMult !== undefined && modifiers.crrMult !== 1.0) {
     const pct = Math.round((1 - modifiers.crrMult) * 100);
-    modChips.push(`<span class="modifier-chip" style="color:#bbff88;">-${pct}% ROLL</span>`);
+    const val = (pct >= 0 ? '+' : '') + pct;
+    modChips.push(`<span class="modifier-chip" style="color:#bbff88;">${i18n.t('item.modifier.rolling', { val })}</span>`);
   }
 
   // Equipment slots
   const allSlots = ['helmet', 'frame', 'cranks', 'pedals', 'tires'] as const;
-  const slotLabels: Record<string, string> = { helmet: 'HELMET', frame: 'FRAME', cranks: 'CRANKS', pedals: 'PEDALS', tires: 'TIRES' };
-  const itemLabels: Record<string, string> = {
-    aero_helmet: 'AERO HELMET', gold_crank: 'GOLD CRANK', antigrav_pedals: 'ANTI-GRAV PEDALS',
-    dirt_tires: 'DIRT TIRES', carbon_frame: 'CARBON FRAME',
-  };
   const equippedSlots = allSlots.filter(slot => equipped[slot]);
   const bagItems = passiveInv;
 
-  const backLabel = isRoguelike ? 'BACK TO MAP' : 'MAIN MENU';
-  const goldStr = isRoguelike ? `<div style="text-align:center; font-size:13px; color:${COLORS.gold}; margin-bottom:16px;">GOLD: ${gold}</div>` : '';
+  const backLabel = isRoguelike ? i18n.t('remote.back_to_map') : i18n.t('remote.main_menu');
+  const goldStr = isRoguelike ? `<div style="text-align:center; font-size:13px; color:${COLORS.gold}; margin-bottom:16px;">${i18n.t('pause.gold', { amount: gold })}</div>` : '';
 
   app.innerHTML = `
     <div class="panel">
-      <h2>⏸ PAUSED</h2>
+      <h2>${i18n.t('remote.pause')}</h2>
       ${goldStr}
       <div style="font-size:12px; color:${COLORS.textMuted}; text-align:center; margin-bottom:4px;">FTP: ${ftpW}W</div>
 
       <button class="pause-action-btn" id="resume-btn" style="background:${COLORS.btnSuccess}; border:none; color:${COLORS.accent};">
-        ▶ RESUME
+        ${i18n.t('remote.resume')}
       </button>
       <button class="pause-action-btn" id="backtomap-btn" style="background:${COLORS.btnWarning}; border:none; color:#ffcc88;">
-        ← ${backLabel}
+        ${backLabel}
       </button>
       <button class="pause-action-btn" id="savequit-btn" style="background:${COLORS.btnDanger}; border:none; color:#ff8888;">
-        ✕ SAVE &amp; QUIT
+        ${i18n.t('remote.save_quit')}
       </button>
 
       ${modChips.length > 0 ? `
-        <div class="section-title">ACTIVE MODIFIERS</div>
+        <div class="section-title">${i18n.t('pause.modifiers')}</div>
         <div>${modChips.join('')}</div>
       ` : ''}
 
       ${equippedSlots.length > 0 ? `
-        <div class="section-title">EQUIPPED</div>
+        <div class="section-title">${i18n.t('pause.equipped')}</div>
         ${equippedSlots.map(slot => `
           <div class="equip-slot">
-            <span class="slot-name">${slotLabels[slot]}</span>
-            <span class="slot-item">${itemLabels[equipped[slot]] ?? equipped[slot]}</span>
+            <span class="slot-name">${i18n.t('slots.' + slot)}</span>
+            <span class="slot-item">${getItemLabel(equipped[slot])}</span>
           </div>
         `).join('')}
       ` : ''}
 
       ${usableInv.length > 0 ? `
-        <div class="section-title">INVENTORY — USABLE NOW</div>
+        <div class="section-title">${i18n.t('pause.inventory_usable')}</div>
         ${usableInv.map(([id, count]) => `
           <div class="inv-row">
             <div>
               <span class="item-label">${getItemLabel(id)}</span>
               <span class="item-count">×${count}</span>
             </div>
-            <button class="use-btn" data-item="${id}">USE</button>
+            <button class="use-btn" data-item="${id}">${i18n.t('pause.use')}</button>
           </div>
         `).join('')}
       ` : ''}
 
       ${bagItems.length > 0 ? `
-        <div class="section-title">BAG (MAP USE ONLY)</div>
+        <div class="section-title">${i18n.t('pause.bag_map_only')}</div>
         ${bagItems.map(([id, count]) => `
           <div class="inv-row">
             <div>
@@ -590,9 +589,9 @@ function renderPause() {
 
   document.getElementById('backtomap-btn')!.onclick = () => {
     showConfirm(
-      'ABANDON RIDE?',
-      'Return to ' + (isRoguelike ? 'map' : 'main menu') + '?\nRide progress will be lost.',
-      'YES, ABANDON',
+      i18n.t('remote.abandon_title'),
+      isRoguelike ? i18n.t('remote.abandon_msg_rogue') : i18n.t('remote.abandon_msg_menu'),
+      i18n.t('remote.yes_abandon'),
       () => {
         sendInput('action', { action: 'backToMap' });
         if (navigator.vibrate) navigator.vibrate(30);
@@ -605,9 +604,9 @@ function renderPause() {
 
   document.getElementById('savequit-btn')!.onclick = () => {
     showConfirm(
-      'SAVE & QUIT?',
-      'Your run progress will be saved.\nReturn to main menu?',
-      'SAVE & QUIT',
+      i18n.t('remote.confirm_save_title'),
+      i18n.t('remote.confirm_save_msg'),
+      i18n.t('remote.confirm_save_btn'),
       () => {
         sendInput('action', { action: 'saveQuit' });
         if (navigator.vibrate) navigator.vibrate(30);
@@ -635,12 +634,9 @@ function renderPause() {
 }
 
 function getItemLabel(id: string): string {
-  const labels: Record<string, string> = {
-    tailwind: 'TAILWIND', teleport: 'TELEPORT', reroll_voucher: 'REROLL VOUCHER',
-    aero_helmet: 'AERO HELMET', gold_crank: 'GOLD CRANK', antigrav_pedals: 'ANTI-GRAV PEDALS',
-    dirt_tires: 'DIRT TIRES', carbon_frame: 'CARBON FRAME',
-  };
-  return labels[id] ?? id.toUpperCase().replace(/_/g, ' ');
+  // Use translations if available, fallback to id
+  if (i18n.exists(`item.${id}`)) return i18n.t(`item.${id}`);
+  return id.toUpperCase().replace(/_/g, ' ');
 }
 
 function showConfirm(title: string, message: string, confirmLabel: string, onConfirm: () => void) {
@@ -651,7 +647,7 @@ function showConfirm(title: string, message: string, confirmLabel: string, onCon
       <h3>${title}</h3>
       <p>${message.replace(/\n/g, '<br>')}</p>
       <div class="confirm-btns">
-        <button id="conf-cancel" style="background:${COLORS.btnPrimary}">CANCEL</button>
+        <button id="conf-cancel" style="background:${COLORS.btnPrimary}">${i18n.t('remote.cancel')}</button>
         <button id="conf-ok" style="background:${COLORS.btnDanger}; border-color:${COLORS.btnDanger};">${confirmLabel}</button>
       </div>
     </div>

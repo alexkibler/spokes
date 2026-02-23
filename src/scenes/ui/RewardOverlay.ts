@@ -2,9 +2,10 @@ import Phaser from 'phaser';
 import { THEME } from '../../theme';
 import type { RewardDefinition, RewardRarity } from '../../roguelike/RewardPool';
 import { RunStateManager } from '../../roguelike/RunState';
-import { ITEM_REGISTRY, SLOT_LABELS, formatModifierLines } from '../../roguelike/ItemRegistry';
+import { ITEM_REGISTRY, formatModifierLines } from '../../roguelike/ItemRegistry';
 import { Button } from '../../ui/Button';
 import { msToKmh, msToMph } from '../../physics/CyclistPhysics';
+import i18n from '../../i18n';
 import type { RideStats } from './RideOverlay';
 import type { Units } from '../MenuScene';
 
@@ -77,7 +78,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
       this.add(statsBg);
 
       // Title line
-      this.add(scene.add.text(cx, py + 12, 'RIDE COMPLETE', {
+      this.add(scene.add.text(cx, py + 12, i18n.t('reward.ride_complete'), {
         fontFamily: THEME.fonts.main, fontSize: '16px', fontStyle: 'bold',
         color: THEME.colors.text.accent, letterSpacing: 3,
       }).setOrigin(0.5, 0));
@@ -104,10 +105,10 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
       let challengeColor = '#888888';
       if (stats.challengeResult) {
         if (stats.challengeResult.success) {
-          challengeStr = `★ CHALLENGE COMPLETE — ${stats.challengeResult.reward}`;
+          challengeStr = i18n.t('reward.challenge_complete', { reward: stats.challengeResult.reward });
           challengeColor = '#f0c030';
         } else {
-          challengeStr = '✗ CHALLENGE FAILED';
+          challengeStr = i18n.t('reward.challenge_failed');
           challengeColor = '#aa6655';
         }
       }
@@ -145,14 +146,14 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
     }
     this.add(banner);
 
-    this.add(scene.add.text(cx, bannerY + BANNER_H / 2, 'CHOOSE YOUR REWARD', {
+    this.add(scene.add.text(cx, bannerY + BANNER_H / 2, i18n.t('reward.title'), {
       fontFamily: THEME.fonts.main,
       fontSize: '20px',
       color: THEME.colors.text.gold,
       fontStyle: 'bold',
     }).setOrigin(0.5));
 
-    this.add(scene.add.text(cx, bannerY + BANNER_H + 6, 'Select one to keep', {
+    this.add(scene.add.text(cx, bannerY + BANNER_H + 6, i18n.t('reward.subtitle'), {
       fontFamily: THEME.fonts.main,
       fontSize: '11px',
       color: THEME.colors.text.muted,
@@ -192,7 +193,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
         letterSpacing: 2,
       }).setOrigin(0.5));
 
-      this.add(scene.add.text(cardCx, cardT + BADGE_H + 16, reward.label, {
+      this.add(scene.add.text(cardCx, cardT + BADGE_H + 16, i18n.t(reward.label), {
         fontFamily: THEME.fonts.main,
         fontSize: '13px',
         color: '#ffffff',
@@ -201,7 +202,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
         wordWrap: { width: cardW - 16 },
       }).setOrigin(0.5, 0));
 
-      this.add(scene.add.text(cardCx, cardT + BADGE_H + 46, reward.description, {
+      this.add(scene.add.text(cardCx, cardT + BADGE_H + 46, i18n.t(reward.description), {
         fontFamily: THEME.fonts.main,
         fontSize: '11px',
         color: '#9999bb',
@@ -239,7 +240,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
         y: cardsTop + CARD_H + REROLL_SECTION_H / 2,
         width: 220,
         height: 36,
-        text: `REROLL  (${rerollCount} left)`,
+        text: i18n.t('reward.reroll', { count: rerollCount }),
         color: 0x2a2a08,
         hoverColor: 0x444410,
         textColor: THEME.colors.text.gold,
@@ -294,19 +295,21 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
     this.add(panel);
     layer.push(panel);
 
-    const headerTxt = scene.add.text(cx, py + 18, `EQUIP ${itemLabel}?`, {
+    const headerTxt = scene.add.text(cx, py + 18, i18n.t('reward.equip_prompt', { item: i18n.t(itemLabel) }), {
       fontFamily: THEME.fonts.main, fontSize: '14px', color: THEME.colors.text.gold, fontStyle: 'bold',
     }).setOrigin(0.5, 0);
     this.add(headerTxt);
     layer.push(headerTxt);
 
-    const slotLabel = SLOT_LABELS[slot];
+    const slotLabel = i18n.t('slots.' + slot);
     if (occupantId) {
       const occupantDef = ITEM_REGISTRY[occupantId];
+      // occupantDef.label should be a key now, so translate it.
+      const occupantName = i18n.t(occupantDef?.label ?? occupantId);
       const warnTxt = scene.add.text(cx, py + 46, [
-        `Slot: ${slotLabel}`,
-        `Currently equipped: ${occupantDef?.label ?? occupantId}`,
-        `This will be unequipped and returned to inventory.`,
+        i18n.t('reward.slot_label', { slot: slotLabel }),
+        i18n.t('reward.currently_equipped', { item: occupantName }),
+        i18n.t('reward.unequip_warning'),
       ].join('\n'), {
         fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ffaa44',
         align: 'center', lineSpacing: 3,
@@ -314,7 +317,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
       this.add(warnTxt);
       layer.push(warnTxt);
     } else {
-      const slotTxt = scene.add.text(cx, py + 46, `Slot: ${slotLabel}  (empty)`, {
+      const slotTxt = scene.add.text(cx, py + 46, i18n.t('reward.slot_empty', { slot: slotLabel }), {
         fontFamily: THEME.fonts.main, fontSize: '10px', color: '#aaaacc',
       }).setOrigin(0.5, 0);
       this.add(slotTxt);
@@ -339,7 +342,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
     const equipBtnY = py + PROMPT_H - 44;
     const equipBg = scene.add.rectangle(cx - 72, equipBtnY, 130, 30, 0x1a4a1a)
       .setInteractive({ useHandCursor: true });
-    const equipLbl = scene.add.text(cx - 72, equipBtnY, 'EQUIP NOW', {
+    const equipLbl = scene.add.text(cx - 72, equipBtnY, i18n.t('reward.equip_now'), {
       fontFamily: THEME.fonts.main, fontSize: '11px', color: '#88ff88', fontStyle: 'bold',
     }).setOrigin(0.5);
     equipBg.on('pointerover', () => equipBg.setFillStyle(0x2a6a2a));
@@ -361,7 +364,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
     // "Skip" button
     const skipBg = scene.add.rectangle(cx + 72, equipBtnY, 130, 30, 0x2a2a3a)
       .setInteractive({ useHandCursor: true });
-    const skipLbl = scene.add.text(cx + 72, equipBtnY, 'EQUIP LATER', {
+    const skipLbl = scene.add.text(cx + 72, equipBtnY, i18n.t('reward.equip_later'), {
       fontFamily: THEME.fonts.main, fontSize: '11px', color: '#aaaacc', fontStyle: 'bold',
     }).setOrigin(0.5);
     skipBg.on('pointerover', () => skipBg.setFillStyle(0x3a3a5a));
@@ -413,7 +416,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
     this.add(mpanel);
     modal.push(mpanel);
 
-    const headerTxt = scene.add.text(cx, my + 18, `REPLACE ${SLOT_LABELS[slot]}?`, {
+    const headerTxt = scene.add.text(cx, my + 18, i18n.t('pause.equipment.replace_title', { slot: i18n.t('slots.' + slot) }), {
       fontFamily: THEME.fonts.main, fontSize: '14px', color: '#ffaa44', fontStyle: 'bold',
     }).setOrigin(0.5, 0);
     this.add(headerTxt);
@@ -421,7 +424,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
 
     const curLines = currentDef?.modifier ? formatModifierLines(currentDef.modifier) : [];
     const curBlock = [
-      `UNEQUIPPING: ${currentDef?.label ?? currentId}`,
+      `${i18n.t('pause.equipment.unequipping')} ${i18n.t(currentDef?.label ?? currentId)}`,
       ...curLines.map(l => `  − ${l}`),
     ].join('\n');
     const curTxt = scene.add.text(cx - 80, my + 50, curBlock, {
@@ -432,7 +435,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
 
     const incLines = incomingDef?.modifier ? formatModifierLines(incomingDef.modifier) : [];
     const incBlock = [
-      `EQUIPPING: ${incomingDef?.label ?? incomingId}`,
+      `${i18n.t('pause.equipment.equipping')} ${i18n.t(incomingDef?.label ?? incomingId)}`,
       ...incLines.map(l => `  + ${l}`),
     ].join('\n');
     const incTxt = scene.add.text(cx - 80, my + 50 + 16 + curLines.length * 14, incBlock, {
@@ -451,7 +454,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
 
     const confirmBg = scene.add.rectangle(cx - 70, my + MODAL_H - 28, 130, 30, 0x1a4a1a)
       .setInteractive({ useHandCursor: true });
-    const confirmLbl = scene.add.text(cx - 70, my + MODAL_H - 28, 'CONFIRM SWAP', {
+    const confirmLbl = scene.add.text(cx - 70, my + MODAL_H - 28, i18n.t('pause.equipment.confirm_swap'), {
       fontFamily: THEME.fonts.main, fontSize: '10px', color: '#88ff88', fontStyle: 'bold',
     }).setOrigin(0.5);
     confirmBg.on('pointerover', () => confirmBg.setFillStyle(0x2a6a2a));
@@ -468,7 +471,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
 
     const cancelBg = scene.add.rectangle(cx + 70, my + MODAL_H - 28, 100, 30, 0x3a2a2a)
       .setInteractive({ useHandCursor: true });
-    const cancelLbl = scene.add.text(cx + 70, my + MODAL_H - 28, 'CANCEL', {
+    const cancelLbl = scene.add.text(cx + 70, my + MODAL_H - 28, i18n.t('pause.equipment.cancel'), {
       fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ff8888', fontStyle: 'bold',
     }).setOrigin(0.5);
     cancelBg.on('pointerover', () => cancelBg.setFillStyle(0x5a3a3a));

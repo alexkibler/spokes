@@ -3,6 +3,7 @@ import { THEME } from '../../theme';
 import { EquipmentPanel } from './EquipmentPanel';
 import { ConfirmationModal } from '../../ui/ConfirmationModal';
 import { RunStateManager } from '../../roguelike/RunState';
+import i18n from '../../i18n';
 
 export class PauseOverlay extends Phaser.GameObjects.Container {
   private panel: EquipmentPanel;
@@ -94,7 +95,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
     let cy = 40;
 
     // Title
-    const title = this.scene.add.text(cx, cy, 'PAUSED', {
+    const title = this.scene.add.text(cx, cy, i18n.t('pause.title'), {
       fontFamily: THEME.fonts.main, fontSize: '22px', color: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5);
     this.menuContainer.add(title);
@@ -102,7 +103,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
     cy += 50;
 
     // Resume Button
-    this.createButton(cx, cy, 'RESUME', THEME.colors.buttons.primary, () => {
+    this.createButton(cx, cy, i18n.t('pause.resume'), THEME.colors.buttons.primary, () => {
       this.destroy();
       this.onResume();
     });
@@ -110,7 +111,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
     cy += 50;
 
     // FTP Input Section
-    const ftpLabel = this.scene.add.text(cx, cy - 15, 'FTP SETTING', {
+    const ftpLabel = this.scene.add.text(cx, cy - 15, i18n.t('pause.ftp_setting'), {
         fontFamily: THEME.fonts.main, fontSize: '10px', color: '#aaaaaa'
     }).setOrigin(0.5);
     this.menuContainer.add(ftpLabel);
@@ -119,7 +120,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
         .setStrokeStyle(2, 0x3a3a8b)
         .setInteractive({ useHandCursor: true });
 
-    this.ftpText = this.scene.add.text(cx, cy + 10, `${this.ftpW} W`, {
+    this.ftpText = this.scene.add.text(cx, cy + 10, `${this.ftpW} ${i18n.t('menu.ftp_unit')}`, {
         fontFamily: THEME.fonts.main, fontSize: '18px', color: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5);
 
@@ -130,15 +131,15 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
     cy += 60;
 
     // Back to Map / Main Menu Button
-    const backLabel = this.isRoguelike ? 'BACK TO MAP' : 'MAIN MENU';
+    const backLabel = this.isRoguelike ? i18n.t('pause.back_to_map') : i18n.t('pause.main_menu');
     const backMessage = this.isRoguelike
-      ? 'Progress in this ride will be lost.\nReturn to map?'
-      : 'Progress in this ride will be lost.\nReturn to main menu?';
+      ? i18n.t('pause.abandon_msg_rogue')
+      : i18n.t('pause.abandon_msg_menu');
     this.createButton(cx, cy, backLabel, THEME.colors.buttons.secondary, () => {
         new ConfirmationModal(this.scene, {
-            title: 'ABANDON RIDE?',
+            title: i18n.t('pause.abandon_title'),
             message: backMessage,
-            confirmLabel: 'YES, ABANDON',
+            confirmLabel: i18n.t('pause.yes_abandon'),
             confirmColor: THEME.colors.buttons.danger,
             onConfirm: () => {
                 this.destroy();
@@ -150,11 +151,11 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
     cy += 50;
 
     // Save & Quit Button
-    this.createButton(cx, cy, 'SAVE & QUIT', THEME.colors.buttons.secondary, () => {
+    this.createButton(cx, cy, i18n.t('pause.save_quit'), THEME.colors.buttons.secondary, () => {
          new ConfirmationModal(this.scene, {
-            title: 'SAVE & QUIT?',
-            message: 'Your progress will be saved.\nReturn to main menu?',
-            confirmLabel: 'SAVE & QUIT',
+            title: i18n.t('pause.save_quit_title'),
+            message: i18n.t('pause.save_quit_msg'),
+            confirmLabel: i18n.t('pause.confirm_save'),
             onConfirm: () => {
                 this.destroy();
                 this.onQuit();
@@ -265,12 +266,12 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
              (this.scene as any).setFtp(this.ftpW);
           }
       }
-      this.ftpText.setText(`${this.ftpW} W`);
+      this.ftpText.setText(`${this.ftpW} ${i18n.t('menu.ftp_unit')}`);
   }
 
   private updateFtpDisplay(): void {
       const cursor = this.ftpCursorOn ? '|' : ' ';
-      this.ftpText.setText(this.ftpInputStr + cursor + ' W');
+      this.ftpText.setText(this.ftpInputStr + cursor + ' ' + i18n.t('menu.ftp_unit'));
   }
 
   private handleKey(event: KeyboardEvent): void {
@@ -281,7 +282,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
           this.stopFtpEdit();
       } else if (event.key === 'Escape') {
           this.stopFtpEdit();
-          this.ftpText.setText(`${this.ftpW} W`);
+          this.ftpText.setText(`${this.ftpW} ${i18n.t('menu.ftp_unit')}`);
       } else if (event.key === 'Backspace') {
           this.ftpInputStr = this.ftpInputStr.slice(0, -1);
           this.updateFtpDisplay();
