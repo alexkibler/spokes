@@ -426,6 +426,19 @@ export class GameScene extends Phaser.Scene {
     this.buildDevToggle();
     this.buildRemoteButton();
 
+    RemoteService.getInstance().initHost()
+      .then((code) => {
+        if (this.btnRemote && this.sys.isActive()) {
+          this.btnRemote.setText(`CODE: ${code}`);
+        }
+      })
+      .catch((err) => {
+        console.error('Remote init failed', err);
+        if (this.btnRemote && this.sys.isActive()) {
+          this.btnRemote.setText('OFFLINE').setColor(THEME.colors.text.danger);
+        }
+      });
+
     this.scale.on('resize', this.onResize, this);
     this.onResize();
 
@@ -1018,21 +1031,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildRemoteButton(): void {
-    this.btnRemote = this.add.text(0, 0, '📡', { fontSize: '24px' })
+    const x = this.scale.width - 40;
+    this.btnRemote = this.add.text(x, 40, 'CONNECTING...', {
+      fontFamily: THEME.fonts.main,
+      fontSize: '20px',
+      fontStyle: 'bold',
+      color: THEME.colors.text.accent,
+    })
+      .setOrigin(1, 0)
       .setInteractive({ useHandCursor: true })
-      .setDepth(50); // High depth
+      .setDepth(50);
 
-    this.btnRemote.on('pointerdown', async () => {
-      const existingCode = RemoteService.getInstance().getRoomCode();
-      if (existingCode) {
-        new RemotePairingOverlay(this, existingCode, () => {});
-        return;
-      }
-      try {
-        const code = await RemoteService.getInstance().initHost();
+    this.btnRemote.on('pointerdown', () => {
+      const code = RemoteService.getInstance().getRoomCode();
+      if (code) {
         new RemotePairingOverlay(this, code, () => {});
-      } catch (e) {
-        console.error('Remote init failed', e);
       }
     });
   }

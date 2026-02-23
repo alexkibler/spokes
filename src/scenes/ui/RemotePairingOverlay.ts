@@ -11,8 +11,8 @@ export class RemotePairingOverlay extends Phaser.GameObjects.Container {
     const h = scene.scale.height;
     const cx = w / 2;
     const cy = h / 2;
-    const PANEL_W = 300;
-    const PANEL_H = 300;
+    const PANEL_W = 320;
+    const PANEL_H = 380;
 
     // Dim Background
     const bg = scene.add.rectangle(cx, cy, w, h, THEME.colors.ui.overlayDim, THEME.colors.ui.overlayDimAlpha)
@@ -26,14 +26,22 @@ export class RemotePairingOverlay extends Phaser.GameObjects.Container {
     this.add(panel);
 
     // Title
-    const title = scene.add.text(cx, cy - PANEL_H / 2 + 20, 'SCAN TO CONNECT', {
+    const title = scene.add.text(cx, cy - PANEL_H / 2 + 25, 'SCAN TO CONNECT', {
       fontFamily: THEME.fonts.main, fontSize: '12px', color: '#00ff88', letterSpacing: 2,
     }).setOrigin(0.5, 0);
     this.add(title);
 
+    // URL Label
+    const remoteUrl = `${window.location.protocol}//${window.location.host}/remote.html?code=${roomCode}`;
+    const urlLabel = scene.add.text(cx, cy - PANEL_H / 2 + 50, remoteUrl, {
+      fontFamily: THEME.fonts.main, fontSize: '10px', color: '#8888aa', align: 'center',
+      wordWrap: { width: PANEL_W - 30 }
+    }).setOrigin(0.5, 0);
+    this.add(urlLabel);
+
     // Code Label
-    const codeLabel = scene.add.text(cx, cy + PANEL_H / 2 - 20, `CODE: ${roomCode}`, {
-      fontFamily: THEME.fonts.main, fontSize: '14px', color: '#ffffff',
+    const codeLabel = scene.add.text(cx, cy + PANEL_H / 2 - 25, `CODE: ${roomCode}`, {
+      fontFamily: THEME.fonts.main, fontSize: '16px', color: '#ffffff', fontStyle: 'bold',
     }).setOrigin(0.5, 1);
     this.add(codeLabel);
 
@@ -45,8 +53,8 @@ export class RemotePairingOverlay extends Phaser.GameObjects.Container {
     this.add(closeHit);
 
     // QR Code
-    const remoteUrl = `${window.location.protocol}//${window.location.host}/remote.html?code=${roomCode}`;
     const QR_SIZE = 200;
+    const qrY = cy + 20;
 
     // Generate QR
     QRCode.toDataURL(remoteUrl, {
@@ -62,7 +70,7 @@ export class RemotePairingOverlay extends Phaser.GameObjects.Container {
 
       this.scene.textures.once(`addtexture-${texKey}`, () => {
          if (!this.scene) return;
-         const qrImage = this.scene.add.image(cx, cy - 4, texKey)
+         const qrImage = this.scene.add.image(cx, qrY, texKey)
            .setDisplaySize(QR_SIZE, QR_SIZE);
          this.add(qrImage);
       });
