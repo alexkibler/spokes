@@ -11,6 +11,9 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
   private onQuit: () => void; // Save & Quit
   private onBackToMap: () => void; // Back to Map
 
+  private menuButtons: Phaser.GameObjects.Rectangle[] = [];
+  private selectedButtonIndex: number = -1;
+
   // FTP Input
   private ftpW: number;
   private ftpText!: Phaser.GameObjects.Text;
@@ -165,10 +168,49 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
       }).setOrigin(0.5);
 
       btn.on('pointerover', () => btn.setAlpha(0.8));
-      btn.on('pointerout', () => btn.setAlpha(1));
+      btn.on('pointerout', () => {
+        // Only reset if not selected via D-pad
+        if (this.menuButtons.indexOf(btn) !== this.selectedButtonIndex) {
+          btn.setAlpha(1);
+        }
+      });
       btn.on('pointerdown', onClick);
 
       this.menuContainer.add([btn, txt]);
+      this.menuButtons.push(btn);
+  }
+
+  public handleCursorMove(direction: 'up' | 'down' | 'left' | 'right') {
+    if (this.menuButtons.length === 0) return;
+
+    if (direction === 'up') {
+      if (this.selectedButtonIndex < 0) this.selectedButtonIndex = this.menuButtons.length - 1;
+      else this.selectedButtonIndex = (this.selectedButtonIndex - 1 + this.menuButtons.length) % this.menuButtons.length;
+    } else if (direction === 'down') {
+      if (this.selectedButtonIndex < 0) this.selectedButtonIndex = 0;
+      else this.selectedButtonIndex = (this.selectedButtonIndex + 1) % this.menuButtons.length;
+    }
+
+    this.updateFocus();
+  }
+
+  public handleCursorSelect() {
+    if (this.selectedButtonIndex >= 0 && this.selectedButtonIndex < this.menuButtons.length) {
+      const btn = this.menuButtons[this.selectedButtonIndex];
+      btn.emit('pointerdown');
+    }
+  }
+
+  private updateFocus() {
+    this.menuButtons.forEach((btn, index) => {
+      if (index === this.selectedButtonIndex) {
+        btn.setAlpha(0.8);
+        btn.setStrokeStyle(2, 0xffffff, 1);
+      } else {
+        btn.setAlpha(1);
+        btn.setStrokeStyle(0);
+      }
+    });
   }
 
   // FTP Logic

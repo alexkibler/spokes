@@ -11,6 +11,7 @@ export class RemoteService {
   private cursorMoveHandlers: ((direction: CursorDirection) => void)[] = [];
   private cursorSelectHandlers: (() => void)[] = [];
   private useItemHandlers: ((itemId: string) => void)[] = [];
+  private pauseHandlers: (() => void)[] = [];
 
   private constructor() {}
 
@@ -70,6 +71,8 @@ export class RemoteService {
         this.emitCursorMove(payload.direction);
       } else if (payload.type === 'action' && payload.action === 'select') {
         this.emitCursorSelect();
+      } else if (payload.type === 'action' && payload.action === 'pause') {
+        this.emitPause();
       } else if (payload.type === 'item') {
         this.emitUseItem(payload.itemId);
       }
@@ -122,6 +125,18 @@ export class RemoteService {
 
   private emitUseItem(itemId: string) {
     this.useItemHandlers.forEach(h => h(itemId));
+  }
+
+  public onPause(handler: () => void) {
+    this.pauseHandlers.push(handler);
+  }
+
+  public offPause(handler: () => void) {
+    this.pauseHandlers = this.pauseHandlers.filter(h => h !== handler);
+  }
+
+  private emitPause() {
+    this.pauseHandlers.forEach(h => h());
   }
 
   public getRoomCode(): string | null {
