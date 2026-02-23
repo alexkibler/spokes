@@ -19,6 +19,7 @@ import { ShopOverlay } from './ui/ShopOverlay';
 import { EventOverlay } from './ui/EventOverlay';
 import { EliteChallengeOverlay } from './ui/EliteChallengeOverlay';
 import { EquipmentOverlay } from './ui/EquipmentOverlay';
+import { RemotePairingOverlay } from './ui/RemotePairingOverlay';
 
 const SURFACE_LABELS: Record<SurfaceType, string> = {
   asphalt: 'ASPHALT',
@@ -73,6 +74,8 @@ export class MapScene extends Phaser.Scene {
   private devToggleTxt: Phaser.GameObjects.Text | null = null;
   private gearBtnBg:   Phaser.GameObjects.Rectangle | null = null;
   private gearBtnTxt:  Phaser.GameObjects.Text | null = null;
+  private remoteBtnBg: Phaser.GameObjects.Rectangle | null = null;
+  private remoteBtnTxt: Phaser.GameObjects.Text | null = null;
 
   private static readonly FLOOR_SPACING = 80;
   private isDragging = false;
@@ -158,6 +161,7 @@ export class MapScene extends Phaser.Scene {
 
     this.buildDevToggle();
     this.buildGearButton();
+    this.buildRemoteButton();
 
     this.scale.on('resize', this.onResize, this);
 
@@ -1151,6 +1155,57 @@ export class MapScene extends Phaser.Scene {
     });
   }
 
+  private buildRemoteButton(): void {
+    this.remoteBtnBg?.destroy();
+    this.remoteBtnTxt?.destroy();
+
+    const code = RemoteService.getInstance().getRoomCode();
+    const isConnected = !!code;
+
+    // Position at top-left, below the gear button (y=52 + 26/2 + padding -> ~84).
+    // Gear button is 26px high, centered at 52. Bottom is 65. Gap 6px -> 71 (top of next).
+    // Next button height 26. Center at 71 + 13 = 84.
+    const y = 84;
+
+    this.remoteBtnBg = this.add.rectangle(70, y, 130, 26, THEME.colors.buttons.primary)
+      .setScrollFactor(0).setDepth(30)
+      .setInteractive({ useHandCursor: true });
+
+    const label = isConnected ? `REMOTE: ${code}` : '📡 REMOTE';
+    const color = isConnected ? '#00ff88' : '#ccccff';
+
+    this.remoteBtnTxt = this.add.text(70, y, label, {
+      fontFamily: THEME.fonts.main, fontSize: '11px', color: color, fontStyle: 'bold',
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(31);
+
+    this.remoteBtnBg.on('pointerover', () => this.remoteBtnBg!.setFillStyle(THEME.colors.buttons.primaryHover));
+    this.remoteBtnBg.on('pointerout',  () => this.remoteBtnBg!.setFillStyle(THEME.colors.buttons.primary));
+    this.remoteBtnBg.on('pointerdown', async () => {
+      if (this.overlayActive) return;
+
+      const currentCode = RemoteService.getInstance().getRoomCode();
+      if (currentCode) {
+        this.overlayActive = true;
+        new RemotePairingOverlay(this, currentCode, () => { this.overlayActive = false; });
+        return;
+      }
+
+      this.remoteBtnTxt?.setText('CONNECTING...');
+      try {
+        const newCode = await RemoteService.getInstance().initHost();
+        // Rebuild button to show code
+        this.buildRemoteButton();
+        // Open overlay
+        this.overlayActive = true;
+        new RemotePairingOverlay(this, newCode, () => { this.overlayActive = false; });
+      } catch (e) {
+        console.error('Remote init failed', e);
+        this.remoteBtnTxt?.setText('ERR').setColor('#ff4444');
+        this.time.delayedCall(2000, () => this.buildRemoteButton());
+      }
+    });
+  }
+
   private showBossEncounterSplash(racer: RacerProfile, onProceed: () => void): void {
     const w  = this.scale.width;
     const h  = this.scale.height;
@@ -1246,6 +1301,8 @@ export class MapScene extends Phaser.Scene {
     this.teleportTxt = null;
     this.devToggleBg = null;
     this.devToggleTxt = null;
+    this.remoteBtnBg = null;
+    this.remoteBtnTxt = null;
     this.isTeleportMode = false;
     this.overlayActive = false;
     this.nodeObjects.clear();
