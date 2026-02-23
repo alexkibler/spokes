@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { RunStateManager } from '../../roguelike/RunState';
 import { ITEM_REGISTRY, ALL_SLOTS, SLOT_LABELS, formatModifierLines, type EquipmentSlot } from '../../roguelike/ItemRegistry';
 import { THEME } from '../../theme';
+import type { FocusManager } from '../../ui/FocusManager';
 
 // ─── layout ────────────────────────────────────────────────────────────────
 const PANEL_W = 520;
@@ -15,10 +16,16 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
   public panelHeight = 0;
   public onHeightChanged?: () => void;
   private contentGroup: Phaser.GameObjects.GameObject[] = [];
+  private currentFocusManager: FocusManager | null = null;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y);
     this.refresh();
+  }
+
+  public registerFocus(focusManager: FocusManager): void {
+    this.currentFocusManager = focusManager;
+    this.refresh(); // Re-render to attach focus listeners
   }
 
   public refresh(): void {
@@ -116,24 +123,32 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
 
         const hitZone = this.scene.add.rectangle(sx + SLOT_W / 2, slotsY + SLOT_H / 2, SLOT_W, SLOT_H, 0xffffff, 0)
           .setInteractive({ useHandCursor: true });
-        hitZone.on('pointerover', () => {
+
+        const highlightSlot = (active: boolean) => {
           slotBg.clear();
-          slotBg.fillStyle(0x2a3a2a, 1);
+          slotBg.fillStyle(active ? 0x2a3a2a : 0x1e2a1e, 1);
           slotBg.fillRoundedRect(sx, slotsY, SLOT_W, SLOT_H, 6);
-          slotBg.lineStyle(1, 0x44aa44, 1);
+          slotBg.lineStyle(1, active ? 0x44aa44 : 0x336633, 1);
           slotBg.strokeRoundedRect(sx, slotsY, SLOT_W, SLOT_H, 6);
-        });
-        hitZone.on('pointerout', () => {
-          slotBg.clear();
-          slotBg.fillStyle(0x1e2a1e, 1);
-          slotBg.fillRoundedRect(sx, slotsY, SLOT_W, SLOT_H, 6);
-          slotBg.lineStyle(1, 0x336633, 1);
-          slotBg.strokeRoundedRect(sx, slotsY, SLOT_W, SLOT_H, 6);
-        });
-        hitZone.on('pointerdown', () => {
+        };
+
+        hitZone.on('pointerover', () => highlightSlot(true));
+        hitZone.on('pointerout', () => highlightSlot(false));
+        const onUnequip = () => {
           RunStateManager.unequipItem(slot);
           this.refresh();
-        });
+        };
+        hitZone.on('pointerdown', onUnequip);
+
+        if (this.currentFocusManager) {
+          this.currentFocusManager.add({
+            object: hitZone,
+            onFocus: () => highlightSlot(true),
+            onBlur: () => highlightSlot(false),
+            onSelect: onUnequip,
+          });
+        }
+
         this.add(hitZone);
         this.contentGroup.push(hitZone);
       } else {
@@ -209,11 +224,22 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
              fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ffffff', fontStyle: 'bold',
            }).setOrigin(0.5);
 
+           const onEquip = () => {
+             this.handleEquip(itemId, def!.slot!);
+           };
+
            btnBg.on('pointerover', () => btnBg.setFillStyle(THEME.colors.buttons.primaryHover));
            btnBg.on('pointerout',  () => btnBg.setFillStyle(THEME.colors.buttons.primary));
-           btnBg.on('pointerdown', () => {
-             this.handleEquip(itemId, def!.slot!);
-           });
+           btnBg.on('pointerdown', onEquip);
+
+           if (this.currentFocusManager) {
+             this.currentFocusManager.add({
+               object: btnBg,
+               onFocus: () => btnBg.setStrokeStyle(2, 0x00ff00, 1),
+               onBlur: () => btnBg.setStrokeStyle(0),
+               onSelect: onEquip,
+             });
+           }
 
            this.add(btnBg);
            this.add(btnLabel);

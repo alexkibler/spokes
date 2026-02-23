@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { THEME } from '../theme';
+import { FocusManager } from './FocusManager';
 
 interface ConfirmationModalOptions {
   title: string;
@@ -12,9 +13,13 @@ interface ConfirmationModalOptions {
 }
 
 export class ConfirmationModal extends Phaser.GameObjects.Container {
+  public focusManager: FocusManager;
+
   constructor(scene: Phaser.Scene, opts: ConfirmationModalOptions) {
     super(scene);
     this.setDepth(3000); // High depth
+
+    this.focusManager = new FocusManager(scene);
 
     const w = scene.scale.width;
     const h = scene.scale.height;
@@ -80,6 +85,16 @@ export class ConfirmationModal extends Phaser.GameObjects.Container {
       opts.onConfirm();
     });
 
+    this.focusManager.add({
+      object: confirmBtn,
+      onFocus: () => confirmBtn.setStrokeStyle(2, 0x00ff00),
+      onBlur: () => confirmBtn.setStrokeStyle(0),
+      onSelect: () => {
+        this.destroy();
+        opts.onConfirm();
+      }
+    });
+
     // Cancel Button
     const cancelLabel = opts.cancelLabel ?? 'CANCEL';
     const cancelBtn = scene.add.rectangle(cx - btnW / 2 - gap / 2, btnY, btnW, btnH, THEME.colors.buttons.secondary)
@@ -90,13 +105,33 @@ export class ConfirmationModal extends Phaser.GameObjects.Container {
 
     cancelBtn.on('pointerover', () => cancelBtn.setAlpha(0.8));
     cancelBtn.on('pointerout', () => cancelBtn.setAlpha(1));
-    cancelBtn.on('pointerdown', () => {
+    const onCancel = () => {
       this.destroy();
       if (opts.onCancel) opts.onCancel();
+    };
+    cancelBtn.on('pointerdown', onCancel);
+
+    this.focusManager.add({
+      object: cancelBtn,
+      onFocus: () => cancelBtn.setStrokeStyle(2, 0x00ff00),
+      onBlur: () => cancelBtn.setStrokeStyle(0),
+      onSelect: onCancel,
     });
 
     this.add([confirmBtn, confirmTxt, cancelBtn, cancelTxt]);
 
+    // Default focus
+    this.focusManager.focus({ object: confirmBtn } as any); // hacky way to set initial?
+    // Actually handleInput handles default. But let's set it explicitly if needed.
+
     scene.add.existing(this);
+  }
+
+  public handleRemoteInput(type: 'dpad' | 'action', value?: any): void {
+    if (type === 'dpad') {
+      this.focusManager.handleInput(value);
+    } else if (type === 'action' && value === 'select') {
+      this.focusManager.handleSelect();
+    }
   }
 }

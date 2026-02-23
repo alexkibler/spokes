@@ -15,6 +15,7 @@ import Phaser from 'phaser';
 import { RunStateManager } from '../roguelike/RunState';
 import { RemotePairingOverlay } from './ui/RemotePairingOverlay';
 import { ConfirmationModal } from '../ui/ConfirmationModal';
+import { FocusManager } from '../ui/FocusManager';
 import type { ITrainerService } from '../services/ITrainerService';
 import { TrainerService } from '../services/TrainerService';
 import { HeartRateService } from '../services/HeartRateService';
@@ -132,11 +133,16 @@ export class MenuScene extends Phaser.Scene {
   private isStartWarningActive = false;
   private devModeToggle!: Phaser.GameObjects.Container;
 
+  private focusManager!: FocusManager;
+  private onRemoteCursorMoveBound = this.onRemoteCursorMove.bind(this);
+  private onRemoteCursorSelectBound = this.onRemoteCursorSelect.bind(this);
+
   constructor() {
     super({ key: 'MenuScene' });
   }
 
   create(): void {
+    this.focusManager = new FocusManager(this);
     // Refresh FTP from storage (it might have changed in the pause menu)
     this.ftpW = RunStateManager.getLastFtp();
 
@@ -175,6 +181,44 @@ export class MenuScene extends Phaser.Scene {
 
     this.scale.on('resize', this.onResize, this);
     this.onResize();
+
+    RemoteService.getInstance().onCursorMove(this.onRemoteCursorMoveBound);
+    RemoteService.getInstance().onCursorSelect(this.onRemoteCursorSelectBound);
+  }
+
+  private onRemoteCursorMove(direction: 'up' | 'down' | 'left' | 'right'): void {
+    if (this.distInputActive || this.weightInputActive || this.ftpInputActive) {
+        if (direction === 'up' || direction === 'down') {
+            this.adjustActiveInput(direction);
+            return;
+        }
+        // Left/Right could potentially navigate out of input, but for now let's commit on select
+    }
+    this.focusManager.handleInput(direction);
+  }
+
+  private onRemoteCursorSelect(): void {
+    this.focusManager.handleSelect();
+  }
+
+  private adjustActiveInput(direction: 'up' | 'down'): void {
+      const delta = direction === 'up' ? 1 : -1;
+      if (this.distInputActive) {
+          const val = parseFloat(this.distInputStr) || 0;
+          const newVal = Math.max(0, val + delta);
+          this.distInputStr = formatFixed(newVal);
+          this.showDistInputDisplay();
+      } else if (this.weightInputActive) {
+          const val = parseFloat(this.weightInputStr) || 0;
+          const newVal = Math.max(0, val + delta);
+          this.weightInputStr = formatFixed(newVal);
+          this.showWeightInputDisplay();
+      } else if (this.ftpInputActive) {
+          const val = parseInt(this.ftpInputStr, 10) || 0;
+          const newVal = Math.max(0, val + delta * 5); // 5w increments
+          this.ftpInputStr = String(newVal);
+          this.showFtpInputDisplay();
+      }
   }
 
   private showBannerIfNeeded(): void {
@@ -463,6 +507,16 @@ export class MenuScene extends Phaser.Scene {
       this.startDistEdit();
     });
 
+    this.focusManager.add({
+      object: this.distInputField,
+      onFocus: () => this.distInputField.setStrokeStyle(2, 0x00ff00, 1),
+      onBlur: () => {
+        if (!this.distInputActive) this.distInputField.setStrokeStyle(2, 0x3a3a8b, 0.8);
+        else this.commitDistEdit();
+      },
+      onSelect: () => this.startDistEdit(),
+    });
+
     this.buildPresetButtons();
   }
 
@@ -553,6 +607,16 @@ export class MenuScene extends Phaser.Scene {
       this.ignoreNextGlobalClick = true;
       this.startWeightEdit();
     });
+
+    this.focusManager.add({
+      object: this.weightInputField,
+      onFocus: () => this.weightInputField.setStrokeStyle(2, 0x00ff00, 1),
+      onBlur: () => {
+        if (!this.weightInputActive) this.weightInputField.setStrokeStyle(2, 0x3a3a8b, 0.8);
+        else this.commitWeightEdit();
+      },
+      onSelect: () => this.startWeightEdit(),
+    });
   }
 
   // ── FTP selector ───────────────────────────────────────────────────────────
@@ -601,6 +665,16 @@ export class MenuScene extends Phaser.Scene {
     this.ftpInputField.on('pointerdown', () => {
       this.ignoreNextGlobalClick = true;
       this.startFtpEdit();
+    });
+
+    this.focusManager.add({
+      object: this.ftpInputField,
+      onFocus: () => this.ftpInputField.setStrokeStyle(2, 0x00ff00, 1),
+      onBlur: () => {
+        if (!this.ftpInputActive) this.ftpInputField.setStrokeStyle(2, 0x3a3a8b, 0.8);
+        else this.commitFtpEdit();
+      },
+      onSelect: () => this.startFtpEdit(),
     });
   }
 
@@ -749,6 +823,13 @@ export class MenuScene extends Phaser.Scene {
       btn.on('pointerdown', () => { this.difficulty = diff; this.refreshDiffStyles(); });
       btn.on('pointerover', () => { if (this.difficulty !== diff) btn.setFillStyle(DIFF[diff].colorHov); });
       btn.on('pointerout',  () => this.refreshDiffStyles());
+
+      this.focusManager.add({
+        object: btn,
+        onFocus: () => btn.setStrokeStyle(2, 0x00ff00, 1),
+        onBlur: () => this.refreshDiffStyles(),
+        onSelect: () => { this.difficulty = diff; this.refreshDiffStyles(); },
+      });
     });
 
     this.refreshDiffStyles();
@@ -802,7 +883,7 @@ export class MenuScene extends Phaser.Scene {
     btnTrainer.on('pointerout', () => {
       btnTrainer.setFillStyle(this.trainerService ? 0x1a5a3a : 0x1a3a6b);
     });
-    btnTrainer.on('pointerdown', async () => {
+    const onTrainerClick = async () => {
       btnTrainer.setFillStyle(0x2a2a6b);
       btnTrainerTxt.setText('CONNECTING…');
       this.trainerStatusDot.setFillStyle(0x888888);
@@ -824,6 +905,14 @@ export class MenuScene extends Phaser.Scene {
         btnTrainer.setFillStyle(0x1a3a6b);
         btnTrainerTxt.setText('CONNECT BT');
       }
+    };
+    btnTrainer.on('pointerdown', onTrainerClick);
+
+    this.focusManager.add({
+      object: btnTrainer,
+      onFocus: () => btnTrainer.setStrokeStyle(2, 0x00ff00, 1),
+      onBlur: () => btnTrainer.setStrokeStyle(0),
+      onSelect: onTrainerClick,
     });
 
 
@@ -847,7 +936,7 @@ export class MenuScene extends Phaser.Scene {
       const code = RemoteService.getInstance().getRoomCode();
       if (!code) btnRemote.setFillStyle(0x4a4a5a);
     });
-    btnRemote.on('pointerdown', async () => {
+    const onRemoteClick = async () => {
       const existingCode = RemoteService.getInstance().getRoomCode();
       if (existingCode) {
         new RemotePairingOverlay(this, existingCode, () => {});
@@ -867,6 +956,18 @@ export class MenuScene extends Phaser.Scene {
         btnRemoteTxt.setText('ERR');
         this.time.delayedCall(2000, () => btnRemoteTxt.setText('REMOTE'));
       }
+    };
+    btnRemote.on('pointerdown', onRemoteClick);
+
+    this.focusManager.add({
+      object: btnRemote,
+      onFocus: () => btnRemote.setStrokeStyle(2, 0x00ff00, 1),
+      onBlur: () => {
+        const code = RemoteService.getInstance().getRoomCode();
+        if (code) btnRemote.setStrokeStyle(1, 0x00ff88);
+        else btnRemote.setStrokeStyle(0);
+      },
+      onSelect: onRemoteClick,
     });
 
     // ── Heart Rate Monitor (right half) ────────────────────────────────────
@@ -895,7 +996,7 @@ export class MenuScene extends Phaser.Scene {
     btnHrm.on('pointerout', () => {
       btnHrm.setFillStyle(this.hrmService ? 0x5a1a5a : 0x3a1a5a);
     });
-    btnHrm.on('pointerdown', async () => {
+    const onHrmClick = async () => {
       btnHrm.setFillStyle(0x4a1a8b);
       btnHrmTxt.setText('CONNECTING…');
       this.hrmStatusDot.setFillStyle(0x888888);
@@ -917,6 +1018,14 @@ export class MenuScene extends Phaser.Scene {
         btnHrm.setFillStyle(0x3a1a5a);
         btnHrmTxt.setText('CONNECT HRM');
       }
+    };
+    btnHrm.on('pointerdown', onHrmClick);
+
+    this.focusManager.add({
+      object: btnHrm,
+      onFocus: () => btnHrm.setStrokeStyle(2, 0x00ff00, 1),
+      onBlur: () => btnHrm.setStrokeStyle(0),
+      onSelect: onHrmClick,
     });
   }
 
@@ -1038,7 +1147,7 @@ export class MenuScene extends Phaser.Scene {
 
     btn.on('pointerover', () => btn.setFillStyle(0x25a558));
     btn.on('pointerout',  () => btn.setFillStyle(0x1a7040));
-    btn.on('pointerdown', () => {
+    const onContinueClick = () => {
       const saved = SaveService.load();
       if (!saved) return;
       const run = RunStateManager.loadFromSave(saved);
@@ -1049,6 +1158,14 @@ export class MenuScene extends Phaser.Scene {
         hrm:      this.hrmService,
         isDevMode: this.isDevMode,
       });
+    };
+    btn.on('pointerdown', onContinueClick);
+
+    this.focusManager.add({
+      object: btn,
+      onFocus: () => btn.setStrokeStyle(2, 0x00ff00, 1),
+      onBlur: () => btn.setStrokeStyle(0),
+      onSelect: onContinueClick,
     });
   }
 
@@ -1067,7 +1184,7 @@ export class MenuScene extends Phaser.Scene {
 
     btn.on('pointerover', () => { if (!confirmPending) btn.setFillStyle(0xaa5a00); });
     btn.on('pointerout',  () => { if (!confirmPending) btn.setFillStyle(0x6b3a00); });
-    btn.on('pointerdown', () => {
+    const onStartNewClick = () => {
       if (!this.trainerService && !this.isDevMode && !trainerCheckPassed) {
         new ConfirmationModal(this, {
           title: 'NO TRAINER?',
@@ -1076,7 +1193,6 @@ export class MenuScene extends Phaser.Scene {
           confirmColor: 0xaa5a00,
           onConfirm: () => {
             trainerCheckPassed = true;
-            // Auto-advance to the erase save warning
             if (!confirmPending) {
               confirmPending = true;
               txt.setText('ERASE SAVE? CONFIRM');
@@ -1090,7 +1206,6 @@ export class MenuScene extends Phaser.Scene {
                 }
               });
             } else {
-              // Should generally not reach here if logic holds, but proceed if so
               this.doStartNewRun();
             }
           }
@@ -1099,14 +1214,12 @@ export class MenuScene extends Phaser.Scene {
       }
 
       if (!confirmPending) {
-        // First click: ask for confirmation
         confirmPending = true;
         txt.setText('ERASE SAVE? CONFIRM');
         btn.setFillStyle(0xaa2222);
         this.time.delayedCall(2500, () => {
           if (confirmPending) {
             confirmPending = false;
-            // Only reset trainer check if we timeout
             trainerCheckPassed = false;
             txt.setText('▶  START NEW RUN');
             btn.setFillStyle(0x6b3a00);
@@ -1115,9 +1228,16 @@ export class MenuScene extends Phaser.Scene {
         return;
       }
 
-      // Second click: confirmed — wipe save and start fresh
       confirmPending = false;
       this.doStartNewRun();
+    };
+    btn.on('pointerdown', onStartNewClick);
+
+    this.focusManager.add({
+      object: btn,
+      onFocus: () => btn.setStrokeStyle(2, 0x00ff00, 1),
+      onBlur: () => btn.setStrokeStyle(0),
+      onSelect: onStartNewClick,
     });
   }
 
@@ -1137,7 +1257,7 @@ export class MenuScene extends Phaser.Scene {
     runBtn.on('pointerout',  () => {
       if (!this.isStartWarningActive) runBtn.setFillStyle(0x8b5a00);
     });
-    runBtn.on('pointerdown', () => {
+    const onStartRunClick = () => {
       if (!this.trainerService && !this.isDevMode) {
         new ConfirmationModal(this, {
           title: 'NO TRAINER?',
@@ -1149,6 +1269,14 @@ export class MenuScene extends Phaser.Scene {
         return;
       }
       this.doStartRun();
+    };
+    runBtn.on('pointerdown', onStartRunClick);
+
+    this.focusManager.add({
+      object: runBtn,
+      onFocus: () => runBtn.setStrokeStyle(2, 0x00ff00, 1),
+      onBlur: () => runBtn.setStrokeStyle(0),
+      onSelect: onStartRunClick,
     });
   }
 
@@ -1196,6 +1324,17 @@ export class MenuScene extends Phaser.Scene {
       });
       btn.on('pointerover', () => { if (this.units !== u) btn.setFillStyle(0x3a3a6b); });
       btn.on('pointerout',  () => this.refreshUnitsStyles());
+
+      this.focusManager.add({
+        object: btn,
+        onFocus: () => btn.setStrokeStyle(2, 0x00ff00, 1),
+        onBlur: () => this.refreshUnitsStyles(),
+        onSelect: () => {
+          this.units = u;
+          this.refreshUnitsStyles();
+          this.refreshUnitDisplays();
+        },
+      });
     });
 
     this.refreshUnitsStyles();
@@ -1328,5 +1467,7 @@ export class MenuScene extends Phaser.Scene {
   shutdown(): void {
     this.scale.off('resize', this.onResize, this);
     this.hideBanner();
+    RemoteService.getInstance().offCursorMove(this.onRemoteCursorMoveBound);
+    RemoteService.getInstance().offCursorSelect(this.onRemoteCursorSelectBound);
   }
 }

@@ -1,11 +1,16 @@
 import Phaser from 'phaser';
 import QRCode from 'qrcode';
 import { THEME } from '../../theme';
+import { FocusManager } from '../../ui/FocusManager';
 
 export class RemotePairingOverlay extends Phaser.GameObjects.Container {
+  public focusManager: FocusManager;
+
   constructor(scene: Phaser.Scene, roomCode: string, onClose: () => void) {
     super(scene);
     this.setDepth(3000);
+
+    this.focusManager = new FocusManager(scene);
 
     const w = scene.scale.width;
     const h = scene.scale.height;
@@ -41,7 +46,19 @@ export class RemotePairingOverlay extends Phaser.GameObjects.Container {
     const closeHit = scene.add.text(cx + PANEL_W / 2 - 8, cy - PANEL_H / 2 + 8, '✕', {
       fontFamily: THEME.fonts.main, fontSize: '14px', color: THEME.colors.text.muted,
     }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
-    closeHit.on('pointerdown', () => { this.destroy(); onClose(); });
+
+    const doClose = () => { this.destroy(); onClose(); };
+    closeHit.on('pointerdown', doClose);
+
+    this.focusManager.add({
+        object: closeHit,
+        onFocus: () => closeHit.setColor(THEME.colors.text.main),
+        onBlur: () => closeHit.setColor(THEME.colors.text.muted),
+        onSelect: doClose
+    });
+    // Default focus
+    this.focusManager.focus({ object: closeHit } as any);
+
     this.add(closeHit);
 
     // QR Code

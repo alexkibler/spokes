@@ -46,6 +46,8 @@ import { pickRewards } from '../roguelike/RewardPool';
 import { Button } from '../ui/Button';
 import { PauseOverlay } from './ui/PauseOverlay';
 import { RemotePairingOverlay } from './ui/RemotePairingOverlay';
+import { FocusManager } from '../ui/FocusManager';
+import { ConfirmationModal } from '../ui/ConfirmationModal';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -249,6 +251,12 @@ export class GameScene extends Phaser.Scene {
 
   private lastStateUpdateMs = 0;
   private onRemoteUseItemBound = this.onRemoteUseItem.bind(this);
+  private onRemoteCursorMoveBound = this.onRemoteCursorMove.bind(this);
+  private onRemoteCursorSelectBound = this.onRemoteCursorSelect.bind(this);
+
+  private focusManager!: FocusManager;
+  private activeModal: ConfirmationModal | null = null;
+  private activePauseOverlay: PauseOverlay | null = null;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -463,7 +471,71 @@ export class GameScene extends Phaser.Scene {
       this.runModifiers = RunStateManager.getModifiers();
     }
 
+    this.focusManager = new FocusManager(this);
+    this.registerHudFocus();
+
     RemoteService.getInstance().onUseItem(this.onRemoteUseItemBound);
+    RemoteService.getInstance().onCursorMove(this.onRemoteCursorMoveBound);
+    RemoteService.getInstance().onCursorSelect(this.onRemoteCursorSelectBound);
+  }
+
+  private registerHudFocus(): void {
+    if (this.btnMenu) {
+        this.focusManager.add({
+            object: this.btnMenu,
+            onFocus: () => this.btnMenu.setAlpha(0.8), // Button handles its own hover style usually, but lets force it
+            onBlur: () => this.btnMenu.setAlpha(1),
+            onSelect: () => {
+                // Manually trigger click
+                (this.btnMenu as any).emit('pointerdown');
+            }
+        });
+    }
+    if (this.btnRemote) {
+        this.focusManager.add({
+            object: this.btnRemote,
+            onFocus: () => this.btnRemote.setColor('#00ff00'),
+            onBlur: () => this.btnRemote.setColor('#ffffff'),
+            onSelect: () => (this.btnRemote as any).emit('pointerdown')
+        });
+    }
+    // Add effects buttons?
+    if (this.btnHeadwind) {
+        this.focusManager.add({
+            object: this.btnHeadwind,
+            onFocus: () => this.btnHeadwind.setStrokeStyle(2, 0x00ff00),
+            onBlur: () => this.btnHeadwind.setStrokeStyle(0),
+            onSelect: () => (this.btnHeadwind as any).emit('pointerdown')
+        });
+    }
+    if (this.btnTailwind) {
+        this.focusManager.add({
+            object: this.btnTailwind,
+            onFocus: () => this.btnTailwind.setStrokeStyle(2, 0x00ff00),
+            onBlur: () => this.btnTailwind.setStrokeStyle(0),
+            onSelect: () => (this.btnTailwind as any).emit('pointerdown')
+        });
+    }
+  }
+
+  private onRemoteCursorMove(direction: 'up' | 'down' | 'left' | 'right'): void {
+      if (this.activeModal) {
+          this.activeModal.handleRemoteInput('dpad', direction);
+      } else if (this.activePauseOverlay) {
+          this.activePauseOverlay.handleRemoteInput('dpad', direction);
+      } else {
+          this.focusManager.handleInput(direction);
+      }
+  }
+
+  private onRemoteCursorSelect(): void {
+      if (this.activeModal) {
+          this.activeModal.handleRemoteInput('action', 'select');
+      } else if (this.activePauseOverlay) {
+          this.activePauseOverlay.handleRemoteInput('action', 'select');
+      } else {
+          this.focusManager.handleSelect();
+      }
   }
 
   update(_time: number, delta: number): void {
@@ -1000,10 +1072,14 @@ export class GameScene extends Phaser.Scene {
       textColor: '#ffffff',
       onClick: () => {
         this.overlayVisible = true;
-        new PauseOverlay(this, {
-          onResume: () => { this.overlayVisible = false; },
+        this.activePauseOverlay = new PauseOverlay(this, {
+          onResume: () => {
+              this.overlayVisible = false;
+              this.activePauseOverlay = null;
+          },
           onBackToMap: () => {
             this.overlayVisible = false;
+            this.activePauseOverlay = null;
             this.showRideEndOverlay(false);
           },
           onQuit: () => {
@@ -1012,6 +1088,7 @@ export class GameScene extends Phaser.Scene {
             this.scene.start('MenuScene');
           }
         }, this.ftpW);
+        this.activePauseOverlay.once('destroy', () => { this.activePauseOverlay = null; });
       },
     });
     this.btnMenu.setDepth(11);
@@ -1398,6 +1475,8 @@ export class GameScene extends Phaser.Scene {
     this.trainer?.disconnect();
     this.preConnectedHrm?.disconnect();
     RemoteService.getInstance().offUseItem(this.onRemoteUseItemBound);
+    RemoteService.getInstance().offCursorMove(this.onRemoteCursorMoveBound);
+    RemoteService.getInstance().offCursorSelect(this.onRemoteCursorSelectBound);
     // Cleanup UI components if they need it (Phaser usually handles children cleanup)
     this.hud?.destroy();
     this.elevGraph?.destroy();

@@ -3,6 +3,7 @@ import { THEME } from '../../theme';
 import { EquipmentPanel } from './EquipmentPanel';
 import { ConfirmationModal } from '../../ui/ConfirmationModal';
 import { RunStateManager } from '../../roguelike/RunState';
+import { FocusManager } from '../../ui/FocusManager';
 
 export class PauseOverlay extends Phaser.GameObjects.Container {
   private panel: EquipmentPanel;
@@ -10,6 +11,8 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
   private onResume: () => void;
   private onQuit: () => void; // Save & Quit
   private onBackToMap: () => void; // Back to Map
+
+  public focusManager: FocusManager;
 
   // FTP Input
   private ftpW: number;
@@ -44,6 +47,8 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
     // Block clicks going through
     this.add(bg);
 
+    this.focusManager = new FocusManager(scene);
+
     // Layout
     const GAP = 20;
     const MENU_W = 220;
@@ -60,6 +65,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
         const newY = (h - this.panel.panelHeight) / 2;
         this.panel.setPosition(startX, newY);
     };
+    this.panel.registerFocus(this.focusManager);
     this.add(this.panel);
 
     // Menu Container
@@ -73,6 +79,25 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
     this.setupInput();
 
     scene.add.existing(this);
+  }
+
+  public handleRemoteInput(type: 'dpad' | 'action', value?: any): void {
+    if (this.ftpInputActive && type === 'dpad') {
+        const delta = value === 'up' ? 1 : value === 'down' ? -1 : 0;
+        if (delta !== 0) {
+            const val = parseInt(this.ftpInputStr, 10) || 0;
+            const newVal = Math.max(50, val + delta * 5);
+            this.ftpInputStr = String(newVal);
+            this.updateFtpDisplay();
+        }
+        return; // Consume input while editing
+    }
+
+    if (type === 'dpad') {
+      this.focusManager.handleInput(value);
+    } else if (type === 'action' && value === 'select') {
+      this.focusManager.handleSelect();
+    }
   }
 
   private buildMenu(): void {
@@ -123,6 +148,16 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
 
     this.ftpInputField.on('pointerdown', () => this.startFtpEdit());
 
+    this.focusManager.add({
+      object: this.ftpInputField,
+      onFocus: () => this.ftpInputField.setStrokeStyle(2, 0x00ff00),
+      onBlur: () => {
+        if (!this.ftpInputActive) this.ftpInputField.setStrokeStyle(2, 0x3a3a8b);
+        else this.stopFtpEdit();
+      },
+      onSelect: () => this.startFtpEdit(),
+    });
+
     cy += 60;
 
     // Back to Map Button
@@ -167,6 +202,13 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
       btn.on('pointerover', () => btn.setAlpha(0.8));
       btn.on('pointerout', () => btn.setAlpha(1));
       btn.on('pointerdown', onClick);
+
+      this.focusManager.add({
+        object: btn,
+        onFocus: () => btn.setStrokeStyle(2, 0x00ff00),
+        onBlur: () => btn.setStrokeStyle(0),
+        onSelect: onClick,
+      });
 
       this.menuContainer.add([btn, txt]);
   }
