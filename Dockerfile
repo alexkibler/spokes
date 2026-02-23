@@ -20,6 +20,8 @@ RUN npm ci --production
 COPY --from=build /app/dist ./dist
 COPY server.js ./
 
-EXPOSE 3000
+EXPOSE 80
+
+ENV PORT=80
 
 CMD ["node", "server.js"]
