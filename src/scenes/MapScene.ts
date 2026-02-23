@@ -177,6 +177,11 @@ export class MapScene extends Phaser.Scene {
 
   private setupScrolling(): void {
     const cam = this.cameras.main;
+    // Track where the pointer went down without committing to drag until a
+    // threshold is exceeded.  This prevents a node click from accidentally
+    // scrolling the map when the pointer drifts a pixel on release.
+    let potentialDragStartY: number | null = null;
+    const DRAG_THRESHOLD = 5;
 
     this.input.on('wheel', (_ptr: unknown, _objs: unknown, _dx: number, dy: number) => {
       if (this.overlayActive) return;
@@ -186,17 +191,24 @@ export class MapScene extends Phaser.Scene {
 
     this.input.on('pointerdown', (ptr: Phaser.Input.Pointer) => {
       if (this.overlayActive) return;
-      this.isDragging = true;
+      potentialDragStartY = ptr.y;
       this.dragStartY = ptr.y;
       this.dragStartScrollY = cam.scrollY;
     });
     this.input.on('pointermove', (ptr: Phaser.Input.Pointer) => {
+      if (potentialDragStartY === null) return;
+      if (!this.isDragging && Math.abs(ptr.y - potentialDragStartY) > DRAG_THRESHOLD) {
+        this.isDragging = true;
+      }
       if (!this.isDragging) return;
       const delta = this.dragStartY - ptr.y;
       const maxScroll = Math.max(0, this.virtualHeight - this.scale.height);
       cam.scrollY = Phaser.Math.Clamp(this.dragStartScrollY + delta, 0, maxScroll);
     });
-    this.input.on('pointerup', () => { this.isDragging = false; });
+    this.input.on('pointerup', () => {
+      this.isDragging = false;
+      potentialDragStartY = null;
+    });
   }
 
   private scrollToCurrentNode(): void {

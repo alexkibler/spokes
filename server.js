@@ -87,6 +87,22 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('HOST_PAUSE_STATE', (payload) => {
+    for (const roomCode of socket.rooms) {
+      if (roomCode.length === 4) {
+        socket.to(roomCode).emit('HOST_PAUSE_STATE', payload);
+      }
+    }
+  });
+
+  socket.on('HOST_RESUME_STATE', (payload) => {
+    for (const roomCode of socket.rooms) {
+      if (roomCode.length === 4) {
+        socket.to(roomCode).emit('HOST_RESUME_STATE', payload);
+      }
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
   });

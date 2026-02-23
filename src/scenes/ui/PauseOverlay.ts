@@ -26,7 +26,8 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
   constructor(
     scene: Phaser.Scene,
     callbacks: { onResume: () => void; onQuit: () => void; onBackToMap: () => void },
-    currentFtpW: number
+    currentFtpW: number,
+    private isRoguelike = false
   ) {
     super(scene);
     this.setDepth(2000);
@@ -128,11 +129,15 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
 
     cy += 60;
 
-    // Back to Map Button
-    this.createButton(cx, cy, 'BACK TO MAP', THEME.colors.buttons.secondary, () => {
+    // Back to Map / Main Menu Button
+    const backLabel = this.isRoguelike ? 'BACK TO MAP' : 'MAIN MENU';
+    const backMessage = this.isRoguelike
+      ? 'Progress in this ride will be lost.\nReturn to map?'
+      : 'Progress in this ride will be lost.\nReturn to main menu?';
+    this.createButton(cx, cy, backLabel, THEME.colors.buttons.secondary, () => {
         new ConfirmationModal(this.scene, {
             title: 'ABANDON RIDE?',
-            message: 'Progress in this ride will be lost.\nReturn to map?',
+            message: backMessage,
             confirmLabel: 'YES, ABANDON',
             confirmColor: THEME.colors.buttons.danger,
             onConfirm: () => {

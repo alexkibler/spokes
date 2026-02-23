@@ -492,6 +492,7 @@ describe('RunStateManager.loadFromSave', () => {
         ftpW: 250,
         weightKg: 70,
         units: 'metric',
+        isRealTrainerRun: false,
       },
     });
     expect(RunStateManager.getRun()?.gold).toBe(77);
@@ -516,6 +517,7 @@ describe('RunStateManager.loadFromSave', () => {
         ftpW: 200,
         weightKg: 68,
         units: 'imperial',
+        isRealTrainerRun: false,
       },
     });
     expect(RunStateManager.getRun()?.inventory).toEqual(['tailwind', 'gel']);
@@ -540,6 +542,7 @@ describe('RunStateManager.loadFromSave', () => {
         ftpW: 200,
         weightKg: 68,
         units: 'imperial',
+        isRealTrainerRun: false,
       },
     });
     expect(RunStateManager.getRun()?.activeEdge).toBeNull();
@@ -564,6 +567,7 @@ describe('RunStateManager.loadFromSave', () => {
         ftpW: 200,
         weightKg: 68,
         units: 'imperial',
+        isRealTrainerRun: false,
       },
     });
     expect(RunStateManager.getRun()?.fitWriter).toBeDefined();

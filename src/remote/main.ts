@@ -13,6 +13,8 @@ const COLORS = {
   btnPrimary: '#2a2a44',
   btnPrimaryHover: '#4444aa',
   btnSuccess: '#006655',
+  btnDanger: '#662222',
+  btnWarning: '#664400',
   border: '#8b5a00'
 };
 
@@ -98,13 +100,128 @@ style.innerHTML = `
     width: 100%;
     outline: none;
   }
+  .pause-action-btn {
+    width: 100%;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: bold;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+  }
+  .inv-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 4px;
+    margin-bottom: 6px;
+  }
+  .inv-row .item-label {
+    font-size: 13px;
+    font-weight: bold;
+    color: ${COLORS.accent};
+  }
+  .inv-row .item-count {
+    font-size: 11px;
+    color: ${COLORS.textMuted};
+    margin-left: 6px;
+  }
+  .use-btn {
+    background: ${COLORS.btnSuccess};
+    border: none;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: bold;
+    border-radius: 4px;
+    color: ${COLORS.accent};
+  }
+  .section-title {
+    font-size: 11px;
+    color: ${COLORS.textMuted};
+    letter-spacing: 2px;
+    margin: 14px 0 8px;
+    text-transform: uppercase;
+  }
+  .modifier-chip {
+    display: inline-block;
+    background: rgba(255,255,255,0.08);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: bold;
+    margin: 2px 4px 2px 0;
+  }
+  .equip-slot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-size: 12px;
+  }
+  .slot-name {
+    color: ${COLORS.textMuted};
+    min-width: 60px;
+    font-size: 10px;
+    letter-spacing: 1px;
+  }
+  .slot-item {
+    color: ${COLORS.accent};
+    font-weight: bold;
+  }
+  .slot-empty {
+    color: #444;
+    font-style: italic;
+  }
+  .confirm-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 999;
+  }
+  .confirm-box {
+    background: ${COLORS.panel};
+    border: 2px solid ${COLORS.border};
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 320px;
+    width: 90%;
+    text-align: center;
+  }
+  .confirm-box h3 {
+    color: ${COLORS.gold};
+    margin-top: 0;
+    letter-spacing: 2px;
+  }
+  .confirm-box p {
+    color: ${COLORS.textMuted};
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+  .confirm-btns {
+    display: flex;
+    gap: 10px;
+  }
+  .confirm-btns button {
+    flex: 1;
+    padding: 12px;
+    font-size: 13px;
+    font-weight: bold;
+    border-radius: 4px;
+  }
 `;
 document.head.appendChild(style);
 
 let roomCode: string | null = new URLSearchParams(window.location.search).get('code');
 let isConnected = false;
 let gameState: any = {};
-let currentView: 'join' | 'map' | 'ride' = 'join';
+let pauseState: any = null;
+let currentView: 'join' | 'map' | 'ride' | 'pause' = 'join';
 let lastStateTime = 0;
 
 const app = document.getElementById('app')!;
@@ -126,19 +243,33 @@ socket.on('disconnect', () => {
 
 socket.on('HOST_STATE_UPDATE', (state) => {
   gameState = state;
+  if (currentView === 'pause') return; // Don't switch away from pause mid-update
   if (currentView !== 'ride') {
-      currentView = 'ride';
+    currentView = 'ride';
   }
+  lastStateTime = Date.now();
+  render();
+});
+
+socket.on('HOST_PAUSE_STATE', (state) => {
+  pauseState = state;
+  currentView = 'pause';
+  render();
+});
+
+socket.on('HOST_RESUME_STATE', () => {
+  pauseState = null;
+  currentView = 'ride';
   lastStateTime = Date.now();
   render();
 });
 
 // Watchdog to switch back to map if no updates received
 setInterval(() => {
-    if (isConnected && currentView === 'ride' && Date.now() - lastStateTime > 2000) {
-        currentView = 'map';
-        render();
-    }
+  if (isConnected && currentView === 'ride' && Date.now() - lastStateTime > 2000) {
+    currentView = 'map';
+    render();
+  }
 }, 1000);
 
 function joinRoom(code: string) {
@@ -158,180 +289,377 @@ function joinRoom(code: string) {
 }
 
 function sendInput(type: string, payload: any = {}) {
-    if (!isConnected) return;
-    socket.emit('CLIENT_INPUT', { type, ...payload });
+  if (!isConnected) return;
+  socket.emit('CLIENT_INPUT', { type, ...payload });
 }
 
 // Render logic
 function render() {
-    if (!socket.connected) {
-        app.innerHTML = `<div class="panel" style="text-align:center; color:${COLORS.textMuted}">CONNECTING...</div>`;
-        return;
-    }
+  if (!socket.connected) {
+    app.innerHTML = `<div class="panel" style="text-align:center; color:${COLORS.textMuted}">CONNECTING...</div>`;
+    return;
+  }
 
-    if (!isConnected) {
-        renderJoin();
-        return;
-    }
+  if (!isConnected) {
+    renderJoin();
+    return;
+  }
 
-    if (currentView === 'map') {
-        renderMap();
-    } else if (currentView === 'ride') {
-        renderRide();
-    }
+  if (currentView === 'pause') {
+    renderPause();
+  } else if (currentView === 'map') {
+    renderMap();
+  } else if (currentView === 'ride') {
+    renderRide();
+  }
 }
 
 function renderJoin() {
-    app.innerHTML = `
-        <div class="panel">
-            <h2>JOIN GAME</h2>
-            <div style="margin-bottom:20px;">
-                <input type="text" id="code-input" placeholder="CODE" maxlength="4" style="text-transform:uppercase;">
-            </div>
-            <button id="join-btn" style="width:100%; padding:15px; font-weight:bold; font-size:16px;">CONNECT</button>
-        </div>
-    `;
+  app.innerHTML = `
+    <div class="panel">
+      <h2>JOIN GAME</h2>
+      <div style="margin-bottom:20px;">
+        <input type="text" id="code-input" placeholder="CODE" maxlength="4" style="text-transform:uppercase;">
+      </div>
+      <button id="join-btn" style="width:100%; padding:15px; font-weight:bold; font-size:16px;">CONNECT</button>
+    </div>
+  `;
 
-    const input = document.getElementById('code-input') as HTMLInputElement;
-    if (roomCode) input.value = roomCode;
+  const input = document.getElementById('code-input') as HTMLInputElement;
+  if (roomCode) input.value = roomCode;
 
-    document.getElementById('join-btn')!.onclick = () => {
-        if (input.value) joinRoom(input.value);
-    };
+  document.getElementById('join-btn')!.onclick = () => {
+    if (input.value) joinRoom(input.value);
+  };
 }
 
 function renderMap() {
-    app.innerHTML = `
-        <div class="panel">
-            <h2>MAP CONTROL</h2>
-            <div style="text-align:center; color:${COLORS.textMuted}; font-size:10px; margin-bottom:10px;">
-                NAVIGATE & SELECT
-            </div>
-            <div class="dpad-grid">
-                <div></div>
-                <button id="up-btn" class="dpad-btn">▲</button>
-                <div></div>
+  app.innerHTML = `
+    <div class="panel">
+      <h2>MAP CONTROL</h2>
+      <div style="text-align:center; color:${COLORS.textMuted}; font-size:10px; margin-bottom:10px;">
+        NAVIGATE & SELECT
+      </div>
+      <div class="dpad-grid">
+        <div></div>
+        <button id="up-btn" class="dpad-btn">▲</button>
+        <div></div>
 
-                <button id="left-btn" class="dpad-btn">◀</button>
-                <button id="ok-btn" class="dpad-btn" style="color:${COLORS.gold}; border-color:${COLORS.gold};">OK</button>
-                <button id="right-btn" class="dpad-btn">▶</button>
+        <button id="left-btn" class="dpad-btn">◀</button>
+        <button id="ok-btn" class="dpad-btn" style="color:${COLORS.gold}; border-color:${COLORS.gold};">OK</button>
+        <button id="right-btn" class="dpad-btn">▶</button>
 
-                <div></div>
-                <button id="down-btn" class="dpad-btn">▼</button>
-                <div></div>
-            </div>
-        </div>
-    `;
+        <div></div>
+        <button id="down-btn" class="dpad-btn">▼</button>
+        <div></div>
+      </div>
+    </div>
+  `;
 
-    const bind = (id: string, dir: string) => {
-        const btn = document.getElementById(id);
-        if (btn) {
-            btn.onclick = () => {
-                sendInput('dpad', { direction: dir });
-                if (navigator.vibrate) navigator.vibrate(10);
-            };
-        }
-    };
-    bind('up-btn', 'up');
-    bind('down-btn', 'down');
-    bind('left-btn', 'left');
-    bind('right-btn', 'right');
-    document.getElementById('ok-btn')!.onclick = () => {
-        sendInput('action', { action: 'select' });
-        if (navigator.vibrate) navigator.vibrate(20);
-    };
+  const bind = (id: string, dir: string) => {
+    const btn = document.getElementById(id);
+    if (btn) {
+      btn.onclick = () => {
+        sendInput('dpad', { direction: dir });
+        if (navigator.vibrate) navigator.vibrate(10);
+      };
+    }
+  };
+  bind('up-btn', 'up');
+  bind('down-btn', 'down');
+  bind('left-btn', 'left');
+  bind('right-btn', 'right');
+  document.getElementById('ok-btn')!.onclick = () => {
+    sendInput('action', { action: 'select' });
+    if (navigator.vibrate) navigator.vibrate(20);
+  };
 }
 
 function renderRide() {
-    if (!gameState) return;
-    app.innerHTML = `
-        <div class="panel">
-            <h2>RIDE DASHBOARD</h2>
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
-                <div class="stat-box">
-                    <div class="stat-label">POWER</div>
-                    <div class="stat-val" style="color:${COLORS.gold}">${gameState.instantaneousPower ?? '--'} <span style="font-size:12px">W</span></div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-label">HEART RATE</div>
-                    <div class="stat-val" style="color:#ff4444">${gameState.heartRateBpm ?? '--'} <span style="font-size:12px">BPM</span></div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-label">SPEED</div>
-                    ${gameState.units === 'imperial'
-                        ? `<div class="stat-val">${gameState.speedMs ? (gameState.speedMs * 2.23694).toFixed(1) : '--'} <span style="font-size:12px">MPH</span></div>`
-                        : `<div class="stat-val">${gameState.speedMs ? (gameState.speedMs * 3.6).toFixed(1) : '--'} <span style="font-size:12px">KM/H</span></div>`
-                    }
-                </div>
-                <div class="stat-box">
-                    <div class="stat-label">GRADE</div>
-                    <div class="stat-val">${gameState.currentGrade ? (gameState.currentGrade * 100).toFixed(1) : '0.0'} <span style="font-size:12px">%</span></div>
-                </div>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;">
-                <button id="pause-btn" style="
-                    background-color: ${COLORS.btnPrimary};
-                    border: 1px solid ${COLORS.textMuted};
-                    padding: 15px;
-                    font-size: 16px;
-                    font-weight: bold;
-                    border-radius: 4px;
-                    color: ${COLORS.text};
-                ">PAUSE</button>
-                <button id="tailwind-btn" style="
-                    background-color: ${COLORS.gold};
-                    border: none;
-                    padding: 15px;
-                    font-size: 16px;
-                    font-weight: bold;
-                    border-radius: 4px;
-                    color: #2a2018;
-                    box-shadow: 0 0 10px ${COLORS.gold}44;
-                ">TAILWIND</button>
-            </div>
-
-            <div class="dpad-grid">
-                <div></div>
-                <button id="up-btn" class="dpad-btn">▲</button>
-                <div></div>
-
-                <button id="left-btn" class="dpad-btn">◀</button>
-                <button id="ok-btn" class="dpad-btn" style="color:${COLORS.gold}; border-color:${COLORS.gold};">OK</button>
-                <button id="right-btn" class="dpad-btn">▶</button>
-
-                <div></div>
-                <button id="down-btn" class="dpad-btn">▼</button>
-                <div></div>
-            </div>
+  if (!gameState) return;
+  app.innerHTML = `
+    <div class="panel">
+      <h2>RIDE DASHBOARD</h2>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
+        <div class="stat-box">
+          <div class="stat-label">POWER</div>
+          <div class="stat-val" style="color:${COLORS.gold}">${gameState.instantaneousPower ?? '--'} <span style="font-size:12px">W</span></div>
         </div>
-    `;
+        <div class="stat-box">
+          <div class="stat-label">HEART RATE</div>
+          <div class="stat-val" style="color:#ff4444">${gameState.heartRateBpm ?? '--'} <span style="font-size:12px">BPM</span></div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">SPEED</div>
+          ${gameState.units === 'imperial'
+            ? `<div class="stat-val">${gameState.speedMs ? (gameState.speedMs * 2.23694).toFixed(1) : '--'} <span style="font-size:12px">MPH</span></div>`
+            : `<div class="stat-val">${gameState.speedMs ? (gameState.speedMs * 3.6).toFixed(1) : '--'} <span style="font-size:12px">KM/H</span></div>`
+          }
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">GRADE</div>
+          <div class="stat-val">${gameState.currentGrade ? (gameState.currentGrade * 100).toFixed(1) : '0.0'} <span style="font-size:12px">%</span></div>
+        </div>
+      </div>
 
-    document.getElementById('pause-btn')!.onclick = () => {
-        sendInput('action', { action: 'pause' });
-        if (navigator.vibrate) navigator.vibrate(20);
-    };
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;">
+        <button id="pause-btn" style="
+          background-color: ${COLORS.btnPrimary};
+          border: 1px solid ${COLORS.textMuted};
+          padding: 15px;
+          font-size: 16px;
+          font-weight: bold;
+          border-radius: 4px;
+          color: ${COLORS.text};
+        ">PAUSE</button>
+        <button id="tailwind-btn" style="
+          background-color: ${COLORS.gold};
+          border: none;
+          padding: 15px;
+          font-size: 16px;
+          font-weight: bold;
+          border-radius: 4px;
+          color: #2a2018;
+          box-shadow: 0 0 10px ${COLORS.gold}44;
+        ">TAILWIND</button>
+      </div>
 
-    document.getElementById('tailwind-btn')!.onclick = () => {
-        sendInput('item', { itemId: 'tailwind' });
+      <div class="dpad-grid">
+        <div></div>
+        <button id="up-btn" class="dpad-btn">▲</button>
+        <div></div>
+
+        <button id="left-btn" class="dpad-btn">◀</button>
+        <button id="ok-btn" class="dpad-btn" style="color:${COLORS.gold}; border-color:${COLORS.gold};">OK</button>
+        <button id="right-btn" class="dpad-btn">▶</button>
+
+        <div></div>
+        <button id="down-btn" class="dpad-btn">▼</button>
+        <div></div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('pause-btn')!.onclick = () => {
+    sendInput('action', { action: 'pause' });
+    if (navigator.vibrate) navigator.vibrate(20);
+  };
+
+  document.getElementById('tailwind-btn')!.onclick = () => {
+    sendInput('item', { itemId: 'tailwind' });
+    if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+  };
+
+  const bind = (id: string, dir: string) => {
+    const btn = document.getElementById(id);
+    if (btn) {
+      btn.onclick = () => {
+        sendInput('dpad', { direction: dir });
+        if (navigator.vibrate) navigator.vibrate(10);
+      };
+    }
+  };
+  bind('up-btn', 'up');
+  bind('down-btn', 'down');
+  bind('left-btn', 'left');
+  bind('right-btn', 'right');
+  document.getElementById('ok-btn')!.onclick = () => {
+    sendInput('action', { action: 'select' });
+    if (navigator.vibrate) navigator.vibrate(20);
+  };
+}
+
+function renderPause() {
+  const ps = pauseState ?? {};
+  const inventory: string[] = ps.inventory ?? [];
+  const modifiers = ps.modifiers ?? { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 };
+  const equipped: Record<string, string> = ps.equipped ?? {};
+  const isRoguelike: boolean = ps.isRoguelike ?? false;
+  const gold: number = ps.gold ?? 0;
+  const ftpW: number = ps.ftpW ?? 0;
+
+  // Count inventory items
+  const invCounts = new Map<string, number>();
+  for (const id of inventory) {
+    invCounts.set(id, (invCounts.get(id) ?? 0) + 1);
+  }
+
+  // Consumable items (no slot) that are usable during a ride
+  const rideUsableItems = ['tailwind'];
+  const usableInv = [...invCounts.entries()].filter(([id]) => rideUsableItems.includes(id));
+  const passiveInv = [...invCounts.entries()].filter(([id]) => !rideUsableItems.includes(id));
+
+  // Modifier chips
+  const modChips: string[] = [];
+  if (modifiers.powerMult !== 1.0) {
+    const pct = Math.round((modifiers.powerMult - 1) * 100);
+    modChips.push(`<span class="modifier-chip" style="color:#88ffaa;">${pct >= 0 ? '+' : ''}${pct}% POWER</span>`);
+  }
+  if (modifiers.dragReduction !== 0.0) {
+    const pct = Math.round(modifiers.dragReduction * 100);
+    modChips.push(`<span class="modifier-chip" style="color:#88ddff;">+${pct}% AERO</span>`);
+  }
+  if (modifiers.weightMult !== 1.0) {
+    const pct = Math.round((1 - modifiers.weightMult) * 100);
+    modChips.push(`<span class="modifier-chip" style="color:#ffcc66;">-${pct}% WEIGHT</span>`);
+  }
+  if (modifiers.crrMult !== undefined && modifiers.crrMult !== 1.0) {
+    const pct = Math.round((1 - modifiers.crrMult) * 100);
+    modChips.push(`<span class="modifier-chip" style="color:#bbff88;">-${pct}% ROLL</span>`);
+  }
+
+  // Equipment slots
+  const allSlots = ['helmet', 'frame', 'cranks', 'pedals', 'tires'] as const;
+  const slotLabels: Record<string, string> = { helmet: 'HELMET', frame: 'FRAME', cranks: 'CRANKS', pedals: 'PEDALS', tires: 'TIRES' };
+  const itemLabels: Record<string, string> = {
+    aero_helmet: 'AERO HELMET', gold_crank: 'GOLD CRANK', antigrav_pedals: 'ANTI-GRAV PEDALS',
+    dirt_tires: 'DIRT TIRES', carbon_frame: 'CARBON FRAME',
+  };
+  const equippedSlots = allSlots.filter(slot => equipped[slot]);
+  const bagItems = passiveInv;
+
+  const backLabel = isRoguelike ? 'BACK TO MAP' : 'MAIN MENU';
+  const goldStr = isRoguelike ? `<div style="text-align:center; font-size:13px; color:${COLORS.gold}; margin-bottom:16px;">GOLD: ${gold}</div>` : '';
+
+  app.innerHTML = `
+    <div class="panel">
+      <h2>⏸ PAUSED</h2>
+      ${goldStr}
+      <div style="font-size:12px; color:${COLORS.textMuted}; text-align:center; margin-bottom:4px;">FTP: ${ftpW}W</div>
+
+      <button class="pause-action-btn" id="resume-btn" style="background:${COLORS.btnSuccess}; border:none; color:${COLORS.accent};">
+        ▶ RESUME
+      </button>
+      <button class="pause-action-btn" id="backtomap-btn" style="background:${COLORS.btnWarning}; border:none; color:#ffcc88;">
+        ← ${backLabel}
+      </button>
+      <button class="pause-action-btn" id="savequit-btn" style="background:${COLORS.btnDanger}; border:none; color:#ff8888;">
+        ✕ SAVE &amp; QUIT
+      </button>
+
+      ${modChips.length > 0 ? `
+        <div class="section-title">ACTIVE MODIFIERS</div>
+        <div>${modChips.join('')}</div>
+      ` : ''}
+
+      ${equippedSlots.length > 0 ? `
+        <div class="section-title">EQUIPPED</div>
+        ${equippedSlots.map(slot => `
+          <div class="equip-slot">
+            <span class="slot-name">${slotLabels[slot]}</span>
+            <span class="slot-item">${itemLabels[equipped[slot]] ?? equipped[slot]}</span>
+          </div>
+        `).join('')}
+      ` : ''}
+
+      ${usableInv.length > 0 ? `
+        <div class="section-title">INVENTORY — USABLE NOW</div>
+        ${usableInv.map(([id, count]) => `
+          <div class="inv-row">
+            <div>
+              <span class="item-label">${getItemLabel(id)}</span>
+              <span class="item-count">×${count}</span>
+            </div>
+            <button class="use-btn" data-item="${id}">USE</button>
+          </div>
+        `).join('')}
+      ` : ''}
+
+      ${bagItems.length > 0 ? `
+        <div class="section-title">BAG (MAP USE ONLY)</div>
+        ${bagItems.map(([id, count]) => `
+          <div class="inv-row">
+            <div>
+              <span class="item-label">${getItemLabel(id)}</span>
+              <span class="item-count">×${count}</span>
+            </div>
+          </div>
+        `).join('')}
+      ` : ''}
+    </div>
+  `;
+
+  document.getElementById('resume-btn')!.onclick = () => {
+    sendInput('action', { action: 'resume' });
+    if (navigator.vibrate) navigator.vibrate(20);
+    // Optimistically switch to ride view; HOST_RESUME_STATE will confirm
+    pauseState = null;
+    currentView = 'ride';
+    render();
+  };
+
+  document.getElementById('backtomap-btn')!.onclick = () => {
+    showConfirm(
+      'ABANDON RIDE?',
+      'Return to ' + (isRoguelike ? 'map' : 'main menu') + '?\nRide progress will be lost.',
+      'YES, ABANDON',
+      () => {
+        sendInput('action', { action: 'backToMap' });
+        if (navigator.vibrate) navigator.vibrate(30);
+        pauseState = null;
+        currentView = 'map';
+        render();
+      }
+    );
+  };
+
+  document.getElementById('savequit-btn')!.onclick = () => {
+    showConfirm(
+      'SAVE & QUIT?',
+      'Your run progress will be saved.\nReturn to main menu?',
+      'SAVE & QUIT',
+      () => {
+        sendInput('action', { action: 'saveQuit' });
+        if (navigator.vibrate) navigator.vibrate(30);
+        pauseState = null;
+        currentView = 'map';
+        render();
+      }
+    );
+  };
+
+  // Wire up USE buttons
+  document.querySelectorAll('.use-btn').forEach(btn => {
+    (btn as HTMLButtonElement).onclick = () => {
+      const itemId = (btn as HTMLButtonElement).dataset.item;
+      if (itemId) {
+        sendInput('item', { itemId });
         if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+        // Remove one instance from local state for feedback
+        const idx = pauseState?.inventory?.indexOf(itemId);
+        if (idx !== undefined && idx >= 0) pauseState.inventory.splice(idx, 1);
+        renderPause();
+      }
     };
+  });
+}
 
-    const bind = (id: string, dir: string) => {
-        const btn = document.getElementById(id);
-        if (btn) {
-            btn.onclick = () => {
-                sendInput('dpad', { direction: dir });
-                if (navigator.vibrate) navigator.vibrate(10);
-            };
-        }
-    };
-    bind('up-btn', 'up');
-    bind('down-btn', 'down');
-    bind('left-btn', 'left');
-    bind('right-btn', 'right');
-    document.getElementById('ok-btn')!.onclick = () => {
-        sendInput('action', { action: 'select' });
-        if (navigator.vibrate) navigator.vibrate(20);
-    };
+function getItemLabel(id: string): string {
+  const labels: Record<string, string> = {
+    tailwind: 'TAILWIND', teleport: 'TELEPORT', reroll_voucher: 'REROLL VOUCHER',
+    aero_helmet: 'AERO HELMET', gold_crank: 'GOLD CRANK', antigrav_pedals: 'ANTI-GRAV PEDALS',
+    dirt_tires: 'DIRT TIRES', carbon_frame: 'CARBON FRAME',
+  };
+  return labels[id] ?? id.toUpperCase().replace(/_/g, ' ');
+}
+
+function showConfirm(title: string, message: string, confirmLabel: string, onConfirm: () => void) {
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box">
+      <h3>${title}</h3>
+      <p>${message.replace(/\n/g, '<br>')}</p>
+      <div class="confirm-btns">
+        <button id="conf-cancel" style="background:${COLORS.btnPrimary}">CANCEL</button>
+        <button id="conf-ok" style="background:${COLORS.btnDanger}; border-color:${COLORS.btnDanger};">${confirmLabel}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('conf-cancel')!.onclick = () => overlay.remove();
+  document.getElementById('conf-ok')!.onclick = () => {
+    overlay.remove();
+    onConfirm();
+  };
 }

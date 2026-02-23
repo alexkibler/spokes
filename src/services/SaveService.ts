@@ -22,8 +22,9 @@ const SAVE_KEY = 'paperPeloton_runSave';
  * Version history:
  *   1 – initial schema
  *   2 – added equipped (Partial<Record<EquipmentSlot, string>>)
+ *   3 – added isRealTrainerRun
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /** RunData fields that are safe to JSON-serialize (excludes fitWriter) */
 export interface SerializedRunData {
@@ -41,6 +42,7 @@ export interface SerializedRunData {
   ftpW: number;
   weightKg: number;
   units: Units;
+  isRealTrainerRun: boolean;
 }
 
 export interface SavedRun {
@@ -67,6 +69,7 @@ export class SaveService {
         ftpW: run.ftpW,
         weightKg,
         units,
+        isRealTrainerRun: run.isRealTrainerRun,
       };
 
       const saved: SavedRun = {

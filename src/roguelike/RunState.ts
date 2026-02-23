@@ -78,6 +78,8 @@ export interface RunData {
   weightKg: number; // Rider weight in kg (stored for save/load)
   units: Units; // Display preference (stored for save/load)
   fitWriter: FitWriter;
+  /** True if any segment of this run was ridden with a real Bluetooth trainer. */
+  isRealTrainerRun: boolean;
   // Cumulative ride stats across all completed segments
   stats: {
     totalRiddenDistanceM: number;
@@ -95,6 +97,10 @@ export class RunStateManager {
   private static _devMode = false;
   static getDevMode(): boolean { return this._devMode; }
   static setDevMode(val: boolean): void { this._devMode = val; }
+
+  static setRealTrainerRun(val: boolean): void {
+    if (this.instance) this.instance.isRealTrainerRun = val;
+  }
 
   static startNewRun(runLength: number, totalDistanceKm: number, difficulty: 'easy' | 'normal' | 'hard', ftpW = 200, weightKg = 68, units: Units = 'imperial'): RunData {
     SaveService.clear();
@@ -117,6 +123,7 @@ export class RunStateManager {
       weightKg,
       units,
       fitWriter: new FitWriter(Date.now()),
+      isRealTrainerRun: false,
       stats: { totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
     };
     this.persist();
@@ -130,6 +137,7 @@ export class RunStateManager {
       stats: { totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
       pendingNodeAction: null, // default for old saves
       ...saved.runData,
+      isRealTrainerRun: saved.runData.isRealTrainerRun ?? false,
       activeEdge: null,
       fitWriter: new FitWriter(Date.now()),
     };

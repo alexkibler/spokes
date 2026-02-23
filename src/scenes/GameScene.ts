@@ -216,6 +216,9 @@ export class GameScene extends Phaser.Scene {
 
   private preConnectedTrainer: ITrainerService | null = null;
   private preConnectedHrm: HeartRateService | null = null;
+  private isRealTrainer = false;
+  /** Set before scene.start('MapScene') so shutdown() doesn't disconnect the trainer. */
+  private keepTrainerForNextScene = false;
 
   private fitWriter!: FitWriter;
   private rideStartTime = 0;
@@ -254,6 +257,9 @@ export class GameScene extends Phaser.Scene {
   private onRemotePauseBound = this.onRemotePause.bind(this);
   private onRemoteCursorMoveBound = this.onRemoteCursorMove.bind(this);
   private onRemoteCursorSelectBound = this.onRemoteCursorSelect.bind(this);
+  private onRemoteResumeBound = this.onRemoteResume.bind(this);
+  private onRemoteBackToMapBound = this.onRemoteBackToMap.bind(this);
+  private onRemoteSaveQuitBound = this.onRemoteSaveQuit.bind(this);
 
   constructor() {
     super({ key: 'GameScene' });
@@ -458,6 +464,8 @@ export class GameScene extends Phaser.Scene {
       this.trainer = this.preConnectedTrainer;
       this.trainer.onData((data) => this.handleData(data));
       this.isDemoMode = false;
+      this.isRealTrainer = true;
+      if (this.isRoguelike) RunStateManager.setRealTrainerRun(true);
       this.setStatus('ok', 'BT CONNECTED');
     } else if (this.isDevMode) {
       const mock = new MockTrainerService({ power: DEV_POWER_WATTS, speed: 45, cadence: 95 });
@@ -491,6 +499,9 @@ export class GameScene extends Phaser.Scene {
     RemoteService.getInstance().onPause(this.onRemotePauseBound);
     RemoteService.getInstance().onCursorMove(this.onRemoteCursorMoveBound);
     RemoteService.getInstance().onCursorSelect(this.onRemoteCursorSelectBound);
+    RemoteService.getInstance().onResume(this.onRemoteResumeBound);
+    RemoteService.getInstance().onBackToMap(this.onRemoteBackToMapBound);
+    RemoteService.getInstance().onSaveQuit(this.onRemoteSaveQuitBound);
   }
 
   update(_time: number, delta: number): void {
@@ -1302,22 +1313,20 @@ export class GameScene extends Phaser.Scene {
       this.isRoguelike,
       completed,
       isFinishNode,
+      this.isRealTrainer,
       () => {
         if (isFinishNode) {
           this.scene.start('VictoryScene');
         } else {
+          this.keepTrainerForNextScene = true;
           this.scene.start('MapScene', mapData);
         }
       },
       () => {
         this.downloadFit();
-        this.trainer.disconnect();
-        this.preConnectedHrm?.disconnect();
         this.scene.start('MenuScene');
       },
       () => {
-        this.trainer.disconnect();
-        this.preConnectedHrm?.disconnect();
         this.scene.start('MenuScene');
       }
     );
@@ -1332,7 +1341,10 @@ export class GameScene extends Phaser.Scene {
       isDevMode: this.isDevMode,
     };
 
-    const goToMap = () => this.scene.start('MapScene', mapData);
+    const goToMap = () => {
+      this.keepTrainerForNextScene = true;
+      this.scene.start('MapScene', mapData);
+    };
 
     const showOverlay = (headerStats?: RideStats) => {
       const run = RunStateManager.getRun();
@@ -1410,18 +1422,42 @@ export class GameScene extends Phaser.Scene {
       onResume: () => {
         this.overlayVisible = false;
         this.activePauseOverlay = null;
+        RemoteService.getInstance().sendResumeState();
       },
       onBackToMap: () => {
         this.overlayVisible = false;
         this.activePauseOverlay = null;
-        this.showRideEndOverlay(false);
+        if (this.isRoguelike) {
+          this.keepTrainerForNextScene = true;
+          this.scene.start('MapScene', {
+            weightKg: this.weightKg,
+            units: this.units,
+            trainer: this.trainer,
+            hrm: this.preConnectedHrm,
+            isDevMode: this.isDevMode,
+            ftpW: this.ftpW,
+          });
+        } else {
+          // Non-roguelike: no map to return to, go to menu
+          this.scene.start('MenuScene');
+        }
       },
       onQuit: () => {
-        this.trainer.disconnect();
-        this.preConnectedHrm?.disconnect();
         this.scene.start('MenuScene');
       }
-    }, this.ftpW);
+    }, this.ftpW, this.isRoguelike);
+
+    // Tell the remote the game is paused so it can show the pause screen
+    const run = RunStateManager.getRun();
+    RemoteService.getInstance().sendPauseState({
+      inventory: run?.inventory ?? [],
+      equipped: (run?.equipped ?? {}) as Record<string, string>,
+      modifiers: this.runModifiers,
+      modifierLog: run?.modifierLog ?? [],
+      ftpW: this.ftpW,
+      gold: run?.gold ?? 0,
+      isRoguelike: this.isRoguelike,
+    });
   }
 
   private onRemotePause(): void {
@@ -1448,15 +1484,57 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private onRemoteResume(): void {
+    if (this.activePauseOverlay) {
+      this.overlayVisible = false;
+      this.activePauseOverlay.destroy();
+      this.activePauseOverlay = null;
+      RemoteService.getInstance().sendResumeState();
+    }
+  }
+
+  private onRemoteBackToMap(): void {
+    if (!this.activePauseOverlay) return;
+    this.overlayVisible = false;
+    this.activePauseOverlay.destroy();
+    this.activePauseOverlay = null;
+    if (this.isRoguelike) {
+      this.keepTrainerForNextScene = true;
+      this.scene.start('MapScene', {
+        weightKg: this.weightKg,
+        units: this.units,
+        trainer: this.trainer,
+        hrm: this.preConnectedHrm,
+        isDevMode: this.isDevMode,
+        ftpW: this.ftpW,
+      });
+    } else {
+      this.scene.start('MenuScene');
+    }
+  }
+
+  private onRemoteSaveQuit(): void {
+    if (!this.activePauseOverlay) return;
+    this.overlayVisible = false;
+    this.activePauseOverlay.destroy();
+    this.activePauseOverlay = null;
+    this.scene.start('MenuScene');
+  }
+
   shutdown(): void {
     this.scale.off('resize', this.onResize, this);
-    this.trainer?.disconnect();
-    this.preConnectedHrm?.disconnect();
+    if (!this.keepTrainerForNextScene) {
+      this.trainer?.disconnect();
+      this.preConnectedHrm?.disconnect();
+    }
+    this.keepTrainerForNextScene = false;
     RemoteService.getInstance().offUseItem(this.onRemoteUseItemBound);
     RemoteService.getInstance().offPause(this.onRemotePauseBound);
     RemoteService.getInstance().offCursorMove(this.onRemoteCursorMoveBound);
     RemoteService.getInstance().offCursorSelect(this.onRemoteCursorSelectBound);
-    // Cleanup UI components if they need it (Phaser usually handles children cleanup)
+    RemoteService.getInstance().offResume(this.onRemoteResumeBound);
+    RemoteService.getInstance().offBackToMap(this.onRemoteBackToMapBound);
+    RemoteService.getInstance().offSaveQuit(this.onRemoteSaveQuitBound);
     this.hud?.destroy();
     this.elevGraph?.destroy();
     this.rideOverlay?.destroy();

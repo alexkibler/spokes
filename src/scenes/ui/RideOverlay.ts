@@ -31,6 +31,7 @@ export class RideOverlay extends Phaser.GameObjects.Container {
     isRoguelike: boolean,
     isCompleted: boolean,
     isFinishNode: boolean,
+    isRealTrainer: boolean,
     onContinue: () => void,
     onDownload: () => void,
     onMenu: () => void
@@ -139,8 +140,8 @@ export class RideOverlay extends Phaser.GameObjects.Container {
         }).setOrigin(0.5, 0));
         cursorY += 20;
       }
-    } else {
-      // Single ride prompt
+    } else if (isRealTrainer) {
+      // Real trainer ride — offer FIT download
       const div = scene.add.graphics();
       div.lineStyle(1, 0x333355, 1);
       div.lineBetween(px + 20, cursorY, px + panW - 20, cursorY);
@@ -149,7 +150,10 @@ export class RideOverlay extends Phaser.GameObjects.Container {
       this.add(scene.add.text(cx, cursorY + 12, 'Save your ride data?', {
         fontFamily: THEME.fonts.main, fontSize: '11px', color: '#888899', letterSpacing: 2,
       }).setOrigin(0.5, 0));
-      cursorY += 28; // Adjusted
+      cursorY += 28;
+    } else {
+      // Simulated ride — no FIT prompt
+      cursorY += 8;
     }
 
     // Buttons
@@ -179,7 +183,7 @@ export class RideOverlay extends Phaser.GameObjects.Container {
       });
       this.add(btn);
 
-    } else {
+    } else if (isRealTrainer) {
       const dlX = cx - btnW/2 - gap/2;
       const menuX = cx + btnW/2 + gap/2;
 
@@ -200,7 +204,19 @@ export class RideOverlay extends Phaser.GameObjects.Container {
         y: btnY,
         width: btnW,
         height: btnH,
-        text: 'SKIP TO MENU',
+        text: 'MAIN MENU',
+        color: THEME.colors.buttons.primary,
+        onClick: onMenu,
+      });
+      this.add(menuBtn);
+    } else {
+      // Simulated ride — no FIT file to download
+      const menuBtn = new Button(scene, {
+        x: cx,
+        y: btnY,
+        width: btnW,
+        height: btnH,
+        text: 'MAIN MENU',
         color: THEME.colors.buttons.primary,
         onClick: onMenu,
       });

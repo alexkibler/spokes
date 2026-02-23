@@ -1041,6 +1041,16 @@ export class MenuScene extends Phaser.Scene {
     btn.on('pointerdown', () => {
       const saved = SaveService.load();
       if (!saved) return;
+      // If the run was started with a real trainer, require reconnecting before continuing
+      if (saved.runData.isRealTrainerRun && !this.trainerService && !this.isDevMode) {
+        new ConfirmationModal(this, {
+          title: 'TRAINER REQUIRED',
+          message: 'This run was started with a real trainer.\nPlease connect your trainer before continuing.',
+          confirmLabel: 'OK',
+          onConfirm: () => {},
+        });
+        return;
+      }
       const run = RunStateManager.loadFromSave(saved);
       this.scene.start('MapScene', {
         weightKg: run.weightKg,

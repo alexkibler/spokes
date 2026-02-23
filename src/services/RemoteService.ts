@@ -1,6 +1,17 @@
 import { io, Socket } from 'socket.io-client';
+import type { RunModifiers, ModifierLogEntry } from '../roguelike/RunState';
 
 export type CursorDirection = 'up' | 'down' | 'left' | 'right';
+
+export interface PauseStateData {
+  inventory: string[];
+  equipped: Record<string, string>;
+  modifiers: RunModifiers;
+  modifierLog: ModifierLogEntry[];
+  ftpW: number;
+  gold: number;
+  isRoguelike: boolean;
+}
 
 export class RemoteService {
   private static instance: RemoteService;
@@ -12,6 +23,9 @@ export class RemoteService {
   private cursorSelectHandlers: (() => void)[] = [];
   private useItemHandlers: ((itemId: string) => void)[] = [];
   private pauseHandlers: (() => void)[] = [];
+  private resumeHandlers: (() => void)[] = [];
+  private backToMapHandlers: (() => void)[] = [];
+  private saveQuitHandlers: (() => void)[] = [];
 
   private constructor() {}
 
@@ -73,6 +87,12 @@ export class RemoteService {
         this.emitCursorSelect();
       } else if (payload.type === 'action' && payload.action === 'pause') {
         this.emitPause();
+      } else if (payload.type === 'action' && payload.action === 'resume') {
+        this.emitResume();
+      } else if (payload.type === 'action' && payload.action === 'backToMap') {
+        this.emitBackToMap();
+      } else if (payload.type === 'action' && payload.action === 'saveQuit') {
+        this.emitSaveQuit();
       } else if (payload.type === 'item') {
         this.emitUseItem(payload.itemId);
       }
@@ -86,6 +106,18 @@ export class RemoteService {
   public sendStateUpdate(data: any) {
     if (this.socket && this.roomCode) {
       this.socket.emit('HOST_STATE_UPDATE', data);
+    }
+  }
+
+  public sendPauseState(data: PauseStateData) {
+    if (this.socket && this.roomCode) {
+      this.socket.emit('HOST_PAUSE_STATE', data);
+    }
+  }
+
+  public sendResumeState() {
+    if (this.socket && this.roomCode) {
+      this.socket.emit('HOST_RESUME_STATE', {});
     }
   }
 
@@ -138,6 +170,18 @@ export class RemoteService {
   private emitPause() {
     this.pauseHandlers.forEach(h => h());
   }
+
+  public onResume(handler: () => void) { this.resumeHandlers.push(handler); }
+  public offResume(handler: () => void) { this.resumeHandlers = this.resumeHandlers.filter(h => h !== handler); }
+  private emitResume() { this.resumeHandlers.forEach(h => h()); }
+
+  public onBackToMap(handler: () => void) { this.backToMapHandlers.push(handler); }
+  public offBackToMap(handler: () => void) { this.backToMapHandlers = this.backToMapHandlers.filter(h => h !== handler); }
+  private emitBackToMap() { this.backToMapHandlers.forEach(h => h()); }
+
+  public onSaveQuit(handler: () => void) { this.saveQuitHandlers.push(handler); }
+  public offSaveQuit(handler: () => void) { this.saveQuitHandlers = this.saveQuitHandlers.filter(h => h !== handler); }
+  private emitSaveQuit() { this.saveQuitHandlers.forEach(h => h()); }
 
   public getRoomCode(): string | null {
       return this.roomCode;
