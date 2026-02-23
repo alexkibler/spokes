@@ -11,6 +11,7 @@ import type { ITrainerService, TrainerData } from '../services/ITrainerService';
 import { MockTrainerService } from '../services/MockTrainerService';
 import { HeartRateService } from '../services/HeartRateService';
 import type { HeartRateData } from '../services/HeartRateService';
+import { RemoteService } from '../services/RemoteService';
 import { RunStateManager, type RunModifiers } from '../roguelike/RunState';
 import { evaluateChallenge, grantChallengeReward, type EliteChallenge } from '../roguelike/EliteChallenge';
 import type { RacerProfile } from '../race/RacerProfile';
@@ -243,6 +244,9 @@ export class GameScene extends Phaser.Scene {
   private cycGroundY = 150;
   private static readonly WHEEL_R = 18;
 
+  private lastStateUpdateMs = 0;
+  private onRemoteUseItemBound = this.onRemoteUseItem.bind(this);
+
   constructor() {
     super({ key: 'GameScene' });
   }
@@ -450,17 +454,30 @@ export class GameScene extends Phaser.Scene {
       }
       this.runModifiers = RunStateManager.getModifiers();
     }
+
+    RemoteService.getInstance().onUseItem(this.onRemoteUseItemBound);
   }
 
   update(_time: number, delta: number): void {
     if (this.overlayVisible) return;
+
+    const nowMs = Date.now();
+    if (nowMs - this.lastStateUpdateMs >= 250) {
+      this.lastStateUpdateMs = nowMs;
+      RemoteService.getInstance().sendStateUpdate({
+        instantaneousPower: Math.round(this.latestPower),
+        speedMs: this.smoothVelocityMs,
+        distanceM: this.distanceM,
+        heartRateBpm: this.currentHR,
+        currentGrade: this.currentGrade,
+      });
+    }
 
     const dt = delta / 1000;
 
     this.distanceM += this.smoothVelocityMs * dt;
     const wrappedDist = this.distanceM % this.course.totalDistanceM;
 
-    const nowMs = Date.now();
     if (nowMs - this.lastRecordMs >= 1000) {
       this.lastRecordMs = nowMs;
       this.recordFitData(nowMs);
@@ -1319,10 +1336,17 @@ export class GameScene extends Phaser.Scene {
     bg.on('pointerout',  () => bg.setFillStyle(this.isDevMode ? 0x224422 : 0x333333));
   }
 
+  private onRemoteUseItem(itemId: string): void {
+    if (itemId === 'tailwind') {
+      this.triggerEffect('tailwind');
+    }
+  }
+
   shutdown(): void {
     this.scale.off('resize', this.onResize, this);
     this.trainer?.disconnect();
     this.preConnectedHrm?.disconnect();
+    RemoteService.getInstance().offUseItem(this.onRemoteUseItemBound);
     // Cleanup UI components if they need it (Phaser usually handles children cleanup)
     this.hud?.destroy();
     this.elevGraph?.destroy();

@@ -16,6 +16,7 @@ import { RunStateManager } from '../roguelike/RunState';
 import type { ITrainerService } from '../services/ITrainerService';
 import { TrainerService } from '../services/TrainerService';
 import { HeartRateService } from '../services/HeartRateService';
+import { RemoteService } from '../services/RemoteService';
 import { SaveService } from '../services/SaveService';
 import {
   KM_TO_MI,
@@ -817,6 +818,46 @@ export class MenuScene extends Phaser.Scene {
         this.trainerStatusLabel.setText('FAILED').setColor('#ff4444');
         btnTrainer.setFillStyle(0x1a3a6b);
         btnTrainerTxt.setText('CONNECT BT');
+      }
+    });
+
+
+    // ── Remote Control (Center) ──────────────────────────────────────────────
+
+    const btnRemote = this.add
+      .rectangle(295, 50, 80, 32, 0x4a4a5a)
+      .setInteractive({ useHandCursor: true });
+
+    const btnRemoteTxt = this.add.text(295, 50, 'REMOTE', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#ffffff',
+    }).setOrigin(0.5);
+
+    this.devicesSection.add([btnRemote, btnRemoteTxt]);
+
+    btnRemote.on('pointerover', () => {
+      const code = RemoteService.getInstance().getRoomCode();
+      if (!code) btnRemote.setFillStyle(0x5a5a6a);
+    });
+    btnRemote.on('pointerout', () => {
+      const code = RemoteService.getInstance().getRoomCode();
+      if (!code) btnRemote.setFillStyle(0x4a4a5a);
+    });
+    btnRemote.on('pointerdown', async () => {
+      const code = RemoteService.getInstance().getRoomCode();
+      if (code) return; // Already connected
+
+      btnRemote.setFillStyle(0x6a6a7a);
+      btnRemoteTxt.setText('...');
+
+      try {
+        const roomCode = await RemoteService.getInstance().initHost();
+        btnRemoteTxt.setText(roomCode).setFontSize(14).setColor('#00ff88');
+        btnRemote.setFillStyle(0x222233).setStrokeStyle(1, 0x00ff88);
+        btnRemote.disableInteractive();
+      } catch (e) {
+        console.error('Remote init failed', e);
+        btnRemoteTxt.setText('ERR');
+        this.time.delayedCall(2000, () => btnRemoteTxt.setText('REMOTE'));
       }
     });
 
