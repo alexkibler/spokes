@@ -21,6 +21,10 @@ import {
   DEFAULT_PHYSICS,
   type PhysicsConfig,
 } from '../physics/CyclistPhysics';
+import {
+  draftFactor,
+  DRAFT_MAX_CDA_REDUCTION,
+} from '../physics/DraftingPhysics';
 import type { Units } from './MenuScene';
 import {
   DEFAULT_COURSE,
@@ -52,18 +56,6 @@ import { EnvironmentEffectsUI, type ActiveEffect, EFFECT_META } from './ui/Envir
 
 const GRADE_SEND_THRESHOLD = 0.001;
 const GRADE_LERP_RATE = 1.0;
-// Note: Drafting constants for physics are duplicated here or should be imported.
-// For now we duplicate logic slightly or keep it here.
-const DRAFT_MAX_DISTANCE_M = 30;
-const DRAFT_MAX_CDA_REDUCTION = 0.50;
-const DRAFT_MIN_CDA_REDUCTION = 0.01;
-
-function draftFactor(gapM: number): number {
-  if (gapM <= 0 || gapM >= DRAFT_MAX_DISTANCE_M) return 0;
-  return DRAFT_MIN_CDA_REDUCTION +
-    (DRAFT_MAX_CDA_REDUCTION - DRAFT_MIN_CDA_REDUCTION) *
-    (1 - gapM / DRAFT_MAX_DISTANCE_M);
-}
 
 interface GhostState {
   racer:        RacerProfile;

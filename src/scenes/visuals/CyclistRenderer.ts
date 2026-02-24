@@ -1,17 +1,10 @@
 import Phaser from 'phaser';
 import type { RacerProfile } from '../../race/RacerProfile';
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-const DRAFT_MAX_DISTANCE_M = 30;
-const DRAFT_MAX_CDA_REDUCTION = 0.50;
-const DRAFT_MIN_CDA_REDUCTION = 0.01;
-
-function draftFactor(gapM: number): number {
-  if (gapM <= 0 || gapM >= DRAFT_MAX_DISTANCE_M) return 0;
-  return DRAFT_MIN_CDA_REDUCTION +
-    (DRAFT_MAX_CDA_REDUCTION - DRAFT_MIN_CDA_REDUCTION) *
-    (1 - gapM / DRAFT_MAX_DISTANCE_M);
-}
+import {
+  draftFactor,
+  DRAFT_MAX_CDA_REDUCTION,
+  DRAFT_MIN_CDA_REDUCTION,
+} from '../../physics/DraftingPhysics';
 
 function computeKnee(
   hipX: number, hipY: number,
