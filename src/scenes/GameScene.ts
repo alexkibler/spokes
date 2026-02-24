@@ -340,6 +340,7 @@ export class GameScene extends Phaser.Scene {
     this.ftpW                = RunStateManager.getRun()?.ftpW ?? 200;
     this.activeChallenge     = data?.activeChallenge ?? null;
     this.racerProfiles = data?.racers ?? (data?.racer ? [data.racer] : []);
+    console.log(`[SPOKES] GameScene.init: isRoguelike=${this.isRoguelike} isDevMode=${this.isDevMode} activeChallenge=${this.activeChallenge?.id ?? 'none'} racers=${this.racerProfiles.length} ftpW=${this.ftpW} activeEdge=${RunStateManager.getRun()?.activeEdge ? `${RunStateManager.getRun()?.activeEdge?.from}→${RunStateManager.getRun()?.activeEdge?.to}` : 'null'} currentNodeId=${RunStateManager.getRun()?.currentNodeId}`);
 
     const massKg = this.weightKg + 8;
     const cdA = 0.325 * Math.pow(this.weightKg / 75, 0.66);
@@ -464,11 +465,13 @@ export class GameScene extends Phaser.Scene {
       this.isDemoMode = false;
       this.setStatus('demo', `DEV (${DEV_POWER_WATTS}W)`);
     } else {
-      this.trainer = new MockTrainerService({ power: this.ftpW, speed: 25, cadence: 80 });
+      // Use 3× FTP power so all challenge conditions (max multiplier 2.5×) are passable in sim mode
+      const simPower = this.ftpW * 3;
+      this.trainer = new MockTrainerService({ power: simPower, speed: 45, cadence: 80 });
       this.trainer.onData((data) => this.handleData(data));
       void this.trainer.connect();
       this.isDemoMode = false;
-      this.setStatus('demo', `SIM ${this.ftpW}W`);
+      this.setStatus('demo', `SIM ${simPower}W`);
     }
 
     const preConnectedHrm = SessionService.hrm;
@@ -1244,7 +1247,9 @@ export class GameScene extends Phaser.Scene {
 
     // Roguelike Logic
     if (this.isRoguelike && completed) {
+      console.log(`[SPOKES] GameScene ride complete: distanceM=${this.distanceM.toFixed(0)} recs=${recs} activeChallenge=${this.activeChallenge?.id ?? 'none'} ghosts=${this.ghosts.length}`);
       const isFirstClear = RunStateManager.completeActiveEdge();
+      console.log(`[SPOKES] completeActiveEdge returned isFirstClear=${isFirstClear}, currentNodeId=${RunStateManager.getRun()?.currentNodeId}`);
       RunStateManager.recordSegmentStats(this.distanceM, recs, this.recordedPowerSum, this.recordedCadenceSum);
       stats.isNewClear = isFirstClear;
 
@@ -1266,13 +1271,16 @@ export class GameScene extends Phaser.Scene {
         if (this.activeChallenge) {
           const challengeAvgPow = recs > 0 ? this.recordedPowerSum / recs : 0;
           const elapsedSec = (Date.now() - this.challengeStartMs) / 1000;
-          const passed = evaluateChallenge(this.activeChallenge, {
+          const metrics = {
             avgPowerW: challengeAvgPow,
             peakPowerW: this.peakPowerW,
             ftpW: this.effectiveFtpW,
             everStopped: this.challengeEverStopped,
             elapsedSeconds: elapsedSec,
-          });
+          };
+          console.log(`[SPOKES] Challenge eval: id=${this.activeChallenge.id} condition=${this.activeChallenge.condition.type} ftpMult=${this.activeChallenge.condition.ftpMultiplier} timeLimitS=${this.activeChallenge.condition.timeLimitSeconds}`, metrics);
+          const passed = evaluateChallenge(this.activeChallenge, metrics);
+          console.log(`[SPOKES] Challenge result: passed=${passed} reward=${this.activeChallenge.reward.description}`);
 
           if (passed) {
             grantChallengeReward(this.activeChallenge);
@@ -1288,6 +1296,7 @@ export class GameScene extends Phaser.Scene {
       isFinishNode = currentNode?.type === 'finish';
 
       // Boss Logic: Award Medal & Unlock Key
+      console.log(`[SPOKES] Boss medal check: currentNode=${currentNode?.id} type=${currentNode?.type} spokeId=${currentNode?.metadata?.spokeId} bossResult=${JSON.stringify(stats.bossResult)} ghosts=${this.ghosts.length}`);
       if (currentNode?.type === 'boss' && currentNode.metadata?.spokeId && stats.bossResult?.playerWon) {
         const spokeId = currentNode.metadata.spokeId;
         const medalId = `medal_${spokeId}`;

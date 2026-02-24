@@ -190,6 +190,7 @@ export class RunStateManager {
 
   /** Sets the active edge. Does NOT persist — we intentionally skip saving mid-ride state. */
   static setActiveEdge(edge: MapEdge | null): void {
+    console.log(`[SPOKES] setActiveEdge: ${edge ? `${edge.from}→${edge.to} isCleared=${edge.isCleared}` : 'null'}`);
     if (this.instance) {
       this.instance.activeEdge = edge;
     }
@@ -197,6 +198,9 @@ export class RunStateManager {
 
   /** Marks the currently active edge as cleared and advances currentNodeId to the destination. Returns true if it was newly cleared. */
   static completeActiveEdge(): boolean {
+    const ae = this.instance?.activeEdge;
+    console.log(`[SPOKES] completeActiveEdge: activeEdge=${ae ? `${ae.from}→${ae.to} isCleared=${ae.isCleared}` : 'null'} currentNodeId=${this.instance?.currentNodeId}`);
+
     if (this.instance && this.instance.activeEdge) {
       // Find the edge in the main list to update it persistently
       const edge = this.instance.edges.find(e =>
@@ -204,11 +208,14 @@ export class RunStateManager {
         e.to === this.instance!.activeEdge!.to
       );
 
+      console.log(`[SPOKES] completeActiveEdge: edge in list found=${!!edge} wasCleared=${edge?.isCleared}`);
+
       if (edge) {
         // Derive destination — whichever end of the edge isn't the origin
         const destination = edge.from === this.instance.currentNodeId
           ? edge.to
           : edge.from;
+        console.log(`[SPOKES] completeActiveEdge: destination=${destination}`);
         this.instance.currentNodeId = destination;
         if (!this.instance.visitedNodeIds.includes(destination)) {
           this.instance.visitedNodeIds.push(destination);
@@ -224,11 +231,16 @@ export class RunStateManager {
           // Also update the active reference
           this.instance.activeEdge.isCleared = true;
           this.persist();
+          console.log(`[SPOKES] completeActiveEdge: returning true (first clear)`);
           return true;
+        } else {
+          console.log(`[SPOKES] completeActiveEdge: edge already cleared → returning false`);
         }
       }
 
       this.persist();
+    } else {
+      console.warn(`[SPOKES] completeActiveEdge: no activeEdge → returning false`);
     }
     return false;
   }

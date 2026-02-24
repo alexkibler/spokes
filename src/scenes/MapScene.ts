@@ -13,7 +13,7 @@ import { type EliteChallenge } from '../roguelike/EliteChallenge';
 import type { Units } from './MenuScene';
 import { RemoteService } from '../services/RemoteService';
 import { SessionService } from '../services/SessionService';
-import { createBossRacers, type RacerProfile } from '../race/RacerProfile';
+import { createBossRacers, createSpokeBoss, type RacerProfile } from '../race/RacerProfile';
 import { THEME } from '../theme';
 import { ShopOverlay } from './ui/ShopOverlay';
 import { EventOverlay } from './ui/EventOverlay';
@@ -717,6 +717,7 @@ export class MapScene extends Phaser.Scene {
       (e.from === run.currentNodeId && e.to === node.id) ||
       (e.from === node.id && e.to === run.currentNodeId)
     );
+    console.log(`[SPOKES] onNodeClick: node=${node.id} type=${node.type} floor=${node.floor} currentNode=${run.currentNodeId} connectingEdge=${connectingEdge ? `${connectingEdge.from}→${connectingEdge.to} cleared=${connectingEdge.isCleared}` : 'none'} devMode=${this.isDevMode}`);
 
     // Hazard Confirmation Check
     if (run.currentNodeId === 'node_hub' && connectingEdge?.to === node.id && node.metadata?.spokeId) {
@@ -754,16 +755,36 @@ export class MapScene extends Phaser.Scene {
     }
 
     if (this.isDevMode && !connectingEdge && node.floor !== 0) {
-      RunStateManager.setCurrentNode(node.id);
+      console.log(`[SPOKES] Dev teleport → node ${node.id} (type=${node.type})`);
+      // Overlay-only nodes: teleport current position and open overlay
+      if (node.type === 'shop' || node.type === 'event') {
+        RunStateManager.setCurrentNode(node.id);
+        this.drawMap();
+        this.buildStatsPanel();
+        this.updateGoldUI();
+        node.type === 'shop' ? this.openShop() : this.openEvent();
+        return;
+      }
+
+      // Rideable nodes (elite/standard/hard/boss/finish): find the real incoming
+      // edge so completeActiveEdge can mark it cleared and grant rewards.
+      const fallbackEdge = run.edges.find(e => e.to === node.id) ?? run.edges.find(e => e.from === node.id);
+      if (fallbackEdge) {
+        const srcId = fallbackEdge.to === node.id ? fallbackEdge.from : fallbackEdge.to;
+        console.log(`[SPOKES] Dev teleport fallback edge: ${fallbackEdge.from}→${fallbackEdge.to}, setting currentNode=${srcId}`);
+        RunStateManager.setCurrentNode(srcId);
+      } else {
+        console.warn(`[SPOKES] Dev teleport: no edge found for node ${node.id}, activeEdge will be null`);
+        RunStateManager.setCurrentNode(node.id);
+      }
       this.drawMap();
       this.buildStatsPanel();
       this.updateGoldUI();
-      if (node.type === 'shop') {
-        this.openShop();
-      } else if (node.type === 'event') {
-        this.openEvent();
-      } else if (node.type === 'elite') {
+
+      if (node.type === 'elite') {
         this.openEliteChallenge(node);
+      } else {
+        this.proceedWithNodeTransition(node, fallbackEdge);
       }
       return;
     }
@@ -831,12 +852,19 @@ export class MapScene extends Phaser.Scene {
       ? (edge.to === run.currentNodeId ? edge.from : edge.to)
       : node.id;
     const destNode = run.nodes.find(n => n.id === destNodeId);
-    const racers: RacerProfile[] = destNode?.type === 'finish'
-      ? createBossRacers(this.ftpW)
-      : [];
+    let racers: RacerProfile[] = [];
+    if (destNode?.type === 'finish') {
+      racers = createBossRacers(this.ftpW);
+    } else if (destNode?.type === 'boss') {
+      const spokeId = destNode.metadata?.spokeId as 'plains' | 'mountain' | 'coast' | 'forest' | undefined;
+      if (spokeId) racers = [createSpokeBoss(spokeId, this.ftpW)];
+    }
+    console.log(`[SPOKES] proceedWithNodeTransition → destNode=${destNodeId} type=${destNode?.type} racers=${racers.length} edge=${edge ? `${edge.from}→${edge.to}` : 'none'}`);
 
-    if (racers.length > 0) {
-      this.showBossEncounterSplash(racers[4], () => {
+    // Spoke boss splash uses racers[0]; criterium splash uses racers[4] (LE FANTÔME V, midpack)
+    const splashRacer = destNode?.type === 'boss' ? racers[0] : racers[4];
+    if (racers.length > 0 && splashRacer) {
+      this.showBossEncounterSplash(splashRacer, () => {
         this.scene.start('GameScene', {
           course, isBackwards,
           isRoguelike: true, activeChallenge: null, racers,
@@ -914,11 +942,24 @@ export class MapScene extends Phaser.Scene {
       (e.from === node.id && e.to === fromNodeId)
     );
 
+    console.log(`[SPOKES] startGameWithEliteChallenge: challenge=${challenge.id} node=${node.id} fromNodeId=${fromNodeId} edge=${edge ? `${edge.from}→${edge.to} cleared=${edge.isCleared}` : 'NOT FOUND'}`);
+
     if (edge) {
       RunStateManager.setActiveEdge(edge);
     } else {
-      RunStateManager.setCurrentNode(node.id);
-      RunStateManager.setActiveEdge(null);
+      // No direct edge (e.g., dev mode teleport where currentNode was already set to this node).
+      // Find any incoming edge so completeActiveEdge can mark it cleared and return isFirstClear=true.
+      const fallbackEdge = run.edges.find(e => e.from === node.id || e.to === node.id);
+      if (fallbackEdge) {
+        const sourceId = fallbackEdge.to === node.id ? fallbackEdge.from : fallbackEdge.to;
+        console.log(`[SPOKES] startGameWithEliteChallenge: using fallback edge ${fallbackEdge.from}→${fallbackEdge.to}, srcId=${sourceId}`);
+        RunStateManager.setCurrentNode(sourceId);
+        RunStateManager.setActiveEdge(fallbackEdge);
+      } else {
+        console.warn(`[SPOKES] startGameWithEliteChallenge: no edge found at all — isFirstClear will be false`);
+        RunStateManager.setCurrentNode(node.id);
+        RunStateManager.setActiveEdge(null);
+      }
     }
 
     this.scene.start('GameScene', {
