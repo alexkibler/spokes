@@ -1,5 +1,5 @@
 /**
- * Centralized theme configuration for Paper Peloton.
+ * Centralized theme configuration for Spokes.
  * Contains color palettes, font styles, and layout constants.
  */
 

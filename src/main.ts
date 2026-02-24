@@ -1,5 +1,5 @@
 /**
- * main.ts – Paper Peloton entry point
+ * main.ts – Spokes entry point
  *
  * Bootstraps the Phaser 3 game and registers scenes.
  * The canvas is inserted into #game-container defined in index.html.

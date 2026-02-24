@@ -1,7 +1,7 @@
 /**
  * MenuScene.ts
  *
- * Main menu for Paper Peloton.
+ * Main menu for Spokes.
  *
  * Lets the player:
  *   • Choose distance, rider weight, difficulty, and units

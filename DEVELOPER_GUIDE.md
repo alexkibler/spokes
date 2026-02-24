@@ -1,4 +1,4 @@
-# Paper Peloton – Developer Guide
+# Spokes – Developer Guide
 
 > For experienced JS/TS developers with no prior Phaser or game dev experience.
 
@@ -29,7 +29,7 @@
 
 ## 1. What This App Is
 
-Paper Peloton is a browser-based cycling simulator that:
+Spokes is a browser-based cycling simulator that:
 
 - Connects to a real smart bike trainer over **Web Bluetooth** (FTMS protocol)
 - Simulates road cycling physics (power → speed → grade resistance feedback loop)

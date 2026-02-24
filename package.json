@@ -1,5 +1,5 @@
 {
-  "name": "paper-peloton",
+  "name": "spokes",
   "version": "0.1.0",
   "description": "2D Cycling Simulator – Phaser 3 + TypeScript + FTMS Bluetooth",
   "type": "module",

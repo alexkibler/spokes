@@ -1,4 +1,4 @@
-# Paper Peloton
+# Spokes
 
 2D roguelike cycling simulator built with **Phaser 3**, **TypeScript**, and **Vite**.
 Connects to FTMS-compatible smart trainers over Web Bluetooth, with a built-in Mock Mode for development without hardware.
@@ -48,7 +48,7 @@ npx vitest run src/services/__tests__/TrainerService.test.ts
 
 One-liner to deploy new build:
 ```
-docker pull ghcr.io/alexkibler/paper-peloton:main && docker rm -f paper-peloton && docker run -d -p 6969:80 --name paper-peloton ghcr.io/alexkibler/paper-peloton:main
+docker pull ghcr.io/alexkibler/spokes:main && docker rm -f spokes && docker run -d -p 6969:80 --name spokes ghcr.io/alexkibler/spokes:main
 ```
 ---
 
@@ -235,7 +235,7 @@ Every ride is recorded to a binary **Garmin FIT file** using `FitWriter`, captur
 ## Project structure
 
 ```
-paper-peloton/
+spokes/
 ├── index.html
 ├── src/
 │   ├── main.ts                          Phaser game bootstrap + scene registration

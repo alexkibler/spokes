@@ -62,7 +62,7 @@ MenuScene, defaulting to 0 for non-real-trainer sessions.
 **Goal:** Clean 0% grade power-vs-speed curve across all gears.
 
 **Setup:**
-- Paper Peloton game open, flat course, stay at 0% grade the whole time
+- Spokes game open, flat course, stay at 0% grade the whole time
 - Garmin Edge recording via ANT+ from the H3
 
 **Steps:**

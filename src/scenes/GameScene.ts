@@ -1,7 +1,7 @@
 /**
  * GameScene.ts
  *
- * Primary Phaser 3 scene for Paper Peloton.
+ * Primary Phaser 3 scene for Spokes.
  */
 
 import Phaser from 'phaser';
@@ -1357,7 +1357,7 @@ export class GameScene extends Phaser.Scene {
     const a     = document.createElement('a');
     const date  = new Date(this.rideStartTime).toISOString().slice(0, 10);
     a.href     = url;
-    a.download = `paper-peloton-${date}.fit`;
+    a.download = `spokes-${date}.fit`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

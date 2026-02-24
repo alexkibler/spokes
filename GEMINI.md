@@ -1,6 +1,6 @@
-# Paper Peloton
+# Spokes
 
-**Paper Peloton** is a 2D cycling simulator and roguelike game built with **Phaser 3**, **TypeScript**, and **Vite**. It connects to smart trainers (like the Saris H3) via Web Bluetooth (FTMS protocol) to drive the gameplay using real-world power, speed, and cadence data.
+**Spokes** is a 2D cycling simulator and roguelike game built with **Phaser 3**, **TypeScript**, and **Vite**. It connects to smart trainers (like the Saris H3) via Web Bluetooth (FTMS protocol) to drive the gameplay using real-world power, speed, and cadence data.
 
 ## Project Overview
 
