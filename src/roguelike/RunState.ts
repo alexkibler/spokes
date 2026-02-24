@@ -95,11 +95,6 @@ export interface RunData {
 export class RunStateManager {
   private static instance: RunData | null = null;
 
-  // ── Dev mode — persists across scene transitions ─────────────────────────
-  private static _devMode = false;
-  static getDevMode(): boolean { return this._devMode; }
-  static setDevMode(val: boolean): void { this._devMode = val; }
-
   static setRealTrainerRun(val: boolean): void {
     if (this.instance) this.instance.isRealTrainerRun = val;
   }
