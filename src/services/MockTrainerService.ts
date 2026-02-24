@@ -49,6 +49,10 @@ export class MockTrainerService implements ITrainerService {
 
   async connect(): Promise<void> {
     if (this.connected) return;
+    if (this.intervalId !== null) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
     this.connected = true;
     this.intervalId = setInterval(() => this.emit(), this.intervalMs);
     // Emit one frame immediately so the UI doesn't wait a full interval

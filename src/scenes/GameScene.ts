@@ -1287,24 +1287,21 @@ export class GameScene extends Phaser.Scene {
       const currentNode = run ? run.nodes.find(n => n.id === run.currentNodeId) : undefined;
       isFinishNode = currentNode?.type === 'finish';
 
-      // Boss Logic: Award Medal & Unlock Key
+      // Boss Logic: Prepare Reward Text (Items are awarded via showBossReward)
       if (currentNode?.type === 'boss' && currentNode.metadata?.spokeId && stats.bossResult?.playerWon) {
         const spokeId = currentNode.metadata.spokeId;
         const medalId = `medal_${spokeId}`;
 
         if (run && !run.inventory.includes(medalId)) {
-          RunStateManager.addToInventory(medalId);
-
           let rewardText = `${spokeId.toUpperCase()} MEDAL`;
 
-          // Award Key for the next spoke
+          // Check Key for the next spoke
           let keyId: string | null = null;
           if (spokeId === 'plains') keyId = 'ferry_token';
           else if (spokeId === 'coast') keyId = 'funicular_ticket';
           else if (spokeId === 'mountain') keyId = 'trail_machete';
 
           if (keyId && !run.inventory.includes(keyId)) {
-            RunStateManager.addToInventory(keyId);
             const keyName = keyId.replace('_', ' ').toUpperCase();
             rewardText += ` + ${keyName}`;
           }
@@ -1314,10 +1311,14 @@ export class GameScene extends Phaser.Scene {
       }
 
       // First-clear non-finish: skip stats panel and show combined reward screen
-      // EXCEPTION: Boss nodes don't give random rewards, they give a medal (handled above)
-      if (isFirstClear && !isFinishNode && currentNode?.type !== 'boss') {
-        this.showRewardSelection(stats);
-        return;
+      if (isFirstClear && !isFinishNode) {
+        if (currentNode?.type === 'boss' && currentNode.metadata?.spokeId && stats.bossResult?.playerWon) {
+          this.showBossReward(stats, currentNode.metadata.spokeId);
+          return;
+        } else if (currentNode?.type !== 'boss') {
+          this.showRewardSelection(stats);
+          return;
+        }
       }
     }
 
@@ -1348,6 +1349,42 @@ export class GameScene extends Phaser.Scene {
       () => {
         this.scene.start('MenuScene');
       }
+    );
+  }
+
+  private showBossReward(stats: RideStats, spokeId: string): void {
+    const medalId = `medal_${spokeId}`;
+    let keyId: string | null = null;
+    if (spokeId === 'plains') keyId = 'ferry_token';
+    else if (spokeId === 'coast') keyId = 'funicular_ticket';
+    else if (spokeId === 'mountain') keyId = 'trail_machete';
+
+    const reward: RewardDefinition = {
+      id: medalId,
+      label: `item.${medalId}`,
+      description: keyId ? `item.${keyId}` : 'reward.champion_victory',
+      rarity: 'rare',
+      apply: () => {
+        const run = RunStateManager.getRun();
+        if (run && !run.inventory.includes(medalId)) {
+            RunStateManager.addToInventory(medalId);
+        }
+        if (run && keyId && !run.inventory.includes(keyId)) {
+            RunStateManager.addToInventory(keyId);
+        }
+      }
+    };
+
+    new RewardOverlay(
+      this,
+      [reward],
+      (picked) => {
+        picked.apply();
+        RunStateManager.returnToHub();
+        this.scene.start('MapScene');
+      },
+      null,
+      { stats, units: this.units }
     );
   }
 

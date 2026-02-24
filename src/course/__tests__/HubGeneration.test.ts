@@ -22,8 +22,8 @@ describe('generateHubAndSpokeMap', () => {
   });
 
   it('generates a hub, 4 spokes, and a final boss', () => {
-    // Mock run data
-    const run = RunStateManager.startNewRun(3, 20, 'normal');
+    // Mock run data (runLength 40 -> 4 spokes)
+    const run = RunStateManager.startNewRun(40, 20, 'normal');
 
     generateHubAndSpokeMap(run);
 
@@ -32,7 +32,8 @@ describe('generateHubAndSpokeMap', () => {
     expect(hub).toBeDefined();
 
     // Check spokes (Plains, Coast, Mountain, Forest)
-    const spokeStarts = run.nodes.filter(n => n.id.endsWith('_start'));
+    // New naming convention: node_{i}_spoke_1
+    const spokeStarts = run.nodes.filter(n => n.id.match(/_spoke_1$/));
     expect(spokeStarts.length).toBe(4);
 
     // Check connections
