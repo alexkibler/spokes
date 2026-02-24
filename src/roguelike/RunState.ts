@@ -14,7 +14,7 @@ import { ITEM_REGISTRY, type EquipmentSlot } from './ItemRegistry';
 
 export type { EquipmentSlot };
 
-export type NodeType = 'start' | 'standard' | 'hard' | 'shop' | 'event' | 'elite' | 'finish';
+export type NodeType = 'start' | 'standard' | 'hard' | 'shop' | 'event' | 'elite' | 'finish' | 'boss';
 
 export interface MapNode {
   id: string;
@@ -26,6 +26,7 @@ export interface MapNode {
   connectedTo: string[]; // IDs of nodes this node connects TO (next floor)
   eliteChallenge?: EliteChallenge;       // Only set for 'elite' type nodes
   eliteCourseProfile?: CourseProfile;   // Pre-generated course for the elite challenge
+  metadata?: { spokeId?: string };       // Optional metadata (e.g., to identify the spoke for a boss)
 }
 
 export interface MapEdge {
@@ -162,6 +163,14 @@ export class RunStateManager {
       if (!this.instance.visitedNodeIds.includes(nodeId)) {
         this.instance.visitedNodeIds.push(nodeId);
       }
+      this.persist();
+    }
+  }
+
+  static returnToHub(): void {
+    if (this.instance) {
+      this.instance.currentNodeId = 'node_hub';
+      // Do NOT wipe visitedNodeIds
       this.persist();
     }
   }

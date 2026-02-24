@@ -37,6 +37,7 @@ export const THEME = {
       secondary: 0x444444,
       secondaryHover: 0x666666,
       danger: 0x8b0000,
+      dangerHover: 0xaa0000,
       success: 0x006655,
       disabled: 0x333333,
     },

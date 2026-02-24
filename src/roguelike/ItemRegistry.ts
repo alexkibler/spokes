@@ -31,6 +31,17 @@ export const ITEM_REGISTRY: Record<string, ItemDef> = {
   antigrav_pedals: { id: 'antigrav_pedals', label: 'item.antigrav_pedals',  slot: 'pedals', rarity: 'rare',     modifier: { weightMult: 0.92 } },
   dirt_tires:      { id: 'dirt_tires',      label: 'item.dirt_tires',       slot: 'tires',  rarity: 'common',   modifier: { crrMult: 0.65 } },
   carbon_frame:    { id: 'carbon_frame',    label: 'item.carbon_frame',     slot: 'frame',  rarity: 'rare',     modifier: { weightMult: 0.88, dragReduction: 0.03 } },
+
+  // Keys
+  ferry_token:      { id: 'ferry_token',      label: 'item.ferry_token',      rarity: 'common' },
+  funicular_ticket: { id: 'funicular_ticket', label: 'item.funicular_ticket', rarity: 'common' },
+  trail_machete:    { id: 'trail_machete',    label: 'item.trail_machete',    rarity: 'common' },
+
+  // Medals (Quest Items)
+  medal_plains:   { id: 'medal_plains',   label: 'item.medal_plains',   rarity: 'rare' },
+  medal_coast:    { id: 'medal_coast',    label: 'item.medal_coast',    rarity: 'rare' },
+  medal_mountain: { id: 'medal_mountain', label: 'item.medal_mountain', rarity: 'rare' },
+  medal_forest:   { id: 'medal_forest',   label: 'item.medal_forest',   rarity: 'rare' },
 };
 
 export const SLOT_LABELS: Record<EquipmentSlot, string> = {

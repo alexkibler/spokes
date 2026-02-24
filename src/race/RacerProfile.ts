@@ -120,3 +120,78 @@ export function createEliteRacer(name: string, powerW: number): RacerProfile {
     accentHex:   '#ffcc44',
   };
 }
+
+export function createSpokeBoss(type: 'plains' | 'mountain' | 'coast' | 'forest', playerFtpW: number): RacerProfile {
+  const base = {
+    id: `boss_${type}`,
+    displayName: `${type.toUpperCase()} CHAMPION`,
+    flavorText: '',
+    powerW: playerFtpW,
+    massKg: 75,
+    cdA: 0.25,
+    crr: 0.005,
+    color: 0xffffff,
+    hexColor: '#ffffff',
+    accentColor: 0xffffff,
+    accentHex: '#ffffff',
+  };
+
+  switch (type) {
+    case 'plains': // Sprinter: Aero + Power
+      base.displayName = 'THE SPRINTER';
+      base.flavorText = '"Catch me if you can."';
+      base.powerW = Math.round(playerFtpW * 1.5); // High power
+      base.cdA = 0.22; // Good aero
+      base.color = 0x88cc44;
+      base.hexColor = '#88cc44';
+      base.accentColor = 0xccff66;
+      base.accentHex = '#ccff66';
+      break;
+    case 'mountain': // Climber: Lightweight
+      base.displayName = 'THE CLIMBER';
+      base.flavorText = '"The summit is my home."';
+      base.powerW = Math.round(playerFtpW * 1.3);
+      base.massKg = 60; // Light
+      base.cdA = 0.30; // Not very aero
+      base.color = 0xcc4444;
+      base.hexColor = '#cc4444';
+      base.accentColor = 0xff6666;
+      base.accentHex = '#xff6666';
+      break;
+    case 'coast': // Rouleur: High sustained, low Crr (ignores mud penalty somewhat)
+      base.displayName = 'THE ROULEUR';
+      base.flavorText = '"Nothing slows me down."';
+      base.powerW = Math.round(playerFtpW * 1.4);
+      base.massKg = 80; // Heavy
+      base.crr = 0.003; // Very low rolling resistance
+      base.color = 0x4488cc;
+      base.hexColor = '#4488cc';
+      base.accentColor = 0x66aaff;
+      base.accentHex = '#66aaff';
+      break;
+    case 'forest': // Gravel/MTB: Balanced, handles bumps
+      base.displayName = 'THE RANGER';
+      base.flavorText = '"I know every root and rock."';
+      base.powerW = Math.round(playerFtpW * 1.35);
+      base.crr = 0.004; // Good tires
+      base.color = 0x228844;
+      base.hexColor = '#228844';
+      base.accentColor = 0x44cc66;
+      base.accentHex = '#44cc66';
+      break;
+  }
+  return base;
+}
+
+export function createGrandCriteriumRacers(playerFtpW: number): RacerProfile[] {
+  // Combine all spoke bosses into one race
+  return [
+    createSpokeBoss('plains', playerFtpW),
+    createSpokeBoss('mountain', playerFtpW),
+    createSpokeBoss('coast', playerFtpW),
+    createSpokeBoss('forest', playerFtpW),
+    // Add the Phantom as the ultimate leader? Or just the 4 champs.
+    // Let's add Le Fantome as a wildcard.
+    createBossProfile(playerFtpW)
+  ];
+}
