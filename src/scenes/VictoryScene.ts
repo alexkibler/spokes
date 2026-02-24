@@ -100,27 +100,5 @@ export class VictoryScene extends Phaser.Scene {
     btn.on('pointerdown', () => {
       this.scene.start('MenuScene');
     });
-
-    this.buildDevToggle(w);
-  }
-
-  private buildDevToggle(w: number): void {
-    let isDevMode = RunStateManager.getDevMode();
-    const bg = this.add.rectangle(w - 70, 20, 130, 26, isDevMode ? 0x224422 : 0x333333)
-      .setDepth(50).setInteractive({ useHandCursor: true });
-    const txt = this.add.text(w - 70, 20, isDevMode ? 'DEV MODE: ON' : 'DEV MODE: OFF', {
-      fontFamily: 'monospace', fontSize: '11px',
-      color: isDevMode ? '#00ff00' : '#aaaaaa', fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(51);
-
-    bg.on('pointerdown', () => {
-      isDevMode = !isDevMode;
-      RunStateManager.setDevMode(isDevMode);
-      bg.setFillStyle(isDevMode ? 0x224422 : 0x333333);
-      txt.setText(isDevMode ? 'DEV MODE: ON' : 'DEV MODE: OFF');
-      txt.setColor(isDevMode ? '#00ff00' : '#aaaaaa');
-    });
-    bg.on('pointerover', () => bg.setFillStyle(isDevMode ? 0x336633 : 0x555555));
-    bg.on('pointerout',  () => bg.setFillStyle(isDevMode ? 0x224422 : 0x333333));
   }
 }

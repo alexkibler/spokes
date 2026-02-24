@@ -130,9 +130,7 @@ export class MenuScene extends Phaser.Scene {
   private saveBannerContainer: Phaser.GameObjects.Container | null = null;
 
   // ── Dev Mode ──────────────────────────────────────────────────────────────
-  private isDevMode = RunStateManager.getDevMode();
   private isStartWarningActive = false;
-  private devModeToggle!: Phaser.GameObjects.Container;
   private languageToggle!: Phaser.GameObjects.Container;
 
   constructor() {
@@ -162,7 +160,6 @@ export class MenuScene extends Phaser.Scene {
     this.buildStartButton();
     this.setupInputHandlers();
 
-    this.buildDevToggle();
     this.buildLanguageToggle();
 
     // Check for an existing save and build the save banner if one exists
@@ -235,9 +232,6 @@ export class MenuScene extends Phaser.Scene {
 
     // Row 4: Start buttons
     if (this.startBtnContainer) this.startBtnContainer.setScale(s).setPosition(cx, height - safeBottom - 60 * s);
-
-    // Dev Toggle
-    if (this.devModeToggle) this.devModeToggle.setScale(s).setPosition(width - 120 * s, 30 * s);
 
     // Language Toggle
     if (this.languageToggle) this.languageToggle.setScale(s).setPosition(60 * s, 30 * s);
@@ -998,31 +992,6 @@ export class MenuScene extends Phaser.Scene {
     this.saveBannerContainer = notice;
   }
 
-  private buildDevToggle(): void {
-    this.isDevMode = RunStateManager.getDevMode();
-    this.devModeToggle = this.add.container(0, 0);
-
-    const btn = this.add.rectangle(0, 0, 100, 24, this.isDevMode ? 0x224422 : 0x444444)
-      .setInteractive({ useHandCursor: true });
-    
-    const getDevLabel = () => this.isDevMode ? i18n.t('menu.dev_mode.on') : i18n.t('menu.dev_mode.off');
-    const txt = this.add.text(0, 0, getDevLabel(), {
-      fontFamily: 'monospace', fontSize: '10px', 
-      color: this.isDevMode ? '#00ff00' : '#aaaaaa', 
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-
-    this.devModeToggle.add([btn, txt]);
-
-    btn.on('pointerdown', () => {
-      this.isDevMode = !this.isDevMode;
-      RunStateManager.setDevMode(this.isDevMode);
-      txt.setText(getDevLabel());
-      txt.setColor(this.isDevMode ? '#00ff00' : '#aaaaaa');
-      btn.setFillStyle(this.isDevMode ? 0x224422 : 0x444444);
-    });
-  }
-
   private buildLanguageToggle(): void {
     this.languageToggle = this.add.container(0, 0);
 
@@ -1089,7 +1058,7 @@ export class MenuScene extends Phaser.Scene {
       const saved = SaveService.load();
       if (!saved) return;
       // If the run was started with a real trainer, require reconnecting before continuing
-      if (saved.runData.isRealTrainerRun && !this.trainerService && !this.isDevMode) {
+      if (saved.runData.isRealTrainerRun && !this.trainerService) {
         new ConfirmationModal(this, {
           title: i18n.t('menu.start.trainer_required_title'),
           message: i18n.t('menu.start.trainer_required_msg'),
@@ -1121,7 +1090,7 @@ export class MenuScene extends Phaser.Scene {
     btn.on('pointerover', () => { if (!confirmPending) btn.setFillStyle(0xaa5a00); });
     btn.on('pointerout',  () => { if (!confirmPending) btn.setFillStyle(0x6b3a00); });
     btn.on('pointerdown', () => {
-      if (!this.trainerService && !this.isDevMode && !trainerCheckPassed) {
+      if (!this.trainerService && !trainerCheckPassed) {
         new ConfirmationModal(this, {
           title: i18n.t('menu.start.no_trainer_title'),
           message: i18n.t('menu.start.no_trainer_msg'),
@@ -1191,7 +1160,7 @@ export class MenuScene extends Phaser.Scene {
       if (!this.isStartWarningActive) runBtn.setFillStyle(0x8b5a00);
     });
     runBtn.on('pointerdown', () => {
-      if (!this.trainerService && !this.isDevMode) {
+      if (!this.trainerService) {
         new ConfirmationModal(this, {
           title: i18n.t('menu.start.no_trainer_title'),
           message: i18n.t('menu.start.no_trainer_msg'),

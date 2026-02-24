@@ -53,7 +53,6 @@ const NODE_DESCRIPTIONS: Record<NodeType, string> = {
 
 export class MapScene extends Phaser.Scene {
   private units: Units = 'imperial';
-  private isDevMode = false;
 
   private ftpW = 200;
 
@@ -70,8 +69,6 @@ export class MapScene extends Phaser.Scene {
   private isTeleportMode = false;
   private teleportBg:  Phaser.GameObjects.Rectangle | null = null;
   private teleportTxt: Phaser.GameObjects.Text | null = null;
-  private devToggleBg:  Phaser.GameObjects.Rectangle | null = null;
-  private devToggleTxt: Phaser.GameObjects.Text | null = null;
   private gearBtnBg:   Phaser.GameObjects.Rectangle | null = null;
   private gearBtnTxt:  Phaser.GameObjects.Text | null = null;
   private remoteBtnBg: Phaser.GameObjects.Rectangle | null = null;
@@ -94,7 +91,6 @@ export class MapScene extends Phaser.Scene {
 
   init(): void {
     this.units    = SessionService.units;
-    this.isDevMode = RunStateManager.getDevMode();
     this.ftpW = RunStateManager.getRun()?.ftpW ?? 200;
 
     const run = RunStateManager.getRun();
@@ -151,7 +147,6 @@ export class MapScene extends Phaser.Scene {
     this.createTooltip();
     this.setupScrolling();
 
-    this.buildDevToggle();
     this.buildGearButton();
     this.buildRemoteButton();
     this.buildReturnButton();
@@ -508,10 +503,6 @@ export class MapScene extends Phaser.Scene {
         // But the original CLICK handler `circle.on('pointerdown')` checked `isNodeReachable`.
         if (this.isNodeReachable(node.id)) {
              this.onNodeClick(node);
-        } else if (this.isDevMode) {
-             // In dev mode we can click anything if we want, but logic inside onNodeClick handles it?
-             // onNodeClick handles dev mode warp.
-             this.onNodeClick(node);
         }
       }
   }
@@ -679,8 +670,6 @@ export class MapScene extends Phaser.Scene {
       return run.visitedNodeIds.includes(nodeId);
     }
 
-    if (this.isDevMode) return true;
-
     if (!run.currentNodeId) {
       const targetNode = run.nodes.find(n => n.id === nodeId);
       return targetNode?.floor === 0;
@@ -717,7 +706,7 @@ export class MapScene extends Phaser.Scene {
       (e.from === run.currentNodeId && e.to === node.id) ||
       (e.from === node.id && e.to === run.currentNodeId)
     );
-    console.log(`[SPOKES] onNodeClick: node=${node.id} type=${node.type} floor=${node.floor} currentNode=${run.currentNodeId} connectingEdge=${connectingEdge ? `${connectingEdge.from}→${connectingEdge.to} cleared=${connectingEdge.isCleared}` : 'none'} devMode=${this.isDevMode}`);
+    console.log(`[SPOKES] onNodeClick: node=${node.id} type=${node.type} floor=${node.floor} currentNode=${run.currentNodeId} connectingEdge=${connectingEdge ? `${connectingEdge.from}→${connectingEdge.to} cleared=${connectingEdge.isCleared}` : 'none'}`);
 
     // Hazard Confirmation Check
     if (run.currentNodeId === 'node_hub' && connectingEdge?.to === node.id && node.metadata?.spokeId) {
@@ -752,41 +741,6 @@ export class MapScene extends Phaser.Scene {
         this.time.delayedCall(2000, () => this.hideTooltip());
         return;
       }
-    }
-
-    if (this.isDevMode && !connectingEdge && node.floor !== 0) {
-      console.log(`[SPOKES] Dev teleport → node ${node.id} (type=${node.type})`);
-      // Overlay-only nodes: teleport current position and open overlay
-      if (node.type === 'shop' || node.type === 'event') {
-        RunStateManager.setCurrentNode(node.id);
-        this.drawMap();
-        this.buildStatsPanel();
-        this.updateGoldUI();
-        node.type === 'shop' ? this.openShop() : this.openEvent();
-        return;
-      }
-
-      // Rideable nodes (elite/standard/hard/boss/finish): find the real incoming
-      // edge so completeActiveEdge can mark it cleared and grant rewards.
-      const fallbackEdge = run.edges.find(e => e.to === node.id) ?? run.edges.find(e => e.from === node.id);
-      if (fallbackEdge) {
-        const srcId = fallbackEdge.to === node.id ? fallbackEdge.from : fallbackEdge.to;
-        console.log(`[SPOKES] Dev teleport fallback edge: ${fallbackEdge.from}→${fallbackEdge.to}, setting currentNode=${srcId}`);
-        RunStateManager.setCurrentNode(srcId);
-      } else {
-        console.warn(`[SPOKES] Dev teleport: no edge found for node ${node.id}, activeEdge will be null`);
-        RunStateManager.setCurrentNode(node.id);
-      }
-      this.drawMap();
-      this.buildStatsPanel();
-      this.updateGoldUI();
-
-      if (node.type === 'elite') {
-        this.openEliteChallenge(node);
-      } else {
-        this.proceedWithNodeTransition(node, fallbackEdge);
-      }
-      return;
     }
 
     if (node.type === 'elite') {
@@ -1089,42 +1043,15 @@ export class MapScene extends Phaser.Scene {
     });
   }
 
-  private buildDevToggle(): void {
-    this.devToggleBg?.destroy();
-    this.devToggleTxt?.destroy();
-
-    const on = this.isDevMode;
-    this.devToggleBg = this.add.rectangle(70, 20, 130, 26, on ? 0x224422 : 0x333333)
-      .setScrollFactor(0).setDepth(30)
-      .setInteractive({ useHandCursor: true });
-    this.devToggleTxt = this.add.text(70, 20, on ? 'DEV MODE: ON' : 'DEV MODE: OFF', {
-      fontFamily: THEME.fonts.main, fontSize: '11px',
-      color: on ? '#00ff00' : '#aaaaaa', fontStyle: 'bold',
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(31);
-
-    this.devToggleBg.on('pointerdown', () => {
-      this.isDevMode = !this.isDevMode;
-      RunStateManager.setDevMode(this.isDevMode);
-      this.devToggleBg!.setFillStyle(this.isDevMode ? 0x224422 : 0x333333);
-      this.devToggleTxt!.setText(this.isDevMode ? 'DEV MODE: ON' : 'DEV MODE: OFF');
-      this.devToggleTxt!.setColor(this.isDevMode ? '#00ff00' : '#aaaaaa');
-      this.drawMap();
-    });
-    this.devToggleBg.on('pointerover', () =>
-      this.devToggleBg!.setFillStyle(this.isDevMode ? 0x336633 : 0x555555));
-    this.devToggleBg.on('pointerout', () =>
-      this.devToggleBg!.setFillStyle(this.isDevMode ? 0x224422 : 0x333333));
-  }
-
   private buildGearButton(): void {
     this.gearBtnBg?.destroy();
     this.gearBtnTxt?.destroy();
 
-    // Position at top-left, below the dev-mode toggle.
-    this.gearBtnBg = this.add.rectangle(70, 52, 130, 26, THEME.colors.buttons.primary)
+    // Position at top-left, formerly below the dev-mode toggle.
+    this.gearBtnBg = this.add.rectangle(70, 20, 130, 26, THEME.colors.buttons.primary)
       .setScrollFactor(0).setDepth(30)
       .setInteractive({ useHandCursor: true });
-    this.gearBtnTxt = this.add.text(70, 52, '⚙ EQUIPMENT', {
+    this.gearBtnTxt = this.add.text(70, 20, '⚙ EQUIPMENT', {
       fontFamily: THEME.fonts.main, fontSize: '11px', color: '#ccccff', fontStyle: 'bold',
     }).setOrigin(0.5).setScrollFactor(0).setDepth(31);
 
@@ -1149,10 +1076,10 @@ export class MapScene extends Phaser.Scene {
     const code = RemoteService.getInstance().getRoomCode();
     const isConnected = !!code;
 
-    // Position at top-left, below the gear button (y=52 + 26/2 + padding -> ~84).
-    // Gear button is 26px high, centered at 52. Bottom is 65. Gap 6px -> 71 (top of next).
-    // Next button height 26. Center at 71 + 13 = 84.
-    const y = 84;
+    // Position at top-left, below the gear button (y=20 + 26/2 + padding -> ~52).
+    // Gear button is 26px high, centered at 20. Bottom is 33. Gap 6px -> 39 (top of next).
+    // Next button height 26. Center at 39 + 13 = 52.
+    const y = 52;
 
     this.remoteBtnBg = this.add.rectangle(70, y, 130, 26, THEME.colors.buttons.primary)
       .setScrollFactor(0).setDepth(30)
@@ -1312,8 +1239,6 @@ export class MapScene extends Phaser.Scene {
     this.scale.off('resize', this.onResize, this);
     this.teleportBg = null;
     this.teleportTxt = null;
-    this.devToggleBg = null;
-    this.devToggleTxt = null;
     this.remoteBtnBg = null;
     this.remoteBtnTxt = null;
     this.returnBtnBg = null;
