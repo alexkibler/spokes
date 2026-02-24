@@ -50,9 +50,9 @@ export class MapScene extends Phaser.Scene {
     this.runManager = this.registry.get('runManager');
     if (!this.runManager) {
         console.error('RunManager not found in registry! Creating fallback.');
-        const fallbackRegistry = new ContentRegistry();
-        ContentBootstrapper.bootstrap(fallbackRegistry);
-        this.runManager = new RunManager(fallbackRegistry);
+        const reg = this.registry.get('contentRegistry') ?? new ContentRegistry();
+        if (!this.registry.get('contentRegistry')) ContentBootstrapper.bootstrap(reg);
+        this.runManager = new RunManager(reg);
     }
 
     const run = this.runManager.getRun();

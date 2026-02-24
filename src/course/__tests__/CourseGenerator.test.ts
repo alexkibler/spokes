@@ -68,9 +68,10 @@ describe('generateCourseProfile (Unit)', () => {
 
 describe('generateHubAndSpokeMap (Integration)', () => {
   let runManager: RunManager;
+  let registry: ContentRegistry;
 
   beforeEach(() => {
-    const registry = new ContentRegistry();
+    registry = new ContentRegistry();
     ContentBootstrapper.bootstrap(registry);
     runManager = new RunManager(registry);
   });

@@ -62,9 +62,10 @@ describe('computeNumSpokes', () => {
 
 describe('generateHubAndSpokeMap', () => {
   let runManager: RunManager;
+  let registry: ContentRegistry;
 
   beforeEach(() => {
-    const registry = new ContentRegistry();
+    registry = new ContentRegistry();
     ContentBootstrapper.bootstrap(registry);
     runManager = new RunManager(registry);
   });

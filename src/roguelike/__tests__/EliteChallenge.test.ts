@@ -319,9 +319,10 @@ describe('formatChallengeText', () => {
 
 describe('grantChallengeReward', () => {
   let runManager: RunManager;
+  let registry: ContentRegistry;
 
   beforeEach(() => {
-    const registry = new ContentRegistry();
+    registry = new ContentRegistry();
     ContentBootstrapper.bootstrap(registry);
     runManager = new RunManager(registry);
     runManager.startNewRun(3, 10, 'normal');
