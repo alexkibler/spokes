@@ -6,6 +6,8 @@ import {
   KM_PER_SPOKE
 } from '../CourseGenerator';
 import { RunManager } from '../../roguelike/RunManager';
+import { ContentRegistry } from '../../roguelike/registry/ContentRegistry';
+import { ContentBootstrapper } from '../../roguelike/content/ContentBootstrapper';
 
 // Mock Phaser.Events.EventEmitter to avoid loading Phaser in Node
 vi.mock('phaser', () => {
@@ -62,7 +64,9 @@ describe('generateHubAndSpokeMap', () => {
   let runManager: RunManager;
 
   beforeEach(() => {
-    runManager = new RunManager();
+    const registry = new ContentRegistry();
+    ContentBootstrapper.bootstrap(registry);
+    runManager = new RunManager(registry);
   });
 
   it('generates a hub and final boss', () => {

@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { generateCourseProfile } from '../CourseProfile';
 import { generateHubAndSpokeMap } from '../CourseGenerator';
 import { RunManager } from '../../roguelike/RunManager';
+import { ContentRegistry } from '../../roguelike/registry/ContentRegistry';
+import { ContentBootstrapper } from '../../roguelike/content/ContentBootstrapper';
 
 // ─── Mock Phaser ─────────────────────────────────────────────────────────────
 vi.mock('phaser', () => {
@@ -68,7 +70,9 @@ describe('generateHubAndSpokeMap (Integration)', () => {
   let runManager: RunManager;
 
   beforeEach(() => {
-    runManager = new RunManager();
+    const registry = new ContentRegistry();
+    ContentBootstrapper.bootstrap(registry);
+    runManager = new RunManager(registry);
   });
 
   // Parameterized test cases for different run configurations

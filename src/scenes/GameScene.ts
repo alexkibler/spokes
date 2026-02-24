@@ -14,6 +14,8 @@ import type { HeartRateData } from '../services/HeartRateService';
 import { RemoteService, type CursorDirection } from '../services/RemoteService';
 import { SessionService } from '../services/SessionService';
 import { RunManager, type RunModifiers } from '../roguelike/RunManager';
+import { ContentRegistry } from '../roguelike/registry/ContentRegistry';
+import { ContentBootstrapper } from '../roguelike/content/ContentBootstrapper';
 import { evaluateChallenge, grantChallengeReward, type EliteChallenge } from '../roguelike/EliteChallenge';
 import type { RacerProfile } from '../race/RacerProfile';
 import {
@@ -203,11 +205,15 @@ export class GameScene extends Phaser.Scene {
         this.runManager = this.registry.get('runManager');
         if (!this.runManager) {
              console.error('RunManager missing in roguelike mode');
-             this.runManager = new RunManager();
+             const fallbackRegistry = new ContentRegistry();
+             ContentBootstrapper.bootstrap(fallbackRegistry);
+             this.runManager = new RunManager(fallbackRegistry);
         }
         this.ftpW = this.runManager.getRun()?.ftpW ?? 200;
     } else {
-        this.runManager = new RunManager();
+        const demoRegistry = new ContentRegistry();
+        ContentBootstrapper.bootstrap(demoRegistry);
+        this.runManager = new RunManager(demoRegistry);
         this.ftpW = 200; // Default for demo
     }
 
