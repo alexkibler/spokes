@@ -1287,12 +1287,29 @@ export class GameScene extends Phaser.Scene {
       const currentNode = run ? run.nodes.find(n => n.id === run.currentNodeId) : undefined;
       isFinishNode = currentNode?.type === 'finish';
 
-      // Boss Logic: Award Medal
+      // Boss Logic: Award Medal & Unlock Key
       if (currentNode?.type === 'boss' && currentNode.metadata?.spokeId && stats.bossResult?.playerWon) {
-        const medalId = `medal_${currentNode.metadata.spokeId}`;
+        const spokeId = currentNode.metadata.spokeId;
+        const medalId = `medal_${spokeId}`;
+
         if (run && !run.inventory.includes(medalId)) {
           RunStateManager.addToInventory(medalId);
-          stats.challengeResult = { success: true, reward: `${currentNode.metadata.spokeId.toUpperCase()} MEDAL` };
+
+          let rewardText = `${spokeId.toUpperCase()} MEDAL`;
+
+          // Award Key for the next spoke
+          let keyId: string | null = null;
+          if (spokeId === 'plains') keyId = 'ferry_token';
+          else if (spokeId === 'coast') keyId = 'funicular_ticket';
+          else if (spokeId === 'mountain') keyId = 'trail_machete';
+
+          if (keyId && !run.inventory.includes(keyId)) {
+            RunStateManager.addToInventory(keyId);
+            const keyName = keyId.replace('_', ' ').toUpperCase();
+            rewardText += ` + ${keyName}`;
+          }
+
+          stats.challengeResult = { success: true, reward: rewardText };
         }
       }
 
