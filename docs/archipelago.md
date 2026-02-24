@@ -1,6 +1,6 @@
 # Archipelago Integration Prompt for Claude Code
 
-**Context:** I am building **Paper Peloton**, a 2D roguelike cycling simulator using Phaser 3, TypeScript, and Vite. I want to integrate **Archipelago.gg** multiworld support, featuring environmental challenges, traps, and physical cycling progression.
+**Context:** I am building **Spokes**, a 2D roguelike cycling simulator using Phaser 3, TypeScript, and Vite. I want to integrate **Archipelago.gg** multiworld support, featuring environmental challenges, traps, and physical cycling progression.
 
 **Core Philosophy:** "Build flexible, default rigid." We want to support "Oregon Trail" style soft-locks (you can pass without the key item, but the physiological toll is brutal), but default to traditional Archipelago hard-locks (you cannot pass without the key item). This behavior must be driven by the player's Archipelago YAML configuration.
 

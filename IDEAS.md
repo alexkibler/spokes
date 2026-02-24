@@ -1,4 +1,4 @@
-# Paper Peloton — Ideas & Future Work
+# Spokes — Ideas & Future Work
 
 A running list of things worth building eventually.
 

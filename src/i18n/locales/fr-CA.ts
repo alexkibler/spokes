@@ -2,7 +2,7 @@
 
 export const frCA = {
   menu: {
-    title: 'PAPER PELOTON',
+    title: 'SPOKES',
     subtitle: 'CHOISISSEZ VOTRE PARCOURS',
     distance: 'DISTANCE',
     weight: 'POIDS DU CYCLISTE',

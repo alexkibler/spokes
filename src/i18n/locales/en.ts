@@ -2,7 +2,7 @@
 
 export const en = {
   menu: {
-    title: 'PAPER PELOTON',
+    title: 'SPOKES',
     subtitle: 'CHOOSE YOUR RIDE',
     distance: 'DISTANCE',
     weight: 'RIDER WEIGHT',
