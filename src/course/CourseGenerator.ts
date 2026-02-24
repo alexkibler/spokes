@@ -19,20 +19,11 @@ import type { RunData, MapNode, MapEdge, NodeType } from '../roguelike/RunState'
 /** Number of linear nodes in the spoke, leading from the Hub to the Island entry. */
 export const NODES_PER_SPOKE = 2;
 
-/** Number of edges typically traversed within the island mini-DAG (Entry, Mid, Pre, Boss). */
-export const EDGES_PER_ISLAND = 3;
-
 /** Distance between consecutive nodes in the map's radial layout. */
 export const SPOKE_STEP = 0.07;
 
-/** 
- * Number of edges typically traversed in one complete spoke + island biome.
- * Calculated as (NODES_PER_SPOKE) linear edges + island edges.
- */
-export const TYPICAL_EDGES_PER_BIOME = NODES_PER_SPOKE + EDGES_PER_ISLAND;
-
 /** Minimum number of spokes generated for any run. */
-export const MIN_SPOKES = 3;
+export const MIN_SPOKES = 2;
 
 /** Maximum number of spokes generated for any run. */
 export const MAX_SPOKES = 8;
@@ -95,10 +86,12 @@ export function generateHubAndSpokeMap(run: RunData): void {
 
   const numSpokes = computeNumSpokes(run.totalDistanceKm);
 
-  // A typical full-run path per spoke: linear edges + island edges.
-  // Plus 1 final-boss edge (2× baseKm).  Solve for baseKm so total ≈ totalDistanceKm.
-  const typicalEdgesTotal = numSpokes * TYPICAL_EDGES_PER_BIOME + 2; // +2 for final boss (2× baseKm)
-  const baseKm = Math.max(0.5, run.totalDistanceKm / typicalEdgesTotal);
+  // A typical full-run path per spoke: linear edges + island entry + island paths + island boss.
+  // Weight: (NODES_PER_SPOKE) linear + 1 (entry) + 1 (mid) + 1 (pre) + 1.5 (boss) = NODES_PER_SPOKE + 4.5.
+  // Plus 1 final-boss edge (2× baseKm). Solve for baseKm so total ≈ totalDistanceKm.
+  const weightPerSpoke = NODES_PER_SPOKE + 4.5;
+  const totalRunWeight = numSpokes * weightPerSpoke + 2;
+  const baseKm = Math.max(0.1, run.totalDistanceKm / totalRunWeight);
 
   // Update runLength to equal the number of spokes so the final-boss
   // medal lock requires exactly one medal per biome.
@@ -274,7 +267,8 @@ export function generateHubAndSpokeMap(run: RunData): void {
   run.visitedNodeIds = [hubNode.id];
 
   // ── 4. Finalise Stats ──────────────────────────────────────────────────────
-  run.stats.totalMapDistanceM = edges.reduce((sum, e) => sum + e.profile.totalDistanceM, 0);
+  // We define total map distance as the sum of typical paths through every mandatory spoke plus the finale.
+  run.stats.totalMapDistanceM = (numSpokes * weightPerSpoke + 2) * baseKm * 1000;
 
   console.log(
     `[MAP GEN] spokes: ${numSpokes}, nodes: ${nodes.length}, edges: ${edges.length}, ` +
