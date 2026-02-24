@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { THEME } from '../../theme';
 import type { RewardDefinition, RewardRarity } from '../../roguelike/RewardPool';
-import { RunStateManager } from '../../roguelike/RunState';
+import { RunManager } from '../../roguelike/RunManager';
 import { ITEM_REGISTRY, formatModifierLines } from '../../roguelike/ItemRegistry';
 import { Button } from '../../ui/Button';
 import { msToKmh, msToMph } from '../../physics/CyclistPhysics';
@@ -21,15 +21,19 @@ export interface RewardOverlayHeader {
 }
 
 export class RewardOverlay extends Phaser.GameObjects.Container {
+  private runManager: RunManager;
+
   constructor(
     scene: Phaser.Scene,
     rewards: RewardDefinition[],
     onPick: (reward: RewardDefinition) => void,
     onReroll: (() => void) | null,
+    runManager: RunManager,
     header?: RewardOverlayHeader,
   ) {
     super(scene, 0, 0);
     this.setDepth(200);
+    this.runManager = runManager;
     this.setScrollFactor(0);
 
     const w = scene.scale.width;
@@ -222,7 +226,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
           // Apply reward now (adds item to inventory), then let the player
           // decide whether to equip it before leaving.  We pass a shell reward
           // (no-op apply) to onPick so GameScene doesn't double-apply.
-          reward.apply();
+          reward.apply(this.runManager);
           const shell: typeof reward = { ...reward, apply: () => {} };
           this.showEquipPrompt(reward.id, reward.label, reward.equipmentSlot, () => onPick(shell));
         } else {
@@ -233,7 +237,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
 
     // ── Reroll ────────────────────────────────────────────────────────────────
     if (onReroll !== null) {
-      const run = RunStateManager.getRun();
+      const run = this.runManager.getRun();
       const rerollCount = run?.inventory.filter(i => i === 'reroll_voucher').length ?? 0;
       const rerollBtn = new Button(scene, {
         x: cx,
@@ -269,7 +273,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
     const h = scene.scale.height;
     const cx = w / 2;
 
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     const occupantId = run?.equipped[slot];
 
     const PROMPT_W = 340;
@@ -334,7 +338,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
 
     const doEquipAndDone = () => {
       destroyLayer();
-      RunStateManager.equipItem(itemId);
+      this.runManager.equipItem(itemId);
       onDone();
     };
 
@@ -461,7 +465,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
     confirmBg.on('pointerout',  () => confirmBg.setFillStyle(0x1a4a1a));
     confirmBg.on('pointerdown', () => {
       destroyModal();
-      RunStateManager.equipItem(incomingId);
+      this.runManager.equipItem(incomingId);
       onDone();
     });
     this.add(confirmBg);

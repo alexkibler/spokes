@@ -12,7 +12,7 @@
  */
 
 import { generateCourseProfile, type SurfaceType } from './CourseProfile';
-import type { RunData, MapNode, MapEdge, NodeType } from '../roguelike/RunState';
+import type { RunData, MapNode, MapEdge, NodeType } from '../roguelike/RunManager';
 
 // ── Configuration Constants ───────────────────────────────────────────────────
 

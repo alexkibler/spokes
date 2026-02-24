@@ -13,7 +13,7 @@ import { MockTrainerService } from '../services/MockTrainerService';
 import type { HeartRateData } from '../services/HeartRateService';
 import { RemoteService, type CursorDirection } from '../services/RemoteService';
 import { SessionService } from '../services/SessionService';
-import { RunStateManager, type RunModifiers } from '../roguelike/RunState';
+import { RunManager, type RunModifiers } from '../roguelike/RunManager';
 import { evaluateChallenge, grantChallengeReward, type EliteChallenge } from '../roguelike/EliteChallenge';
 import type { RacerProfile } from '../race/RacerProfile';
 import {
@@ -159,6 +159,8 @@ export class GameScene extends Phaser.Scene {
   private onRemoteBackToMapBound = this.onRemoteBackToMap.bind(this);
   private onRemoteSaveQuitBound = this.onRemoteSaveQuit.bind(this);
 
+  private runManager!: RunManager;
+
   constructor() {
     super({ key: 'GameScene' });
   }
@@ -194,9 +196,21 @@ export class GameScene extends Phaser.Scene {
     this.weightKg = SessionService.weightKg;
     this.isRoguelike         = data?.isRoguelike ?? false;
     this.isBackwards         = data?.isBackwards ?? false;
-    this.ftpW                = RunStateManager.getRun()?.ftpW ?? 200;
     this.activeChallenge     = data?.activeChallenge ?? null;
     this.racerProfiles = data?.racers ?? (data?.racer ? [data.racer] : []);
+
+    if (this.isRoguelike) {
+        this.runManager = this.registry.get('runManager');
+        if (!this.runManager) {
+             console.error('RunManager missing in roguelike mode');
+             this.runManager = new RunManager();
+        }
+        this.ftpW = this.runManager.getRun()?.ftpW ?? 200;
+    } else {
+        this.runManager = new RunManager();
+        this.ftpW = 200; // Default for demo
+    }
+
     console.log(`[SPOKES] GameScene.init: isRoguelike=${this.isRoguelike} activeChallenge=${this.activeChallenge?.id ?? 'none'} racers=${this.racerProfiles.length} ftpW=${this.ftpW}`);
 
     const massKg = this.weightKg + 8;
@@ -237,7 +251,7 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     if (this.isRoguelike) {
-      const run = RunStateManager.getRun();
+      const run = this.runManager.getRun();
       if (run) {
         if (!run.fitWriter) run.fitWriter = new FitWriter(Date.now());
         this.fitWriter = run.fitWriter;
@@ -335,7 +349,7 @@ export class GameScene extends Phaser.Scene {
       this.trainer.onData((data) => this.handleData(data));
       this.isDemoMode = false;
       this.isRealTrainer = true;
-      if (this.isRoguelike) RunStateManager.setRealTrainerRun(true);
+      if (this.isRoguelike) this.runManager.setRealTrainerRun(true);
       this.bottomControls.setStatus('ok', 'BT CONNECTED');
     } else {
       // SIM Mode
@@ -353,11 +367,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.isRoguelike) {
-      const run = RunStateManager.getRun();
+      const run = this.runManager.getRun();
       if (run && run.inventory.includes('tailwind')) {
         this.envEffectsUI.triggerEffect('tailwind');
       }
-      this.runModifiers = RunStateManager.getModifiers();
+      this.runModifiers = this.runManager.getModifiers();
     }
 
     RemoteService.getInstance().onUseItem(this.onRemoteUseItemBound);
@@ -685,9 +699,9 @@ export class GameScene extends Phaser.Scene {
     // Roguelike Logic
     if (this.isRoguelike && completed) {
       console.log(`[SPOKES] GameScene ride complete: distanceM=${this.distanceM.toFixed(0)} recs=${recs} activeChallenge=${this.activeChallenge?.id ?? 'none'} ghosts=${this.ghosts.length}`);
-      const isFirstClear = RunStateManager.completeActiveEdge();
-      console.log(`[SPOKES] completeActiveEdge returned isFirstClear=${isFirstClear}, currentNodeId=${RunStateManager.getRun()?.currentNodeId}`);
-      RunStateManager.recordSegmentStats(this.distanceM, recs, this.recordedPowerSum, this.recordedCadenceSum);
+      const isFirstClear = this.runManager.completeActiveEdge();
+      console.log(`[SPOKES] completeActiveEdge returned isFirstClear=${isFirstClear}, currentNodeId=${this.runManager.getRun()?.currentNodeId}`);
+      this.runManager.recordSegmentStats(this.distanceM, recs, this.recordedPowerSum, this.recordedCadenceSum);
       stats.isNewClear = isFirstClear;
 
       if (isFirstClear) {
@@ -702,7 +716,7 @@ export class GameScene extends Phaser.Scene {
         const avgCrrMult = crrSum / this.course.segments.length;
         const gold = Math.round(50 + (avgGrade * 100 * 10) + (avgCrrMult - 1) * 50);
 
-        RunStateManager.addGold(gold);
+        this.runManager.addGold(gold);
         stats.goldEarned = gold;
 
         if (this.activeChallenge) {
@@ -720,7 +734,7 @@ export class GameScene extends Phaser.Scene {
           console.log(`[SPOKES] Challenge result: passed=${passed} reward=${this.activeChallenge.reward.description}`);
 
           if (passed) {
-            grantChallengeReward(this.activeChallenge);
+            grantChallengeReward(this.activeChallenge, this.runManager);
             stats.challengeResult = { success: true, reward: this.activeChallenge.reward.description.toUpperCase() };
           } else {
             stats.challengeResult = { success: false, reward: '' };
@@ -728,7 +742,7 @@ export class GameScene extends Phaser.Scene {
         }
       }
 
-      const run = RunStateManager.getRun();
+      const run = this.runManager.getRun();
       const currentNode = run ? run.nodes.find(n => n.id === run.currentNodeId) : undefined;
       isFinishNode = currentNode?.type === 'finish';
 
@@ -739,7 +753,7 @@ export class GameScene extends Phaser.Scene {
         const medalId = `medal_${spokeId}`;
 
         if (run && !run.inventory.includes(medalId)) {
-          RunStateManager.addToInventory(medalId);
+          this.runManager.addToInventory(medalId);
 
           let rewardText = `${spokeId.toUpperCase()} MEDAL`;
 
@@ -750,7 +764,7 @@ export class GameScene extends Phaser.Scene {
           else if (spokeId === 'mountain') keyId = 'trail_machete';
 
           if (keyId && !run.inventory.includes(keyId)) {
-            RunStateManager.addToInventory(keyId);
+            this.runManager.addToInventory(keyId);
             const keyName = keyId.replace('_', ' ').toUpperCase();
             rewardText += ` + ${keyName}`;
           }
@@ -779,10 +793,10 @@ export class GameScene extends Phaser.Scene {
         if (isFinishNode) {
           this.scene.start('VictoryScene');
         } else {
-          const run = RunStateManager.getRun();
+          const run = this.runManager.getRun();
           const currentNode = run?.nodes.find(n => n.id === run?.currentNodeId);
           if (currentNode?.type === 'boss') {
-             RunStateManager.returnToHub();
+             this.runManager.returnToHub();
           }
           this.scene.start('MapScene');
         }
@@ -803,24 +817,25 @@ export class GameScene extends Phaser.Scene {
     };
 
     const showOverlay = (headerStats?: RideStats) => {
-      const run = RunStateManager.getRun();
+      const run = this.runManager.getRun();
       const rerollCount = run?.inventory.filter(i => i === 'reroll_voucher').length ?? 0;
-      const picks = pickRewards(3);
+      const picks = pickRewards(3, this.runManager);
 
       const overlay = new RewardOverlay(
         this,
         picks,
         (reward) => {
-          reward.apply();
+          reward.apply(this.runManager);
           overlay.destroy();
           goToMap();
         },
         rerollCount > 0 ? () => {
-          RunStateManager.removeFromInventory('reroll_voucher');
+          this.runManager.removeFromInventory('reroll_voucher');
           overlay.destroy();
           // On reroll, drop the stats header so focus stays on the new cards
           showOverlay();
         } : null,
+        this.runManager,
         headerStats ? { stats: headerStats, units: this.units } : undefined,
       );
     };
@@ -864,10 +879,10 @@ export class GameScene extends Phaser.Scene {
       onQuit: () => {
         this.scene.start('MenuScene');
       }
-    }, this.ftpW, this.isRoguelike);
+    }, this.ftpW, this.isRoguelike, this.runManager);
 
     // Tell the remote the game is paused so it can show the pause screen
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     RemoteService.getInstance().sendPauseState({
       inventory: run?.inventory ?? [],
       equipped: (run?.equipped ?? {}) as Record<string, string>,

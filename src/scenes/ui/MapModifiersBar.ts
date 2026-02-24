@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { type RunData, type ModifierLogEntry } from '../../roguelike/RunState';
+import { type RunData, type ModifierLogEntry } from '../../roguelike/RunManager';
 import { THEME } from '../../theme';
 
 interface ChipDef {

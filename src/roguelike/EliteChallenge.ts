@@ -4,7 +4,7 @@
  * Data types, challenge pool, and scoring helpers for Elite nodes.
  */
 
-import { RunStateManager } from './RunState';
+import { RunManager } from './RunManager';
 import { buildCourseProfile, generateCourseProfile, type CourseProfile } from '../course/CourseProfile';
 
 export type ConditionType =
@@ -126,15 +126,15 @@ export function evaluateChallenge(
 }
 
 /**
- * Applies the challenge reward to RunStateManager.
+ * Applies the challenge reward to RunManager.
  * Call only when evaluateChallenge returns true.
  */
-export function grantChallengeReward(challenge: EliteChallenge): void {
+export function grantChallengeReward(challenge: EliteChallenge, runManager: RunManager): void {
   const { reward } = challenge;
   if (reward.type === 'gold' && reward.goldAmount !== undefined) {
-    RunStateManager.addGold(reward.goldAmount);
+    runManager.addGold(reward.goldAmount);
   } else if (reward.type === 'item' && reward.item !== undefined) {
-    RunStateManager.addToInventory(reward.item);
+    runManager.addToInventory(reward.item);
   }
 }
 

@@ -1,13 +1,16 @@
 import Phaser from 'phaser';
-import { RunStateManager } from '../../roguelike/RunState';
+import { RunManager } from '../../roguelike/RunManager';
 import { THEME } from '../../theme';
 import { Button } from '../../ui/Button';
 import { ITEM_REGISTRY, type ItemDef } from '../../roguelike/ItemRegistry';
 import i18n from '../../i18n';
 
 export class EventOverlay extends Phaser.GameObjects.Container {
-  constructor(scene: Phaser.Scene, scrollY: number, onAction: () => void, onClose: () => void) {
+  private runManager: RunManager;
+
+  constructor(scene: Phaser.Scene, scrollY: number, runManager: RunManager, onAction: () => void, onClose: () => void) {
     super(scene, 0, scrollY);
+    this.runManager = runManager;
     this.setDepth(2000);
 
     const w = scene.scale.width;
@@ -31,7 +34,7 @@ export class EventOverlay extends Phaser.GameObjects.Container {
     const padH = 40;
 
     // 1. Generate Event
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     const currentFloor = run ? run.visitedNodeIds.length : 1; // Approx floor
     const totalFloors = run ? run.runLength : 10;
 
@@ -177,21 +180,21 @@ export class EventOverlay extends Phaser.GameObjects.Container {
       const roll = Math.random();
       if (roll < chance) {
           // Success
-          RunStateManager.addToInventory(item.id);
+          this.runManager.addToInventory(item.id);
           const itemLabel = i18n.t(item.label);
           this.showOutcome(i18n.t('event.success_title'), i18n.t('event.success_msg', { item: itemLabel }), true, onAction, onClose);
       } else {
           // Failure
-          const run = RunStateManager.getRun();
+          const run = this.runManager.getRun();
           const gold = run?.gold || 0;
           let outcomeText = '';
 
           if (gold >= 50) {
               const lost = 50;
-              RunStateManager.spendGold(lost);
+              this.runManager.spendGold(lost);
               outcomeText = i18n.t('event.failure_msg_gold', { amount: lost });
           } else {
-              RunStateManager.applyModifier({ powerMult: 0.95 }, 'INJURY');
+              this.runManager.applyModifier({ powerMult: 0.95 }, 'INJURY');
               outcomeText = i18n.t('event.failure_msg_injury');
           }
            this.showOutcome(i18n.t('event.failure_title'), outcomeText, false, onAction, onClose);

@@ -6,7 +6,7 @@
  *   - formatChallengeText: resolves {ftp_watts} placeholder
  *   - getRandomChallenge: returns a valid challenge from the pool
  *   - ELITE_CHALLENGES: pool sanity checks
- *   - grantChallengeReward: side-effects on RunStateManager (tested via integration)
+ *   - grantChallengeReward: side-effects on RunManager (tested via integration)
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -19,7 +19,33 @@ import {
   type EliteChallenge,
   type ChallengeMetrics,
 } from '../EliteChallenge';
-import { RunStateManager } from '../RunState';
+import { RunManager } from '../RunManager';
+
+// Mock Phaser.Events.EventEmitter to avoid loading Phaser in Node
+vi.mock('phaser', () => {
+  class EventEmitter {
+    events: Record<string, Function[]> = {};
+    emit(event: string, ...args: any[]) {
+      if (this.events[event]) {
+        this.events[event].forEach(fn => fn(...args));
+      }
+      return true;
+    }
+    on(event: string, fn: Function) {
+      if (!this.events[event]) this.events[event] = [];
+      this.events[event].push(fn);
+      return this;
+    }
+    off() { return this; }
+  }
+  return {
+    default: {
+      Events: {
+        EventEmitter
+      }
+    }
+  };
+});
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -289,22 +315,12 @@ describe('formatChallengeText', () => {
 
 // ─── grantChallengeReward ─────────────────────────────────────────────────────
 
-// Mock localStorage so RunStateManager.persist() doesn't crash in node env
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem:    (k: string) => store[k] ?? null,
-    setItem:    (k: string, v: string) => { store[k] = v; },
-    removeItem: (k: string) => { delete store[k]; },
-    clear:      () => { store = {}; },
-  };
-})();
-
 describe('grantChallengeReward', () => {
+  let runManager: RunManager;
+
   beforeEach(() => {
-    vi.stubGlobal('localStorage', localStorageMock);
-    localStorageMock.clear();
-    RunStateManager.startNewRun(3, 10, 'normal');
+    runManager = new RunManager();
+    runManager.startNewRun(3, 10, 'normal');
   });
 
   it('adds gold to the run for a gold reward', () => {
@@ -316,9 +332,9 @@ describe('grantChallengeReward', () => {
       condition: { type: 'complete_no_stop' },
       reward: { type: 'gold', goldAmount: 60, description: 'earn 60 gold' },
     };
-    const before = RunStateManager.getRun()!.gold;
-    grantChallengeReward(challenge);
-    expect(RunStateManager.getRun()!.gold).toBe(before + 60);
+    const before = runManager.getRun()!.gold;
+    grantChallengeReward(challenge, runManager);
+    expect(runManager.getRun()!.gold).toBe(before + 60);
   });
 
   it('adds an item to inventory for an item reward', () => {
@@ -330,8 +346,8 @@ describe('grantChallengeReward', () => {
       condition: { type: 'complete_no_stop' },
       reward: { type: 'item', item: 'tailwind', description: 'receive a Tailwind' },
     };
-    grantChallengeReward(challenge);
-    expect(RunStateManager.getRun()!.inventory).toContain('tailwind');
+    grantChallengeReward(challenge, runManager);
+    expect(runManager.getRun()!.inventory).toContain('tailwind');
   });
 
   it('does not crash when reward.goldAmount is undefined', () => {
@@ -343,6 +359,6 @@ describe('grantChallengeReward', () => {
       condition: { type: 'complete_no_stop' },
       reward: { type: 'gold', description: 'nothing' },  // goldAmount missing
     };
-    expect(() => grantChallengeReward(challenge)).not.toThrow();
+    expect(() => grantChallengeReward(challenge, runManager)).not.toThrow();
   });
 });

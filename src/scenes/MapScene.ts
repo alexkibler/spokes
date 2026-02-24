@@ -6,7 +6,7 @@
  */
 
 import Phaser from 'phaser';
-import { RunStateManager, type MapNode } from '../roguelike/RunState';
+import { RunManager, type MapNode } from '../roguelike/RunManager';
 import { generateCourseProfile, invertCourseProfile, type CourseProfile } from '../course/CourseProfile';
 import { generateHubAndSpokeMap } from '../course/CourseGenerator';
 import { type EliteChallenge } from '../roguelike/EliteChallenge';
@@ -32,6 +32,7 @@ export class MapScene extends Phaser.Scene {
   private modifiersBar!: MapModifiersBar;
   private hud!: MapHUD;
   private cameraController!: MapCameraController;
+  private runManager!: RunManager;
 
   private isTeleportMode = false;
   private overlayActive = false;
@@ -44,13 +45,17 @@ export class MapScene extends Phaser.Scene {
   }
 
   init(): void {
-    // RunStateManager is global, so we don't need to stash things here
-    // unless we want to cache them.
-    const run = RunStateManager.getRun();
+    this.runManager = this.registry.get('runManager');
+    if (!this.runManager) {
+        console.error('RunManager not found in registry! Creating fallback.');
+        this.runManager = new RunManager();
+    }
+
+    const run = this.runManager.getRun();
     if (run && run.nodes.length === 0) {
       this.generateMap(run);
       const startNode = run.nodes.find((n: MapNode) => n.type === 'start');
-      if (startNode) RunStateManager.setCurrentNode(startNode.id);
+      if (startNode) this.runManager.setCurrentNode(startNode.id);
     }
   }
 
@@ -58,7 +63,7 @@ export class MapScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(THEME.colors.backgroundHex);
 
     // Initialize focus
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     if (run) {
         if (run.currentNodeId) {
             this.focusedNodeId = run.currentNodeId;
@@ -81,7 +86,7 @@ export class MapScene extends Phaser.Scene {
         onGearClick: () => this.openEquipmentOverlay(),
         onRemoteClick: () => this.handleRemoteClick(),
         onReturnClick: () => {
-            RunStateManager.returnToHub();
+            this.runManager.returnToHub();
             this.scene.restart();
         },
         onTeleportClick: () => {
@@ -108,7 +113,7 @@ export class MapScene extends Phaser.Scene {
   }
 
   private refresh(): void {
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     if (!run) return;
 
     this.mapRenderer.render(run, this.focusedNodeId, this.isTeleportMode, this.cameraController.virtualHeight);
@@ -121,7 +126,7 @@ export class MapScene extends Phaser.Scene {
     if (!this.sys.isActive()) return;
     this.cameraController.setBounds();
     this.refresh();
-    this.cameraController.scrollToCurrentNode(RunStateManager.getRun());
+    this.cameraController.scrollToCurrentNode(this.runManager.getRun());
   }
 
   private generateMap(run: any): void {
@@ -132,7 +137,7 @@ export class MapScene extends Phaser.Scene {
       if (this.overlayActive) return;
       this.overlayActive = true;
       this.cameraController.inputEnabled = false;
-      const overlay = new EquipmentOverlay(this, this.cameraController.getScrollY(), () => {
+      const overlay = new EquipmentOverlay(this, this.cameraController.getScrollY(), this.runManager, () => {
         this.overlayActive = false;
         this.cameraController.inputEnabled = true;
         this.refresh();
@@ -174,7 +179,7 @@ export class MapScene extends Phaser.Scene {
 
   private onRemoteCursorMove(direction: 'up' | 'down' | 'left' | 'right'): void {
     if (this.overlayActive) return;
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     if (!run || !this.focusedNodeId) return;
 
     const current = run.nodes.find(n => n.id === this.focusedNodeId);
@@ -224,7 +229,7 @@ export class MapScene extends Phaser.Scene {
   private onRemoteCursorSelect(): void {
       if (this.overlayActive) return;
       if (!this.focusedNodeId) return;
-      const run = RunStateManager.getRun();
+      const run = this.runManager.getRun();
       const node = run?.nodes.find(n => n.id === this.focusedNodeId);
       if (node) {
         if (this.isNodeReachable(node.id)) {
@@ -234,7 +239,7 @@ export class MapScene extends Phaser.Scene {
   }
 
   private isNodeReachable(nodeId: string): boolean {
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     if (!run) return false;
 
     if (nodeId === run.currentNodeId) return false;
@@ -260,13 +265,13 @@ export class MapScene extends Phaser.Scene {
   }
 
   private onNodeClick(node: MapNode): void {
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     if (!run) return;
 
     if (this.isTeleportMode) {
       if (run.visitedNodeIds.includes(node.id)) {
-        if (RunStateManager.removeFromInventory('teleport')) {
-          RunStateManager.setCurrentNode(node.id);
+        if (this.runManager.removeFromInventory('teleport')) {
+          this.runManager.setCurrentNode(node.id);
           this.isTeleportMode = false;
           this.refresh();
         }
@@ -307,17 +312,6 @@ export class MapScene extends Phaser.Scene {
       const medals = run.inventory.filter(i => i.startsWith('medal_'));
       const needed = run.runLength;
       if (medals.length < needed) {
-        // We can use a tooltip from Renderer? But scene doesn't own renderer internals easily.
-        // We can show a toast or alert?
-        // Or just use the original tooltip logic via a method on renderer?
-        // But Renderer.showTooltip is private.
-        // I'll assume for now we skip the visual tooltip for locked node, or implement a simple text.
-        // Or better: The renderer handles pointerover tooltips.
-        // For click feedback, maybe just log or flash?
-        // The original code used `this.showTooltip`.
-        // I'll leave it as a console log or ignore for now, since it's an edge case.
-        // Or I can add `showTooltip` to MapRenderer public interface.
-        // For now, I'll ignore.
         console.log('LOCKED: Need more medals');
         return;
       }
@@ -339,7 +333,7 @@ export class MapScene extends Phaser.Scene {
   }
 
   private proceedWithNodeTransition(node: MapNode, edge?: any): void {
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     if (!run) return;
 
     if (!edge && node.floor !== 0) return;
@@ -378,7 +372,7 @@ export class MapScene extends Phaser.Scene {
       } else {
         course = profileToUse;
       }
-      RunStateManager.setActiveEdge(edge);
+      this.runManager.setActiveEdge(edge);
     }
 
     const destNodeId = edge
@@ -396,7 +390,6 @@ export class MapScene extends Phaser.Scene {
     }
     console.log(`[SPOKES] proceedWithNodeTransition → destNode=${destNodeId} type=${destNode?.type} racers=${racers.length} edge=${edge ? `${edge.from}→${edge.to}` : 'none'}`);
 
-    // Spoke boss splash uses racers[0]; criterium splash uses racers[4] (LE FANTÔME V, midpack)
     const splashRacer = destNode?.type === 'boss' ? racers[0] : racers[4];
     if (racers.length > 0 && splashRacer) {
       this.showBossEncounterSplash(splashRacer, () => {
@@ -414,11 +407,11 @@ export class MapScene extends Phaser.Scene {
   }
 
   private checkPendingNodeAction(): void {
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     if (!run?.pendingNodeAction) return;
 
     const action = run.pendingNodeAction;
-    RunStateManager.setPendingNodeAction(null);
+    this.runManager.setPendingNodeAction(null);
 
     if (action === 'shop') {
       this.openShop();
@@ -444,6 +437,7 @@ export class MapScene extends Phaser.Scene {
     this.openOverlay(() => new ShopOverlay(
       this,
       this.cameraController.getScrollY(),
+      this.runManager,
       () => this.refresh(), // Update Gold
       () => this.closeOverlay()
     ));
@@ -453,6 +447,7 @@ export class MapScene extends Phaser.Scene {
     this.openOverlay(() => new EventOverlay(
       this,
       this.cameraController.getScrollY(),
+      this.runManager,
       () => {
         onComplete?.();
         this.refresh();
@@ -462,9 +457,9 @@ export class MapScene extends Phaser.Scene {
   }
 
   private openEliteChallenge(node: MapNode): void {
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     const ftpW = run?.ftpW ?? 200;
-    const powerMult = RunStateManager.getModifiers().powerMult;
+    const powerMult = this.runManager.getModifiers().powerMult;
 
     this.openOverlay(() => new EliteChallengeOverlay(
       this,
@@ -480,7 +475,7 @@ export class MapScene extends Phaser.Scene {
   }
 
   private startGameWithEliteChallenge(node: MapNode, course: CourseProfile, challenge: EliteChallenge): void {
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     if (!run) return;
     const fromNodeId = run.currentNodeId;
     const edge = run.edges.find(e =>
@@ -491,18 +486,18 @@ export class MapScene extends Phaser.Scene {
     console.log(`[SPOKES] startGameWithEliteChallenge: challenge=${challenge.id} node=${node.id} fromNodeId=${fromNodeId} edge=${edge ? `${edge.from}→${edge.to} cleared=${edge.isCleared}` : 'NOT FOUND'}`);
 
     if (edge) {
-      RunStateManager.setActiveEdge(edge);
+      this.runManager.setActiveEdge(edge);
     } else {
       const fallbackEdge = run.edges.find(e => e.from === node.id || e.to === node.id);
       if (fallbackEdge) {
         const sourceId = fallbackEdge.to === node.id ? fallbackEdge.from : fallbackEdge.to;
         console.log(`[SPOKES] startGameWithEliteChallenge: using fallback edge ${fallbackEdge.from}→${fallbackEdge.to}, srcId=${sourceId}`);
-        RunStateManager.setCurrentNode(sourceId);
-        RunStateManager.setActiveEdge(fallbackEdge);
+        this.runManager.setCurrentNode(sourceId);
+        this.runManager.setActiveEdge(fallbackEdge);
       } else {
         console.warn(`[SPOKES] startGameWithEliteChallenge: no edge found at all — isFirstClear will be false`);
-        RunStateManager.setCurrentNode(node.id);
-        RunStateManager.setActiveEdge(null);
+        this.runManager.setCurrentNode(node.id);
+        this.runManager.setActiveEdge(null);
       }
     }
 

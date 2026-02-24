@@ -6,7 +6,7 @@
  * fresh on load.
  */
 
-import type { RunData, MapNode, MapEdge, EquipmentSlot } from '../roguelike/RunState';
+import type { RunData, MapNode, MapEdge, EquipmentSlot } from '../roguelike/RunManager';
 import type { Units } from '../scenes/MenuScene';
 
 const SAVE_KEY = 'paperPeloton_runSave';

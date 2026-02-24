@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { RunStateManager } from '../../roguelike/RunState';
+import { RunManager } from '../../roguelike/RunManager';
 import { ITEM_REGISTRY, ALL_SLOTS, formatModifierLines, type EquipmentSlot } from '../../roguelike/ItemRegistry';
 import { THEME } from '../../theme';
 import { Button } from '../../ui/Button';
@@ -43,6 +43,7 @@ const PANEL_GAP = 20;
 export class ShopOverlay extends Phaser.GameObjects.Container {
   private goldTxt!: Phaser.GameObjects.Text;
   private onAction: () => void;
+  private runManager: RunManager;
 
   // Groups for panels we rebuild on refresh
   private itemsGroup: Phaser.GameObjects.GameObject[] = [];
@@ -54,8 +55,9 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
   private py_ = 0;
   private lw = LW;
 
-  constructor(scene: Phaser.Scene, scrollY: number, onAction: () => void, onClose: () => void) {
+  constructor(scene: Phaser.Scene, scrollY: number, runManager: RunManager, onAction: () => void, onClose: () => void) {
     super(scene, 0, scrollY);
+    this.runManager = runManager;
     this.setDepth(2000);
     this.onAction = onAction;
 
@@ -110,7 +112,7 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
     }).setOrigin(0.5);
     this.add(rightTitle);
 
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     this.goldTxt = scene.add.text(rx + RW / 2, py + 52, `GOLD: ${run?.gold ?? 0}`, {
       fontFamily: THEME.fonts.main, fontSize: '15px', color: THEME.colors.text.main,
     }).setOrigin(0.5);
@@ -149,7 +151,7 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
     this.itemsGroup = [];
 
     const scene = this.scene;
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     if (!run) return;
 
     const lx = this.lx;
@@ -255,9 +257,9 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
       const sellPrice = SELL_PRICES[itemId];
       if (sellPrice !== undefined) {
         this.addSellButton(lx + lw - 20, y + SELL_ROW_H / 2, sellPrice, () => {
-          RunStateManager.unequipItem(slot);
-          RunStateManager.removeFromInventory(itemId);
-          RunStateManager.addGold(sellPrice);
+          this.runManager.unequipItem(slot);
+          this.runManager.removeFromInventory(itemId);
+          this.runManager.addGold(sellPrice);
           this.refreshAll();
         });
       }
@@ -293,8 +295,8 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
     const sellPrice = SELL_PRICES[itemId];
     if (sellPrice !== undefined) {
       this.addSellButton(lx + lw - 20, y + SELL_ROW_H / 2, sellPrice, () => {
-        RunStateManager.removeFromInventory(itemId);
-        RunStateManager.addGold(sellPrice);
+        this.runManager.removeFromInventory(itemId);
+        this.runManager.addGold(sellPrice);
         this.refreshAll();
       });
     }
@@ -338,7 +340,7 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
 
     /** Total owned (inventory + equipped) for price scaling and sold-out checks. */
     const totalOwned = (itemId: string): number => {
-      const runData = RunStateManager.getRun();
+      const runData = this.runManager.getRun();
       if (!runData) return 0;
       const inInv = runData.inventory.filter(i => i === itemId).length;
       const inSlot = Object.values(runData.equipped).filter(id => id === itemId).length;
@@ -354,7 +356,7 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
       const price = itemPrice(item);
       const owned = totalOwned(item.id);
       const soldOut = !item.stackable && owned > 0;
-      const runData = RunStateManager.getRun();
+      const runData = this.runManager.getRun();
       const canAfford = (runData?.gold ?? 0) >= price;
 
       let btnText: string;
@@ -375,8 +377,8 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
         hoverColor: item.hoverColor,
         onClick: () => {
           const p = itemPrice(item);
-          if (!RunStateManager.spendGold(p)) return;
-          RunStateManager.addToInventory(item.id);
+          if (!this.runManager.spendGold(p)) return;
+          this.runManager.addToInventory(item.id);
           this.refreshAll();
           this.onAction();
         }
@@ -390,7 +392,7 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
   }
 
   private refreshAll(): void {
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     this.goldTxt.setText(`GOLD: ${run?.gold ?? 0}`);
     this.buildItemsPanel();
     this.buildCatalog();

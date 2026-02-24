@@ -12,7 +12,7 @@
  */
 
 import Phaser from 'phaser';
-import { RunStateManager } from '../roguelike/RunState';
+import { RunManager } from '../roguelike/RunManager';
 import { RemotePairingOverlay } from './ui/RemotePairingOverlay';
 import { ConfirmationModal } from '../ui/ConfirmationModal';
 import type { ITrainerService } from '../services/ITrainerService';
@@ -77,7 +77,7 @@ export class MenuScene extends Phaser.Scene {
   private difficulty: Difficulty = 'easy';
   private distanceKm = 20 * MI_TO_KM; // 20 miles default
   private weightKg   = DEFAULT_WEIGHT_KG;
-  private ftpW       = RunStateManager.getLastFtp(); // Functional Threshold Power in watts
+  private ftpW       = 200; // Functional Threshold Power in watts
   private units: Units = 'imperial';
 
   private distText!: Phaser.GameObjects.Text;
@@ -139,7 +139,8 @@ export class MenuScene extends Phaser.Scene {
 
   create(): void {
     // Refresh FTP from storage (it might have changed in the pause menu)
-    this.ftpW = RunStateManager.getLastFtp();
+    const { save } = SaveService.loadResult();
+    this.ftpW = save?.runData.ftpW ?? 200;
 
     // Disconnect any lingering BT devices from a previous run, then clear
     // the session so the player starts fresh.
@@ -1067,7 +1068,14 @@ export class MenuScene extends Phaser.Scene {
         });
         return;
       }
-      const run = RunStateManager.loadFromSave(saved);
+
+      const runManager = new RunManager();
+      runManager.on('save', (data: any) => {
+          SaveService.save(data, data.weightKg, data.units);
+      });
+      this.registry.set('runManager', runManager);
+
+      const run = runManager.loadFromSave(saved);
       SessionService.setUnits(run.units);
       SessionService.setWeightKg(run.weightKg);
       this.scene.start('MapScene');
@@ -1311,7 +1319,13 @@ export class MenuScene extends Phaser.Scene {
 
   private doStartNewRun(): void {
     const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
-    RunStateManager.startNewRun(
+    const runManager = new RunManager();
+    runManager.on('save', (data: any) => {
+        SaveService.save(data, data.weightKg, data.units);
+    });
+    this.registry.set('runManager', runManager);
+
+    runManager.startNewRun(
       floors,
       this.distanceKm,
       this.difficulty,
@@ -1326,7 +1340,13 @@ export class MenuScene extends Phaser.Scene {
 
   private doStartRun(): void {
     const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
-    RunStateManager.startNewRun(
+    const runManager = new RunManager();
+    runManager.on('save', (data: any) => {
+        SaveService.save(data, data.weightKg, data.units);
+    });
+    this.registry.set('runManager', runManager);
+
+    runManager.startNewRun(
       floors,
       this.distanceKm,
       this.difficulty,
