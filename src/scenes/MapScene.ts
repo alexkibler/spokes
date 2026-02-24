@@ -464,6 +464,7 @@ export class MapScene extends Phaser.Scene {
     this.openOverlay(() => new EliteChallengeOverlay(
       this,
       this.cameraController.getScrollY(),
+      this.runManager,
       node,
       ftpW * powerMult,
       (course, challenge) => {

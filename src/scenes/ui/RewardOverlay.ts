@@ -8,6 +8,7 @@ import { msToKmh, msToMph } from '../../physics/CyclistPhysics';
 import i18n from '../../i18n';
 import type { RideStats } from './RideOverlay';
 import type { Units } from '../MenuScene';
+import { BaseOverlay } from './BaseOverlay';
 
 const RARITY_STYLE: Record<RewardRarity, { border: number; badgeBg: number; badgeText: string }> = {
   common:   { border: 0x445566, badgeBg: 0x2a3a44, badgeText: '#8899aa' },
@@ -20,9 +21,7 @@ export interface RewardOverlayHeader {
   units: Units;
 }
 
-export class RewardOverlay extends Phaser.GameObjects.Container {
-  private runManager: RunManager;
-
+export class RewardOverlay extends BaseOverlay {
   constructor(
     scene: Phaser.Scene,
     rewards: RewardDefinition[],
@@ -31,21 +30,7 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
     runManager: RunManager,
     header?: RewardOverlayHeader,
   ) {
-    super(scene, 0, 0);
-    this.setDepth(200);
-    this.runManager = runManager;
-    this.setScrollFactor(0);
-
     const w = scene.scale.width;
-    const h = scene.scale.height;
-    const cx = w / 2;
-
-    // Dim background
-    const bg = scene.add.graphics();
-    bg.fillStyle(0x000000, 0.88);
-    bg.fillRect(0, 0, w, h);
-    bg.setInteractive(new Phaser.Geom.Rectangle(0, 0, w, h), Phaser.Geom.Rectangle.Contains);
-    this.add(bg);
 
     // Layout constants
     const CARD_GAP = 14;
@@ -61,16 +46,20 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
     const panW = totalCardsW + 80;
     const panH = STATS_H + BANNER_H + SUBTITLE_H + 8 + CARD_H + REROLL_SECTION_H + BOTTOM_PAD;
 
-    const px = cx - panW / 2;
-    const py = (h - panH) / 2;
+    super({
+        scene,
+        width: panW,
+        height: panH,
+        scrollY: 0,
+        runManager,
+        onClose: undefined,
+        hasPanelBackground: true
+    });
 
-    // Panel
-    const panel = scene.add.graphics();
-    panel.fillStyle(0x0d0d14, 1);
-    panel.fillRoundedRect(px, py, panW, panH, 12);
-    panel.lineStyle(2, 0x3a3a5a, 1);
-    panel.strokeRoundedRect(px, py, panW, panH, 12);
-    this.add(panel);
+    this.setScrollFactor(0);
+    this.drawPanelBackground(0x0d0d14, 0x3a3a5a);
+
+    const cx = panW / 2; // relative to panelContainer
 
     // ── Stats header (when coming from a ride) ────────────────────────────────
     if (header) {
@@ -78,14 +67,15 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
 
       const statsBg = scene.add.graphics();
       statsBg.fillStyle(0x0a0a1c, 1);
-      statsBg.fillRoundedRect(px, py, panW, STATS_H, { tl: 12, tr: 12, bl: 0, br: 0 });
-      this.add(statsBg);
+      statsBg.fillRoundedRect(0, 0, panW, STATS_H, { tl: 12, tr: 12, bl: 0, br: 0 });
+      this.panelContainer.add(statsBg);
 
       // Title line
-      this.add(scene.add.text(cx, py + 12, i18n.t('reward.ride_complete'), {
+      const title = scene.add.text(cx, 12, i18n.t('reward.ride_complete'), {
         fontFamily: THEME.fonts.main, fontSize: '16px', fontStyle: 'bold',
         color: THEME.colors.text.accent, letterSpacing: 3,
-      }).setOrigin(0.5, 0));
+      }).setOrigin(0.5, 0);
+      this.panelContainer.add(title);
 
       // Metrics line
       const elapsedS = Math.floor(stats.elapsedMs / 1000);
@@ -99,9 +89,10 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
         ? `${msToMph(stats.avgSpeedMs).toFixed(1)} mph`
         : `${msToKmh(stats.avgSpeedMs).toFixed(1)} km/h`;
 
-      this.add(scene.add.text(cx, py + 32, `${distStr}   ·   ${timeStr}   ·   ${stats.avgPowerW}W   ·   ${avgSpdStr}`, {
+      const metrics = scene.add.text(cx, 32, `${distStr}   ·   ${timeStr}   ·   ${stats.avgPowerW}W   ·   ${avgSpdStr}`, {
         fontFamily: THEME.fonts.main, fontSize: '11px', color: '#cccccc', letterSpacing: 1,
-      }).setOrigin(0.5, 0));
+      }).setOrigin(0.5, 0);
+      this.panelContainer.add(metrics);
 
       // Gold + challenge line
       const goldStr = stats.goldEarned !== undefined ? `+${stats.goldEarned} GOLD` : '';
@@ -118,51 +109,55 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
       }
 
       if (goldStr) {
-        this.add(scene.add.text(cx, py + 50, goldStr, {
+        const goldTxt = scene.add.text(cx, 50, goldStr, {
           fontFamily: THEME.fonts.main, fontSize: '14px', fontStyle: 'bold',
           color: THEME.colors.text.gold,
-        }).setOrigin(0.5, 0));
+        }).setOrigin(0.5, 0);
+        this.panelContainer.add(goldTxt);
       }
 
       if (challengeStr) {
         const goldOffset = goldStr ? 18 : 0;
-        this.add(scene.add.text(cx, py + 50 + goldOffset, challengeStr, {
+        const challTxt = scene.add.text(cx, 50 + goldOffset, challengeStr, {
           fontFamily: THEME.fonts.main, fontSize: '11px', color: challengeColor,
-        }).setOrigin(0.5, 0));
+        }).setOrigin(0.5, 0);
+        this.panelContainer.add(challTxt);
       }
 
       // Divider
       const div = scene.add.graphics();
       div.lineStyle(1, 0x2a2a44, 1);
-      div.lineBetween(px + 16, py + STATS_H - 1, px + panW - 16, py + STATS_H - 1);
-      this.add(div);
+      div.lineBetween(16, STATS_H - 1, panW - 16, STATS_H - 1);
+      this.panelContainer.add(div);
     }
 
     // ── Banner ────────────────────────────────────────────────────────────────
-    const bannerY = py + STATS_H;
+    const bannerY = STATS_H;
     const banner = scene.add.graphics();
     banner.fillStyle(0x0a0a1c, 1);
     if (!header) {
       // Rounded top only when there's no stats header above it
-      banner.fillRoundedRect(px, bannerY, panW, BANNER_H, { tl: 12, tr: 12, bl: 0, br: 0 });
+      banner.fillRoundedRect(0, bannerY, panW, BANNER_H, { tl: 12, tr: 12, bl: 0, br: 0 });
     } else {
-      banner.fillRect(px, bannerY, panW, BANNER_H);
+      banner.fillRect(0, bannerY, panW, BANNER_H);
     }
-    this.add(banner);
+    this.panelContainer.add(banner);
 
-    this.add(scene.add.text(cx, bannerY + BANNER_H / 2, i18n.t('reward.title'), {
+    const bannerTitle = scene.add.text(cx, bannerY + BANNER_H / 2, i18n.t('reward.title'), {
       fontFamily: THEME.fonts.main,
       fontSize: '20px',
       color: THEME.colors.text.gold,
       fontStyle: 'bold',
-    }).setOrigin(0.5));
+    }).setOrigin(0.5);
+    this.panelContainer.add(bannerTitle);
 
-    this.add(scene.add.text(cx, bannerY + BANNER_H + 6, i18n.t('reward.subtitle'), {
+    const bannerSubtitle = scene.add.text(cx, bannerY + BANNER_H + 6, i18n.t('reward.subtitle'), {
       fontFamily: THEME.fonts.main,
       fontSize: '11px',
       color: THEME.colors.text.muted,
       letterSpacing: 2,
-    }).setOrigin(0.5, 0));
+    }).setOrigin(0.5, 0);
+    this.panelContainer.add(bannerSubtitle);
 
     // ── Cards ─────────────────────────────────────────────────────────────────
     const cardsLeft = cx - totalCardsW / 2;
@@ -176,48 +171,51 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
       const rs = RARITY_STYLE[reward.rarity];
 
       const cardFill = scene.add.rectangle(cardCx, cardCy, cardW, CARD_H, 0x1a1a2c);
-      this.add(cardFill);
+      this.panelContainer.add(cardFill);
 
       const cardBorder = scene.add.graphics();
       cardBorder.lineStyle(2, rs.border, 1);
       cardBorder.strokeRoundedRect(cardL, cardT, cardW, CARD_H, 8);
-      this.add(cardBorder);
+      this.panelContainer.add(cardBorder);
 
       const BADGE_H = 22;
       const badge = scene.add.graphics();
       badge.fillStyle(rs.badgeBg, 1);
       badge.fillRoundedRect(cardL, cardT, cardW, BADGE_H, { tl: 8, tr: 8, bl: 0, br: 0 });
-      this.add(badge);
+      this.panelContainer.add(badge);
 
-      this.add(scene.add.text(cardCx, cardT + BADGE_H / 2, reward.rarity.toUpperCase(), {
+      const badgeTxt = scene.add.text(cardCx, cardT + BADGE_H / 2, reward.rarity.toUpperCase(), {
         fontFamily: THEME.fonts.main,
         fontSize: '9px',
         color: rs.badgeText,
         fontStyle: 'bold',
         letterSpacing: 2,
-      }).setOrigin(0.5));
+      }).setOrigin(0.5);
+      this.panelContainer.add(badgeTxt);
 
-      this.add(scene.add.text(cardCx, cardT + BADGE_H + 16, i18n.t(reward.label), {
+      const labelTxt = scene.add.text(cardCx, cardT + BADGE_H + 16, i18n.t(reward.label), {
         fontFamily: THEME.fonts.main,
         fontSize: '13px',
         color: '#ffffff',
         fontStyle: 'bold',
         align: 'center',
         wordWrap: { width: cardW - 16 },
-      }).setOrigin(0.5, 0));
+      }).setOrigin(0.5, 0);
+      this.panelContainer.add(labelTxt);
 
-      this.add(scene.add.text(cardCx, cardT + BADGE_H + 46, i18n.t(reward.description), {
+      const descTxt = scene.add.text(cardCx, cardT + BADGE_H + 46, i18n.t(reward.description), {
         fontFamily: THEME.fonts.main,
         fontSize: '11px',
         color: '#9999bb',
         align: 'center',
         wordWrap: { width: cardW - 16 },
         lineSpacing: 4,
-      }).setOrigin(0.5, 0));
+      }).setOrigin(0.5, 0);
+      this.panelContainer.add(descTxt);
 
       const hitRect = scene.add.rectangle(cardCx, cardCy, cardW, CARD_H, 0xffffff, 0);
       hitRect.setInteractive({ useHandCursor: true });
-      this.add(hitRect);
+      this.panelContainer.add(hitRect);
 
       hitRect.on('pointerover', () => { cardFill.setFillStyle(0x26263a); });
       hitRect.on('pointerout',  () => { cardFill.setFillStyle(0x1a1a2c); });
@@ -250,10 +248,8 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
         textColor: THEME.colors.text.gold,
         onClick: onReroll,
       });
-      this.add(rerollBtn);
+      this.panelContainer.add(rerollBtn);
     }
-
-    scene.add.existing(this);
   }
 
   // ── Equipment equip-now prompt ──────────────────────────────────────────────
@@ -271,15 +267,17 @@ export class RewardOverlay extends Phaser.GameObjects.Container {
     const scene = this.scene;
     const w = scene.scale.width;
     const h = scene.scale.height;
-    const cx = w / 2;
+
+    // We add this prompt to `this` (the overlay container), so it's on top of panelContainer
 
     const run = this.runManager.getRun();
     const occupantId = run?.equipped[slot];
 
     const PROMPT_W = 340;
     const PROMPT_H = occupantId ? 190 : 130;
-    const px = cx - PROMPT_W / 2;
-    const py = (h - PROMPT_H) / 2;
+    const px = Math.floor((w - PROMPT_W) / 2); // relative to container (which is at 0,0)
+    const py = Math.floor((h - PROMPT_H) / 2);
+    const cx = w / 2;
 
     const layer: Phaser.GameObjects.GameObject[] = [];
 

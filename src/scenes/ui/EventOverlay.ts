@@ -4,104 +4,107 @@ import { THEME } from '../../theme';
 import { Button } from '../../ui/Button';
 import { ITEM_REGISTRY, type ItemDef } from '../../roguelike/ItemRegistry';
 import i18n from '../../i18n';
+import { BaseOverlay } from './BaseOverlay';
 
-export class EventOverlay extends Phaser.GameObjects.Container {
-  private runManager: RunManager;
+export class EventOverlay extends BaseOverlay {
+  private onAction: () => void;
+  // private onClose: () => void; // Inherited
 
   constructor(scene: Phaser.Scene, scrollY: number, runManager: RunManager, onAction: () => void, onClose: () => void) {
-    super(scene, 0, scrollY);
-    this.runManager = runManager;
-    this.setDepth(2000);
-
     const w = scene.scale.width;
-    const h = scene.scale.height;
 
-    // Dim background
-    const bg = scene.add.graphics();
-    bg.fillStyle(THEME.colors.ui.overlayDim, THEME.colors.ui.overlayDimAlpha);
-    bg.fillRect(0, 0, w, h);
-    bg.setInteractive(new Phaser.Geom.Rectangle(0, 0, w, h), Phaser.Geom.Rectangle.Contains);
-    this.add(bg);
-
-    // Panel dimensions
+    // Panel dimensions logic (moved from original)
     const btnWidth = Math.min(520, w - 80);
-    const btnHeight = 58;
-    const btnGap = 14;
     const descWidth = btnWidth;
     const descFontSize = 16;
     const titleFontSize = 24;
     const padV = 36;
     const padH = 40;
+    const btnHeight = 58;
+    const btnGap = 14;
+    const numOptions = 2;
+    const totalBtnsHeight = numOptions * (btnHeight + btnGap) - btnGap;
 
-    // 1. Generate Event
-    const run = this.runManager.getRun();
-    const currentFloor = run ? run.visitedNodeIds.length : 1; // Approx floor
+    // Pick Event Item Logic (Need access to this methods before super? No, methods are on prototype)
+    // But I can't call methods before super.
+    // So I need to duplicate the logic or move it to a static helper or just calculate it before super.
+    // However, I need `runManager` to get current floor.
+
+    // Calculate height requires description length.
+    // Description requires item label.
+    // Item requires run state.
+
+    // So I must do the calculation before super.
+
+    const run = runManager.getRun();
+    const currentFloor = run ? run.visitedNodeIds.length : 1;
     const totalFloors = run ? run.runLength : 10;
 
-    // Pick Item Logic
     const equipmentItems = Object.values(ITEM_REGISTRY).filter(i => i.slot !== undefined);
-    const item = this.pickEventItem(equipmentItems, currentFloor, totalFloors);
+    const item = EventOverlay.pickEventItem(equipmentItems, currentFloor, totalFloors);
 
-    // Calculate Success Chance
-    const successChance = this.getSuccessChance(item.rarity || 'common');
-    const successPct = Math.round(successChance * 100);
-
-    // Event Text
     const titleText = i18n.t('event.title');
     const itemLabel = i18n.t(item.label);
     const description = i18n.t('event.description', { item: itemLabel });
 
-    // Measure description text height
     const charsPerLine = Math.floor(descWidth / (descFontSize * 0.6));
     const descLines = Math.ceil(description.length / charsPerLine) + 1;
     const descHeight = descLines * (descFontSize * 1.55);
 
-    const numOptions = 2;
-    const totalBtnsHeight = numOptions * (btnHeight + btnGap) - btnGap;
     const ph = padV + titleFontSize + 20 + descHeight + 28 + totalBtnsHeight + padV;
     const pw = btnWidth + padH * 2;
-    const px = (w - pw) / 2;
-    const py = (h - ph) / 2;
 
-    // Panel background
-    const panel = scene.add.graphics();
-    panel.fillStyle(0x0d0d12, 1);
-    panel.fillRoundedRect(px, py, pw, ph, 14);
-    panel.lineStyle(2, 0x2a1a4a, 1);
-    panel.strokeRoundedRect(px, py, pw, ph, 14);
-    this.add(panel);
+    super({
+        scene,
+        width: pw,
+        height: ph,
+        scrollY,
+        runManager,
+        onClose: undefined, // We implement custom buttons
+        hasPanelBackground: true
+    });
 
-    // Title banner strip
+    this.onAction = onAction;
+    this.onClose = onClose;
+
+    // Custom panel colors
+    this.drawPanelBackground(0x0d0d12, 0x2a1a4a);
+
+    // Title banner strip (relative to panel)
     const bannerH = titleFontSize + 24;
     const banner = scene.add.graphics();
     banner.fillStyle(0x1a0a2a, 1);
-    banner.fillRoundedRect(px, py, pw, bannerH, { tl: 14, tr: 14, bl: 0, br: 0 });
-    this.add(banner);
+    banner.fillRoundedRect(0, 0, pw, bannerH, { tl: 14, tr: 14, bl: 0, br: 0 });
+    this.panelContainer.add(banner);
 
     // Title text
-    this.add(scene.add.text(w / 2, py + bannerH / 2, titleText, {
+    const titleObj = scene.add.text(pw / 2, bannerH / 2, titleText, {
       fontFamily: THEME.fonts.main,
       fontSize: `${titleFontSize}px`,
       color: '#e8c87a',
       fontStyle: 'bold',
-    }).setOrigin(0.5));
+    }).setOrigin(0.5);
+    this.panelContainer.add(titleObj);
 
     // Description text
-    const descY = py + bannerH + 20;
-    this.add(scene.add.text(px + padH, descY, description, {
+    const descY = bannerH + 20;
+    const descObj = scene.add.text(padH, descY, description, {
       fontFamily: THEME.fonts.main,
       fontSize: `${descFontSize}px`,
       color: '#d0c8b8',
       wordWrap: { width: descWidth },
       lineSpacing: 4,
-    }).setOrigin(0, 0));
+    }).setOrigin(0, 0);
+    this.panelContainer.add(descObj);
 
     // Buttons
     const btnsStartY = descY + descHeight + 18;
+    const successChance = EventOverlay.getSuccessChance(item.rarity || 'common');
+    const successPct = Math.round(successChance * 100);
 
     // Attempt Button
     const attemptBtn = new Button(scene, {
-        x: w / 2,
+        x: pw / 2,
         y: btnsStartY + btnHeight / 2,
         width: btnWidth,
         height: btnHeight,
@@ -109,14 +112,14 @@ export class EventOverlay extends Phaser.GameObjects.Container {
         color: 0x093d46,
         hoverColor: 0x0e5560,
         onClick: () => {
-            this.handleAttempt(item, successChance, onAction, onClose);
+            this.handleAttempt(item, successChance);
         }
     });
-    this.add(attemptBtn);
+    this.panelContainer.add(attemptBtn);
 
     // Leave Button
     const leaveBtn = new Button(scene, {
-        x: w / 2,
+        x: pw / 2,
         y: btnsStartY + btnHeight + btnGap + btnHeight / 2,
         width: btnWidth,
         height: btnHeight,
@@ -129,30 +132,21 @@ export class EventOverlay extends Phaser.GameObjects.Container {
             onClose();
         }
     });
-    this.add(leaveBtn);
-
-    scene.add.existing(this);
+    this.panelContainer.add(leaveBtn);
   }
 
-  private pickEventItem(items: ItemDef[], currentFloor: number, totalFloors: number): ItemDef {
-      // Weighting: Later events drop rarer items.
-      // progress 0..1
+  // Changed to static so it can be called before super()
+  private static pickEventItem(items: ItemDef[], currentFloor: number, totalFloors: number): ItemDef {
       const progress = Math.min(1, currentFloor / Math.max(1, totalFloors));
-
-      // Weights based on rarity and progress
-      // Common: starts high, decreases
-      // Uncommon: starts low, peaks mid-late
-      // Rare: starts 0, increases late
-
       const weightedItems = items.map(item => {
           let weight = 0;
           const r = item.rarity || 'common';
           if (r === 'common') {
-              weight = 100 * (1 - progress * 0.5); // 100 -> 50
+              weight = 100 * (1 - progress * 0.5);
           } else if (r === 'uncommon') {
-              weight = 20 + progress * 80; // 20 -> 100
+              weight = 20 + progress * 80;
           } else if (r === 'rare') {
-              weight = Math.max(0, (progress - 0.2) * 100); // 0 -> 80
+              weight = Math.max(0, (progress - 0.2) * 100);
           }
           return { item, weight };
       });
@@ -167,7 +161,7 @@ export class EventOverlay extends Phaser.GameObjects.Container {
       return items[0] || items[Math.floor(Math.random() * items.length)];
   }
 
-  private getSuccessChance(rarity: string): number {
+  private static getSuccessChance(rarity: string): number {
       switch (rarity) {
           case 'rare': return 0.5;
           case 'uncommon': return 0.7;
@@ -176,13 +170,13 @@ export class EventOverlay extends Phaser.GameObjects.Container {
       }
   }
 
-  private handleAttempt(item: ItemDef, chance: number, onAction: () => void, onClose: () => void): void {
+  private handleAttempt(item: ItemDef, chance: number): void {
       const roll = Math.random();
       if (roll < chance) {
           // Success
           this.runManager.addToInventory(item.id);
           const itemLabel = i18n.t(item.label);
-          this.showOutcome(i18n.t('event.success_title'), i18n.t('event.success_msg', { item: itemLabel }), true, onAction, onClose);
+          this.showOutcome(i18n.t('event.success_title'), i18n.t('event.success_msg', { item: itemLabel }), true);
       } else {
           // Failure
           const run = this.runManager.getRun();
@@ -197,41 +191,35 @@ export class EventOverlay extends Phaser.GameObjects.Container {
               this.runManager.applyModifier({ powerMult: 0.95 }, 'INJURY');
               outcomeText = i18n.t('event.failure_msg_injury');
           }
-           this.showOutcome(i18n.t('event.failure_title'), outcomeText, false, onAction, onClose);
+           this.showOutcome(i18n.t('event.failure_title'), outcomeText, false);
       }
   }
 
-  private showOutcome(title: string, message: string, success: boolean, onAction: () => void, onClose: () => void): void {
-      this.removeAll(true);
+  private showOutcome(title: string, message: string, success: boolean): void {
+      // Clear panel content
+      this.panelContainer.removeAll(true);
 
-      const w = this.scene.scale.width;
-      const h = this.scene.scale.height;
+      const w = 500;
+      const h = 300;
 
-      // Dim background again (container cleared)
-      const bg = this.scene.add.graphics();
-      bg.fillStyle(THEME.colors.ui.overlayDim, THEME.colors.ui.overlayDimAlpha);
-      bg.fillRect(0, 0, w, h);
-      this.add(bg);
+      // Resize panel and set outcome colors
+      this.resizePanel(w, h, 0x0d0d12, success ? 0x00ff88 : 0xff4444);
 
+      // Add outcome content to panelContainer
       const cx = w / 2;
-      const cy = h / 2;
+      const cy = h / 2; // relative to panel center (wait, panelContainer is top-left)
 
-      const panel = this.scene.add.graphics();
-      panel.fillStyle(0x0d0d12, 1);
-      panel.fillRoundedRect(cx - 250, cy - 150, 500, 300, 14);
-      panel.lineStyle(2, success ? 0x00ff88 : 0xff4444, 1);
-      panel.strokeRoundedRect(cx - 250, cy - 150, 500, 300, 14);
-      this.add(panel);
+      // panelContainer coordinates are 0,0 to w,h
 
-      const titleText = this.scene.add.text(cx, cy - 80, title, {
+      const titleText = this.scene.add.text(cx, cy - 80, title, { // approx y
           fontFamily: THEME.fonts.main, fontSize: '32px', color: success ? '#00ff88' : '#ff4444', fontStyle: 'bold'
       }).setOrigin(0.5);
-      this.add(titleText);
+      this.panelContainer.add(titleText);
 
       const msgText = this.scene.add.text(cx, cy, message, {
           fontFamily: THEME.fonts.main, fontSize: '18px', color: '#ffffff', wordWrap: { width: 440 }, align: 'center'
       }).setOrigin(0.5);
-      this.add(msgText);
+      this.panelContainer.add(msgText);
 
       const okBtn = new Button(this.scene, {
           x: cx, y: cy + 90,
@@ -241,10 +229,10 @@ export class EventOverlay extends Phaser.GameObjects.Container {
           hoverColor: THEME.colors.buttons.primaryHover,
           onClick: () => {
               this.destroy();
-              onAction();
-              onClose();
+              this.onAction();
+              this.onClose?.();
           }
       });
-      this.add(okBtn);
+      this.panelContainer.add(okBtn);
   }
 }
