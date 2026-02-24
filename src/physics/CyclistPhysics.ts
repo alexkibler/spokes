@@ -23,9 +23,9 @@ export interface PhysicsConfig {
 }
 
 export const DEFAULT_PHYSICS: PhysicsConfig = {
-  massKg: 83,    // 75 kg rider + 8 kg bike
-  cdA: 0.325,
-  crr: 0.005,
+  massKg: 122.3, // 114.3 kg rider + 8 kg bike
+  cdA: 0.416,    // calibrated smart trainer baseline for 114.3 kg rider profile
+  crr: 0.0041,   // calibrated smart trainer baseline for 114.3 kg rider profile
   rhoAir: 1.225, // sea level, 15°C
   grade: 0,
 };

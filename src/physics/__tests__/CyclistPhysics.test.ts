@@ -26,9 +26,9 @@ describe('calculateAcceleration', () => {
   });
 
   it('gives near-zero acceleration at terminal velocity on a descent', () => {
-    // For a 5% descent, terminal velocity is roughly 13.5 m/s for default physics
+    // For a 5% descent, terminal velocity is roughly 14.69 m/s for default physics
     const config = { ...DEFAULT_PHYSICS, grade: -0.05 };
-    const vTerminal = 13.55;
+    const vTerminal = 14.69;
     const acc = calculateAcceleration(0, vTerminal, config);
     expect(acc).toBeCloseTo(0, 1);
   });
