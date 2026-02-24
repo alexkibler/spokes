@@ -6,9 +6,10 @@
  */
 
 import Phaser from 'phaser';
-import { RunStateManager, type MapNode, type MapEdge, type NodeType, type ModifierLogEntry } from '../roguelike/RunState';
+import { RunStateManager, type MapNode, type NodeType, type ModifierLogEntry } from '../roguelike/RunState';
 import { generateCourseProfile, invertCourseProfile, type SurfaceType, type CourseProfile } from '../course/CourseProfile';
-import { getRandomChallenge, generateEliteCourseProfile, type EliteChallenge } from '../roguelike/EliteChallenge';
+import { generateHubAndSpokeMap } from '../course/CourseGenerator';
+import { type EliteChallenge } from '../roguelike/EliteChallenge';
 import type { Units } from './MenuScene';
 import { RemoteService } from '../services/RemoteService';
 import { SessionService } from '../services/SessionService';
@@ -28,23 +29,25 @@ const SURFACE_LABELS: Record<SurfaceType, string> = {
 };
 
 const NODE_ICONS: Record<NodeType, string> = {
-  start:    'S',
+  start:    '⌂', // Hub
   standard: 'R',
   hard:     'H',
   shop:     '$',
   event:    '?',
   elite:    '★',
-  finish:   'F',
+  finish:   '☠', // Final Boss
+  boss:     '⚔', // Spoke Boss
 };
 
 const NODE_DESCRIPTIONS: Record<NodeType, string> = {
-  start:    'START',
+  start:    'BASE CAMP',
   standard: 'RIDE',
   hard:     'HARD RIDE',
   shop:     'SHOP',
   event:    'EVENT',
   elite:    'ELITE CHALLENGE',
-  finish:   'FINISH',
+  finish:   'GRAND CRITERIUM',
+  boss:     'SPOKE CHAMPION',
 };
 
 export class MapScene extends Phaser.Scene {
@@ -72,8 +75,9 @@ export class MapScene extends Phaser.Scene {
   private gearBtnTxt:  Phaser.GameObjects.Text | null = null;
   private remoteBtnBg: Phaser.GameObjects.Rectangle | null = null;
   private remoteBtnTxt: Phaser.GameObjects.Text | null = null;
+  private returnBtnBg: Phaser.GameObjects.Rectangle | null = null;
+  private returnBtnTxt: Phaser.GameObjects.Text | null = null;
 
-  private static readonly FLOOR_SPACING = 80;
   private isDragging = false;
   private dragStartY = 0;
   private dragStartScrollY = 0;
@@ -101,9 +105,11 @@ export class MapScene extends Phaser.Scene {
   }
 
   private get virtualHeight(): number {
-    const run = RunStateManager.getRun();
-    const floors = run?.runLength ?? 0;
-    return Math.max(this.scale.height, (floors + 2) * MapScene.FLOOR_SPACING);
+    // For Hub-and-Spoke, we can just use the screen height or a fixed larger area.
+    // Since coordinates are 0-1, let's map them to a square area that fits.
+    // Or just 1.2x screen height to allow a little scrolling if needed?
+    // Actually, let's just use screen height for now, or slightly larger to avoid cramping.
+    return Math.max(this.scale.height, 600);
   }
 
   create(): void {
@@ -147,6 +153,7 @@ export class MapScene extends Phaser.Scene {
     this.buildDevToggle();
     this.buildGearButton();
     this.buildRemoteButton();
+    this.buildReturnButton();
 
     this.scale.on('resize', this.onResize, this);
 
@@ -201,9 +208,10 @@ export class MapScene extends Phaser.Scene {
     if (run?.currentNodeId) {
         this.scrollToNode(run.currentNodeId);
     } else {
+        // Center view
         const vh = this.virtualHeight;
         const sh = this.scale.height;
-        this.cameras.main.scrollY = Math.max(0, vh - sh);
+        this.cameras.main.scrollY = (vh - sh) / 2;
     }
   }
 
@@ -271,152 +279,12 @@ export class MapScene extends Phaser.Scene {
     this.drawMap();
     this.updateGoldUI();
     this.buildStatsPanel();
+    this.buildReturnButton();
     this.scrollToCurrentNode();
   }
 
   private generateMap(run: any): void {
-    const totalFloors = run.runLength;
-    const numCols = 7;
-    const nodes: MapNode[] = [];
-    const edges: MapEdge[] = [];
-
-    const getOrCreateNode = (f: number, c: number): MapNode => {
-      const id = `node_${f}_${c}`;
-      let node = nodes.find(n => n.id === id);
-      if (!node) {
-        node = {
-          id,
-          type: 'standard', 
-          floor: f,
-          col: c,
-          x: (c + 1) / (numCols + 1),
-          y: 0.9 - (f / (totalFloors + 1)) * 0.8,
-          connectedTo: []
-        };
-        nodes.push(node);
-      }
-      return node;
-    };
-
-    const startNode = getOrCreateNode(0, Math.floor(numCols / 2));
-    const numPaths = 3 + Math.floor(Math.random() * 2);
-    const spreadCols = [1, 2, 4, 5, 3];
-    for (let p = 0; p < numPaths; p++) {
-      let curCol = spreadCols[p % spreadCols.length];
-      const branchNode = getOrCreateNode(1, curCol);
-      if (!startNode.connectedTo.includes(branchNode.id)) {
-        startNode.connectedTo.push(branchNode.id);
-      }
-      let prevNode = branchNode;
-
-      for (let f = 2; f < totalFloors; f++) {
-        const offset = Math.floor(Math.random() * 3) - 1;
-        curCol = Math.max(0, Math.min(numCols - 1, curCol + offset));
-        const curNode = getOrCreateNode(f, curCol);
-
-        if (!prevNode.connectedTo.includes(curNode.id)) {
-          prevNode.connectedTo.push(curNode.id);
-        }
-        prevNode = curNode;
-      }
-
-      const finishNode = getOrCreateNode(totalFloors, Math.floor(numCols / 2));
-      if (!prevNode.connectedTo.includes(finishNode.id)) {
-        prevNode.connectedTo.push(finishNode.id);
-      }
-    }
-
-    for (let f = 0; f < totalFloors; f++) {
-      const fromNodes = nodes.filter(n => n.floor === f).sort((a, b) => a.col - b.col);
-      let changed = true;
-      while (changed) {
-        changed = false;
-        for (let i = 0; i < fromNodes.length - 1; i++) {
-          for (let j = i + 1; j < fromNodes.length; j++) {
-            const nodeI = fromNodes[i];
-            const nodeJ = fromNodes[j];
-            for (let ci = 0; ci < nodeI.connectedTo.length; ci++) {
-              for (let cj = 0; cj < nodeJ.connectedTo.length; cj++) {
-                const toI = nodes.find(n => n.id === nodeI.connectedTo[ci])!;
-                const toJ = nodes.find(n => n.id === nodeJ.connectedTo[cj])!;
-                if (toI.floor !== f + 1 || toJ.floor !== f + 1) continue;
-                if (toI.col > toJ.col) {
-                  [nodeI.connectedTo[ci], nodeJ.connectedTo[cj]] = [nodeJ.connectedTo[cj], nodeI.connectedTo[ci]];
-                  changed = true;
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    nodes.forEach(node => {
-      if (node.floor === 0) node.type = 'start';
-      else if (node.floor === totalFloors) node.type = 'finish';
-      else {
-        node.type = this.getRandomNodeType(node.floor, totalFloors);
-        if (node.type === 'elite') {
-          node.eliteChallenge = getRandomChallenge();
-          node.eliteCourseProfile = generateEliteCourseProfile(node.eliteChallenge);
-        }
-      }
-    });
-
-    nodes.forEach(fromNode => {
-      fromNode.connectedTo.forEach(toId => {
-        const toNode = nodes.find(n => n.id === toId)!;
-        const isBossEdge = toNode.type === 'finish';
-        const segmentKm = isBossEdge ? 8.047 : 1.0 + Math.random();
-        const surface = this.getRandomSurface();
-        edges.push({
-          from: fromNode.id,
-          to: toNode.id,
-          profile: generateCourseProfile(segmentKm, this.getMaxGrade(run.difficulty, toNode.type), surface)
-        });
-      });
-    });
-
-    run.nodes = nodes;
-    run.edges = edges;
-  }
-
-  private getRandomSurface(): SurfaceType {
-    const r = Math.random();
-    if (r < 0.70) return 'asphalt';
-    if (r < 0.85) return 'gravel';
-    if (r < 0.95) return 'dirt';
-    return 'mud';
-  }
-
-  private getRandomNodeType(floor: number, total: number): NodeType {
-    const progress = floor / total;
-
-    const weights: Record<NodeType, number> = {
-      start:    0,
-      finish:   0,
-      standard: 0.55 - progress * 0.15,
-      hard:     0.15 + progress * 0.10,
-      shop:     0.12,
-      event:    0.10,
-      elite:    progress * progress * 0.40,
-    };
-
-    const total_weight = Object.values(weights).reduce((a, b) => a + b, 0);
-    let r = Math.random() * total_weight;
-
-    for (const [type, weight] of Object.entries(weights) as [NodeType, number][]) {
-      r -= weight;
-      if (r <= 0) return type;
-    }
-
-    return 'standard';
-  }
-
-  private getMaxGrade(diff: string, type: NodeType): number {
-    let base = diff === 'easy' ? 0.03 : diff === 'normal' ? 0.07 : 0.12;
-    if (type === 'hard') base += 0.03;
-    return base;
+    generateHubAndSpokeMap(run);
   }
 
   private drawMap(): void {
@@ -488,7 +356,23 @@ export class MapScene extends Phaser.Scene {
       const distStr = this.units === 'imperial'
         ? `${(distM / 1609.344).toFixed(1)} mi`
         : `${(distM / 1000).toFixed(1)} km`;
-      const tipText = `${SURFACE_LABELS[surface]}\n${distStr}`;
+      let tipText = `${SURFACE_LABELS[surface]}\n${distStr}`;
+
+      // Hazard Check for Tooltip
+      if (fromNode.id === 'node_hub' && toNode.metadata?.spokeId) {
+        const spoke = toNode.metadata.spokeId;
+        const needsKey = this.getRequiredKeyForSpoke(spoke);
+        if (needsKey && !run.inventory.includes(needsKey)) {
+          tipText = `⚠ HAZARD ⚠\n${tipText}\nNeed: ${needsKey.replace('_', ' ').toUpperCase()}`;
+          // Visual indicator on edge
+          this.graphics.fillStyle(0xff0000, 1);
+          this.graphics.fillTriangle(
+            (fx + tx) / 2, (fy + ty) / 2 - 10,
+            (fx + tx) / 2 - 8, (fy + ty) / 2 + 6,
+            (fx + tx) / 2 + 8, (fy + ty) / 2 + 6
+          );
+        }
+      }
 
       rect.off('pointerover').on('pointerover', () => {
         this.showTooltip((fx + tx) / 2, (fy + ty) / 2, tipText);
@@ -827,6 +711,18 @@ export class MapScene extends Phaser.Scene {
       (e.from === node.id && e.to === run.currentNodeId)
     );
 
+    // Final Boss Lock Check
+    if (node.type === 'finish' && connectingEdge) {
+      const medals = run.inventory.filter(i => i.startsWith('medal_'));
+      const needed = run.runLength;
+      if (medals.length < needed) {
+        // Locked
+        this.showTooltip(node.x * this.scale.width, node.y * this.virtualHeight, `LOCKED\nNeed ${needed} Medals\nHave: ${medals.length}`);
+        this.time.delayedCall(2000, () => this.hideTooltip());
+        return;
+      }
+    }
+
     if (this.isDevMode && !connectingEdge && node.floor !== 0) {
       RunStateManager.setCurrentNode(node.id);
       this.drawMap();
@@ -855,11 +751,25 @@ export class MapScene extends Phaser.Scene {
       let isBackwards = false;
 
       if (edge) {
+        let profileToUse = edge.profile;
+
+        // Hazard Override Logic
+        // If traversing FROM Hub TO Spoke Start
+        if (run.currentNodeId === 'node_hub' && edge.to === node.id && node.metadata?.spokeId) {
+             const key = this.getRequiredKeyForSpoke(node.metadata.spokeId);
+             if (key && run.inventory.includes(key)) {
+                 // Bypass hazard!
+                 // Generate a nice flat asphalt ride of the same distance
+                 const distKm = edge.profile.totalDistanceM / 1000;
+                 profileToUse = generateCourseProfile(distKm, 0.00, 'asphalt');
+             }
+        }
+
         if (edge.to === run.currentNodeId) {
-          course = invertCourseProfile(edge.profile);
+          course = invertCourseProfile(profileToUse);
           isBackwards = true;
         } else {
-          course = edge.profile;
+          course = profileToUse;
         }
         RunStateManager.setActiveEdge(edge);
       }
@@ -886,6 +796,13 @@ export class MapScene extends Phaser.Scene {
         });
       }
     }
+  }
+
+  private getRequiredKeyForSpoke(spokeId: string): string | null {
+    if (spokeId === 'coast') return 'ferry_token';
+    if (spokeId === 'mountain') return 'funicular_ticket';
+    if (spokeId === 'forest') return 'trail_machete';
+    return null;
   }
 
   private checkPendingNodeAction(): void {
@@ -1190,6 +1107,32 @@ export class MapScene extends Phaser.Scene {
     });
   }
 
+  private buildReturnButton(): void {
+    this.returnBtnBg?.destroy();
+    this.returnBtnTxt?.destroy();
+
+    const run = RunStateManager.getRun();
+    // Show only if not at Hub and not in overlay
+    if (!run || run.currentNodeId === 'node_hub') return;
+
+    const x = this.scale.width - 20;
+    const y = this.scale.height - 180; // Above stats panel
+
+    this.returnBtnBg = this.add.rectangle(x, y, 160, 40, THEME.colors.buttons.danger)
+        .setOrigin(1, 1).setScrollFactor(0).setDepth(30).setInteractive({ useHandCursor: true });
+
+    this.returnBtnTxt = this.add.text(x - 80, y - 20, 'RETURN TO BASE', {
+        fontFamily: THEME.fonts.main, fontSize: '14px', fontStyle: 'bold', color: '#ffffff'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(31);
+
+    this.returnBtnBg.on('pointerdown', () => {
+        RunStateManager.returnToHub();
+        this.scene.restart(); // Reload map scene to refresh state
+    });
+    this.returnBtnBg.on('pointerover', () => this.returnBtnBg!.setFillStyle(THEME.colors.buttons.dangerHover));
+    this.returnBtnBg.on('pointerout', () => this.returnBtnBg!.setFillStyle(THEME.colors.buttons.danger));
+  }
+
   private showBossEncounterSplash(racer: RacerProfile, onProceed: () => void): void {
     const w  = this.scale.width;
     const h  = this.scale.height;
@@ -1287,6 +1230,8 @@ export class MapScene extends Phaser.Scene {
     this.devToggleTxt = null;
     this.remoteBtnBg = null;
     this.remoteBtnTxt = null;
+    this.returnBtnBg = null;
+    this.returnBtnTxt = null;
     this.isTeleportMode = false;
     this.overlayActive = false;
     this.nodeObjects.clear();
