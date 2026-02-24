@@ -530,6 +530,11 @@ export class MapScene extends Phaser.Scene {
       ? `${(distM / 1609.344).toFixed(2)} mi`
       : `${(distM / 1000).toFixed(2)} km`;
 
+    const mapDistM = stats?.totalMapDistanceM ?? 0;
+    const mapDistStr = this.units === 'imperial'
+      ? `${(mapDistM / 1609.344).toFixed(1)} mi`
+      : `${(mapDistM / 1000).toFixed(1)} km`;
+
     const currentFloor = run?.nodes.find(n => n.id === run.currentNodeId)?.floor ?? 0;
     const totalFloors = run?.runLength ?? 0;
 
@@ -549,6 +554,7 @@ export class MapScene extends Phaser.Scene {
       ['AVG POWER',  avgPowW > 0 ? `${avgPowW} W` : '—'],
       ['AVG CADENCE', avgCadRpm > 0 ? `${avgCadRpm} rpm` : '—'],
       ['FLOOR', totalFloors > 0 ? `${currentFloor} / ${totalFloors}` : '—'],
+      ['TOTAL MAP', mapDistM > 0 ? mapDistStr : '—'],
     ];
 
     const panW = 190;

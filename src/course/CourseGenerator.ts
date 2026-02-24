@@ -14,6 +14,32 @@
 import { generateCourseProfile, type SurfaceType } from './CourseProfile';
 import type { RunData, MapNode, MapEdge, NodeType } from '../roguelike/RunState';
 
+// ── Configuration Constants ───────────────────────────────────────────────────
+
+/** Number of linear nodes in the spoke, leading from the Hub to the Island entry. */
+export const NODES_PER_SPOKE = 2;
+
+/** Number of edges typically traversed within the island mini-DAG (Entry, Mid, Pre, Boss). */
+export const EDGES_PER_ISLAND = 3;
+
+/** Distance between consecutive nodes in the map's radial layout. */
+export const SPOKE_STEP = 0.07;
+
+/** 
+ * Number of edges typically traversed in one complete spoke + island biome.
+ * Calculated as (NODES_PER_SPOKE) linear edges + island edges.
+ */
+export const TYPICAL_EDGES_PER_BIOME = NODES_PER_SPOKE + EDGES_PER_ISLAND;
+
+/** Minimum number of spokes generated for any run. */
+export const MIN_SPOKES = 3;
+
+/** Maximum number of spokes generated for any run. */
+export const MAX_SPOKES = 8;
+
+/** Distance interval (km) to add a new spoke to the run. */
+export const KM_PER_SPOKE = 20;
+
 // ── Biome catalogue (ordered by priority of inclusion) ────────────────────────
 
 export const SPOKE_IDS = [
@@ -45,10 +71,12 @@ const SPOKE_CONFIG: Record<SpokeId, SpokeConfig> = {
 
 /**
  * Derive the number of biome spokes from the target run distance.
- * Min 2, Max 8.
  */
 export function computeNumSpokes(totalDistanceKm: number): number {
-  return Math.max(2, Math.min(8, Math.round(totalDistanceKm / 50)));
+  return Math.max(
+    MIN_SPOKES,
+    Math.min(MAX_SPOKES, Math.round(totalDistanceKm / KM_PER_SPOKE))
+  );
 }
 
 /** Return a random non-shop, non-boss node type for island interior nodes. */
@@ -67,10 +95,9 @@ export function generateHubAndSpokeMap(run: RunData): void {
 
   const numSpokes = computeNumSpokes(run.totalDistanceKm);
 
-  // A typical full-run path per spoke: 4 spoke edges + 3 island edges = 7.
+  // A typical full-run path per spoke: linear edges + island edges.
   // Plus 1 final-boss edge (2× baseKm).  Solve for baseKm so total ≈ totalDistanceKm.
-  const typicalEdgesPerSpoke = 7;
-  const typicalEdgesTotal = numSpokes * typicalEdgesPerSpoke + 2; // +2 for final boss (2× baseKm)
+  const typicalEdgesTotal = numSpokes * TYPICAL_EDGES_PER_BIOME + 2; // +2 for final boss (2× baseKm)
   const baseKm = Math.max(0.5, run.totalDistanceKm / typicalEdgesTotal);
 
   // Update runLength to equal the number of spokes so the final-boss
@@ -88,13 +115,6 @@ export function generateHubAndSpokeMap(run: RunData): void {
     connectedTo: [],
   };
   nodes.push(hubNode);
-
-  // Radial distances (in normalised [0,1] map space)
-  const SPOKE_STEP   = 0.07;  // distance between consecutive spoke nodes
-  const ISLAND_ENTRY = SPOKE_STEP * 4 + SPOKE_STEP * 0.8;  // entry just past s4
-  const ISLAND_MID   = SPOKE_STEP * 4 + SPOKE_STEP * 1.6;  // fan-out row
-  const ISLAND_PRE   = SPOKE_STEP * 4 + SPOKE_STEP * 2.4;  // converging node
-  const ISLAND_BOSS  = SPOKE_STEP * 4 + SPOKE_STEP * 3.2;  // spoke tip
 
   // ── 2. Spokes ──────────────────────────────────────────────────────────────
   const activeSpokes = SPOKE_IDS.slice(0, numSpokes);
@@ -124,9 +144,9 @@ export function generateHubAndSpokeMap(run: RunData): void {
 
     const findNode = (id: string) => nodes.find(n => n.id === id)!;
 
-    // ── 2a. 4 Linear spoke nodes ────────────────────────────────────────────
+    // ── 2a. Linear spoke nodes ────────────────────────────────────────────
     const spokeIds: string[] = [];
-    for (let i = 1; i <= 4; i++) {
+    for (let i = 1; i <= NODES_PER_SPOKE; i++) {
       const nodeId = `node_${spokeId}_s${i}`;
       const nodePos = pos(SPOKE_STEP * i);
 
@@ -155,9 +175,15 @@ export function generateHubAndSpokeMap(run: RunData): void {
       }
     }
 
-    // ── 2b. 6-node Island mini-DAG ──────────────────────────────────────────
-    const s4Id = spokeIds[3];
-    const s4   = findNode(s4Id);
+    // ── 2b. Island mini-DAG ──────────────────────────────────────────
+    const lastSpokeNodeId = spokeIds[NODES_PER_SPOKE - 1];
+    const lastSpokeNode   = findNode(lastSpokeNodeId);
+
+    // Island radial positions relative to the end of the spoke
+    const ISLAND_ENTRY = SPOKE_STEP * NODES_PER_SPOKE + SPOKE_STEP * 0.8;
+    const ISLAND_MID   = SPOKE_STEP * NODES_PER_SPOKE + SPOKE_STEP * 1.6;
+    const ISLAND_PRE   = SPOKE_STEP * NODES_PER_SPOKE + SPOKE_STEP * 2.4;
+    const ISLAND_BOSS  = SPOKE_STEP * NODES_PER_SPOKE + SPOKE_STEP * 3.2;
 
     // Draw 4 random types for the non-shop, non-boss island slots.
     const rTypes: NodeType[] = [
@@ -185,18 +211,18 @@ export function generateHubAndSpokeMap(run: RunData): void {
       metadata: { spokeId },
     });
 
-    const ieNode   = mkNode(ieId,   rTypes[0],  5, ISLAND_ENTRY,  0);
-    const ilNode   = mkNode(ilId,   rTypes[1],  6, ISLAND_MID,   -0.05);
-    const icNode   = mkNode(icId,   'shop',     6, ISLAND_MID,    0);
-    const irNode   = mkNode(irId,   rTypes[2],  6, ISLAND_MID,    0.05);
-    const ipNode   = mkNode(ipId,   rTypes[3],  7, ISLAND_PRE,   0);
-    const bossNode = mkNode(bossId, 'boss',     8, ISLAND_BOSS,  0);
+    const ieNode   = mkNode(ieId,   rTypes[0],  NODES_PER_SPOKE + 1, ISLAND_ENTRY,  0);
+    const ilNode   = mkNode(ilId,   rTypes[1],  NODES_PER_SPOKE + 2, ISLAND_MID,   -0.05);
+    const icNode   = mkNode(icId,   'shop',     NODES_PER_SPOKE + 2, ISLAND_MID,    0);
+    const irNode   = mkNode(irId,   rTypes[2],  NODES_PER_SPOKE + 2, ISLAND_MID,    0.05);
+    const ipNode   = mkNode(ipId,   rTypes[3],  NODES_PER_SPOKE + 3, ISLAND_PRE,   0);
+    const bossNode = mkNode(bossId, 'boss',     NODES_PER_SPOKE + 4, ISLAND_BOSS,  0);
 
     nodes.push(ieNode, ilNode, icNode, irNode, ipNode, bossNode);
 
-    // s4 → entry
-    addEdge(s4Id, ieId, baseKm, 0.04);
-    s4.connectedTo.push(ieId);
+    // Last spoke node → entry
+    addEdge(lastSpokeNodeId, ieId, baseKm, 0.04);
+    lastSpokeNode.connectedTo.push(ieId);
 
     // entry → left / center(shop) / right
     addEdge(ieId, ilId, baseKm, 0.05);
@@ -246,4 +272,13 @@ export function generateHubAndSpokeMap(run: RunData): void {
   run.edges = edges;
   run.currentNodeId = hubNode.id;
   run.visitedNodeIds = [hubNode.id];
+
+  // ── 4. Finalise Stats ──────────────────────────────────────────────────────
+  run.stats.totalMapDistanceM = edges.reduce((sum, e) => sum + e.profile.totalDistanceM, 0);
+
+  console.log(
+    `[MAP GEN] spokes: ${numSpokes}, nodes: ${nodes.length}, edges: ${edges.length}, ` +
+    `total length: ${(run.stats.totalMapDistanceM / 1000).toFixed(1)}km ` +
+    `(target path: ${run.totalDistanceKm}km)`
+  );
 }

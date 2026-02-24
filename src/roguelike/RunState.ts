@@ -83,6 +83,7 @@ export interface RunData {
   isRealTrainerRun: boolean;
   // Cumulative ride stats across all completed segments
   stats: {
+    totalMapDistanceM: number;
     totalRiddenDistanceM: number;
     totalRecordCount: number;
     totalPowerSum: number;
@@ -125,7 +126,7 @@ export class RunStateManager {
       units,
       fitWriter: new FitWriter(Date.now()),
       isRealTrainerRun: false,
-      stats: { totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
+      stats: { totalMapDistanceM: 0, totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
     };
     this.persist();
     return this.instance;
@@ -135,7 +136,7 @@ export class RunStateManager {
     this.instance = {
       modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 }, // default for old saves
       modifierLog: [], // session-only, not persisted
-      stats: { totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
+      stats: { totalMapDistanceM: 0, totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
       pendingNodeAction: null, // default for old saves
       ...saved.runData,
       isRealTrainerRun: saved.runData.isRealTrainerRun ?? false,

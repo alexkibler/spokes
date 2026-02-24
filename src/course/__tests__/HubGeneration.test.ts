@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { generateHubAndSpokeMap, computeNumSpokes } from '../CourseGenerator';
+import { 
+  generateHubAndSpokeMap, 
+  computeNumSpokes,
+  NODES_PER_SPOKE,
+  KM_PER_SPOKE
+} from '../CourseGenerator';
 import { RunStateManager } from '../../roguelike/RunState';
 
 // ─── localStorage mock ────────────────────────────────────────────────────────
@@ -26,10 +31,11 @@ describe('computeNumSpokes', () => {
   });
 
   it('scales up with distance', () => {
-    expect(computeNumSpokes(75)).toBe(2);   // round(75/50)=2 -> clamp(2)=2
-    expect(computeNumSpokes(125)).toBe(3);  // round(125/50)=3
-    expect(computeNumSpokes(175)).toBe(4);  // round(175/50)=4 -> same as old default
-    expect(computeNumSpokes(250)).toBe(5);
+    // Uses round(total / KM_PER_SPOKE)
+    expect(computeNumSpokes(KM_PER_SPOKE * 1.5)).toBe(2);
+    expect(computeNumSpokes(KM_PER_SPOKE * 2.5)).toBe(3);
+    expect(computeNumSpokes(KM_PER_SPOKE * 3.5)).toBe(4);
+    expect(computeNumSpokes(KM_PER_SPOKE * 5.0)).toBe(5);
   });
 
   it('returns maximum 8 for very long distances', () => {
@@ -74,14 +80,17 @@ describe('generateHubAndSpokeMap', () => {
     expect(bossNodes.length).toBe(numSpokes);
   });
 
-  it('generates exactly 10 nodes per spoke (4 linear + 6 island)', () => {
+  it('generates exactly the expected nodes per spoke', () => {
     const run = RunStateManager.startNewRun(4, 200, 'normal');
     generateHubAndSpokeMap(run);
 
-    const numSpokes = computeNumSpokes(200); // 4
+    const numSpokes = computeNumSpokes(200);
 
-    // Total nodes = 1 hub + numSpokes*10 + 1 final boss
-    expect(run.nodes.length).toBe(1 + numSpokes * 10 + 1);
+    // Total nodes per biome = NODES_PER_SPOKE linear + 6 island
+    const nodesPerBiome = NODES_PER_SPOKE + 6;
+
+    // Total nodes = 1 hub + numSpokes*nodesPerBiome + 1 final boss
+    expect(run.nodes.length).toBe(1 + numSpokes * nodesPerBiome + 1);
   });
 
   it('each island contains exactly 1 shop and 1 boss', () => {
@@ -100,8 +109,16 @@ describe('generateHubAndSpokeMap', () => {
     const run = RunStateManager.startNewRun(4, 200, 'normal');
     generateHubAndSpokeMap(run);
 
+    // Random nodes are at floor: entry, mid, pre-boss.
+    // Floor mappings:
+    // Entry: NODES_PER_SPOKE + 1
+    // Mid: NODES_PER_SPOKE + 2
+    // Pre-boss: NODES_PER_SPOKE + 3
     const islandRandomNodes = run.nodes.filter(n =>
-      n.floor >= 5 && n.floor <= 7 && n.type !== 'shop'
+      n.floor >= NODES_PER_SPOKE + 1 && 
+      n.floor <= NODES_PER_SPOKE + 3 && 
+      n.type !== 'shop' &&
+      n.type !== 'boss'
     );
     const allowedTypes = ['standard', 'event', 'hard'];
     islandRandomNodes.forEach(node => {
