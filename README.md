@@ -8,7 +8,7 @@ Connects to FTMS-compatible smart trainers over Web Bluetooth, with a built-in M
 ## Requirements
 
 - **Node.js** 18 or later
-- A Chromium-based browser (Chrome, Edge, Brave) — Web Bluetooth is not supported in Firefox or Safari
+- A Chromium-based browser (Chrome, Edge, Brave) — Web Bluetooth is not supported in Firefox or Safari.
 
 ---
 
@@ -57,7 +57,6 @@ docker pull ghcr.io/alexkibler/spokes:main && docker rm -f spokes && docker run 
 | Mode | How to activate | What happens |
 |------|----------------|--------------|
 | **Mock Mode** | Default on launch | Emits simulated power / speed / cadence (~200 W) from an in-memory timer |
-| **Dev Mode** | `import.meta.env.DEV` builds only | Sets mock output to 10,000 W to speed through courses |
 | **Bluetooth** | Click **BT CONNECT** in the menu | Opens the browser device picker; pair your FTMS trainer |
 
 ---
@@ -250,7 +249,7 @@ spokes/
 │   │   ├── MockTrainerService.ts        In-memory stub for offline dev
 │   │   └── HeartRateService.ts         Separate BT GATT service for heart rate monitors
 │   ├── roguelike/
-│   │   ├── RunState.ts                  RunStateManager singleton; gold, inventory, node/edge graph
+│   │   ├── RunManager.ts                RunManager state; gold, inventory, node/edge graph
 │   │   └── EliteChallenge.ts            Challenge types, pool, evaluate/grant helpers
 │   ├── course/
 │   │   └── CourseProfile.ts             Segment-based course definition; procedural generator
