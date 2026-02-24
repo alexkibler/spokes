@@ -50,7 +50,7 @@ function makeRunData(overrides: Partial<RunData> = {}): RunData {
     equipped: {},
     isRealTrainerRun: false,
     fitWriter: new FitWriter(Date.now()),
-    stats: { totalRiddenDistanceM: 5000, totalRecordCount: 300, totalPowerSum: 60000, totalCadenceSum: 27000 },
+    stats: { totalMapDistanceM: 5000, totalRiddenDistanceM: 5000, totalRecordCount: 300, totalPowerSum: 60000, totalCadenceSum: 27000 },
     ...overrides,
   };
 }

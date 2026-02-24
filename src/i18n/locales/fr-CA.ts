@@ -101,20 +101,20 @@ export const frCA = {
       equipping: 'ÉQUIPER :',
       confirm_swap: 'CONFIRMER',
       cancel: 'ANNULER'
-    },
-
-    event: {
-      title: 'CACHE MYSTÉRIEUSE',
-      description: 'Vous apercevez une caisse usée cachée dans les broussailles. À l\'intérieur, vous entrevoyez... {{item}}.\n\nCela semble risqué à récupérer.',
-      attempt: 'TENTER DE RÉCUPÉRER ({{chance}}%)',
-      leave: 'LAISSER TOMBER',
-      success_title: 'SUCCÈS !',
-      success_msg: 'Vous avez récupéré : {{item}} !',
-      failure_title: 'ÉCHEC !',
-      failure_msg_gold: 'La caisse était piégée ! Vous avez perdu {{amount}} or en vous échappant.',
-      failure_msg_injury: 'La caisse s\'est effondrée sur vous ! Vous avez subi une blessure mineure (-5% Puissance).',
-      continue: 'CONTINUER'
     }
+  },
+
+  event: {
+    title: 'CACHE MYSTÉRIEUSE',
+    description: 'Vous apercevez une caisse usée cachée dans les broussailles. À l\'intérieur, vous entrevoyez... {{item}}.\n\nCela semble risqué à récupérer.',
+    attempt: 'TENTER DE RÉCUPÉRER ({{chance}}%)',
+    leave: 'LAISSER TOMBER',
+    success_title: 'SUCCÈS !',
+    success_msg: 'Vous avez récupéré : {{item}} !',
+    failure_title: 'ÉCHEC !',
+    failure_msg_gold: 'La caisse était piégée ! Vous avez perdu {{amount}} or en vous échappant.',
+    failure_msg_injury: 'La caisse s\'est effondrée sur vous ! Vous avez subi une blessure mineure (-5% Puissance).',
+    continue: 'CONTINUER'
   },
 
   reward: {

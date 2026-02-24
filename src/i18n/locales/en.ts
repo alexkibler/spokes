@@ -101,20 +101,20 @@ export const en = {
       equipping: 'EQUIPPING:',
       confirm_swap: 'CONFIRM SWAP',
       cancel: 'CANCEL'
-    },
-
-    event: {
-      title: 'MYSTERIOUS CACHE',
-      description: 'You spot a weathered crate hidden in the brush. Inside, you see a glimpse of... {{item}}.\n\nIt looks risky to retrieve.',
-      attempt: 'ATTEMPT RETRIEVAL ({{chance}}%)',
-      leave: 'LEAVE IT',
-      success_title: 'SUCCESS!',
-      success_msg: 'You retrieved the {{item}}!',
-      failure_title: 'FAILURE!',
-      failure_msg_gold: 'The crate was trapped! You dropped {{amount}} gold while escaping.',
-      failure_msg_injury: 'The crate collapsed on you! You suffered a minor injury (-5% Power).',
-      continue: 'CONTINUE'
     }
+  },
+
+  event: {
+    title: 'MYSTERIOUS CACHE',
+    description: 'You spot a weathered crate hidden in the brush. Inside, you see a glimpse of... {{item}}.\n\nIt looks risky to retrieve.',
+    attempt: 'ATTEMPT RETRIEVAL ({{chance}}%)',
+    leave: 'LEAVE IT',
+    success_title: 'SUCCESS!',
+    success_msg: 'You retrieved the {{item}}!',
+    failure_title: 'FAILURE!',
+    failure_msg_gold: 'The crate was trapped! You dropped {{amount}} gold while escaping.',
+    failure_msg_injury: 'The crate collapsed on you! You suffered a minor injury (-5% Power).',
+    continue: 'CONTINUE'
   },
 
   reward: {
