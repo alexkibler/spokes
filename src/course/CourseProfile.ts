@@ -198,7 +198,7 @@ export function generateCourseProfile(
     if      (pressure >  0.7)                sign = -1; // prevent runaway ascent
     else if (pressure < -0.7)                sign =  1; // prevent runaway descent
     else if (r < 0.08)                       sign =  0; // flat recovery
-    else sign = (r < 0.52 - pressure * 0.2) ? 1 : -1;
+    else sign = (r < 0.55 - pressure * 0.2) ? 1 : -1;
 
     const grade = sign === 0
       ? 0
@@ -272,7 +272,7 @@ export function invertCourseProfile(profile: CourseProfile): CourseProfile {
  *   9–9.5 km   Flat finish
  */
 export const DEFAULT_COURSE: CourseProfile = buildCourseProfile([
-  { distanceM: 1000, grade:  0.23 },                             // asphalt flat start
+  { distanceM: 1000, grade:  0.00 },                             // asphalt flat start
   { distanceM:  800, grade:  0.03, surface: 'gravel' },          // gravel gentle rise
   { distanceM:  200, grade:  0.00 },                             // asphalt brief flat
   { distanceM: 1200, grade:  0.06 },                             // asphalt moderate climb

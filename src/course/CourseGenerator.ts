@@ -93,9 +93,33 @@ export function generateHubAndSpokeMap(run: RunData): void {
   const totalRunWeight = numSpokes * weightPerSpoke + 2;
   const baseKm = Math.max(0.1, run.totalDistanceKm / totalRunWeight);
 
+  // Scale all grades by the chosen run difficulty.
+  const diffScale = (run.difficulty === 'hard') ? 1.5 : (run.difficulty === 'easy' ? 0.7 : 1.0);
+
   // Update runLength to equal the number of spokes so the final-boss
   // medal lock requires exactly one medal per biome.
   run.runLength = numSpokes;
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  const addEdge = (from: string, to: string, km: number, baseMaxGrade: number, surface: SurfaceType = 'asphalt') => {
+    const targetNode = nodes.find(n => n.id === to);
+    let grade = baseMaxGrade * diffScale;
+
+    // Node-type specific multipliers to ensure "Hard Rides" and "Bosses" feel distinct
+    if (targetNode?.type === 'hard')   grade *= 1.5;
+    if (targetNode?.type === 'boss')   grade *= 2.0;
+    if (targetNode?.type === 'finish') grade *= 2.5;
+
+    edges.push({
+      from,
+      to,
+      profile: generateCourseProfile(km, grade, surface),
+      isCleared: false,
+    });
+  };
+
+  const findNode = (id: string) => nodes.find(n => n.id === id)!;
 
   // ── 1. Hub ─────────────────────────────────────────────────────────────────
   const hubNode: MapNode = {
@@ -124,18 +148,6 @@ export function generateHubAndSpokeMap(run: RunData): void {
       x: 0.5 + Math.cos(angle) * radial + (-Math.sin(angle)) * perp,
       y: 0.5 + Math.sin(angle) * radial + (Math.cos(angle)) * perp,
     });
-
-    const addEdge = (from: string, to: string, km: number, grade: number, surface: SurfaceType = 'asphalt') => {
-      const edge: MapEdge = {
-        from,
-        to,
-        profile: generateCourseProfile(km, grade, surface),
-        isCleared: false,
-      };
-      edges.push(edge);
-    };
-
-    const findNode = (id: string) => nodes.find(n => n.id === id)!;
 
     // ── 2a. Linear spoke nodes ────────────────────────────────────────────
     const spokeIds: string[] = [];
@@ -253,12 +265,7 @@ export function generateHubAndSpokeMap(run: RunData): void {
   };
   nodes.push(finalBossNode);
 
-  edges.push({
-    from: hubNode.id,
-    to: finalBossNode.id,
-    profile: generateCourseProfile(baseKm * 2, 0.10, 'asphalt'),
-    isCleared: false,
-  });
+  addEdge(hubNode.id, finalBossNode.id, baseKm * 2, 0.10);
   hubNode.connectedTo.push(finalBossNode.id);
 
   run.nodes = nodes;
