@@ -5,7 +5,7 @@ import {
   NODES_PER_SPOKE,
   KM_PER_SPOKE
 } from '../CourseGenerator';
-import { RunManager } from '../../roguelike/RunState';
+import { RunManager } from '../../roguelike/RunManager';
 
 // Mock Phaser.Events.EventEmitter to avoid loading Phaser in Node
 vi.mock('phaser', () => {

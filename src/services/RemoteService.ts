@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import type { RunModifiers, ModifierLogEntry } from '../roguelike/RunState';
+import type { RunModifiers, ModifierLogEntry } from '../roguelike/RunManager';
 
 export type CursorDirection = 'up' | 'down' | 'left' | 'right';
 

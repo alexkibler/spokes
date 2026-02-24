@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { SaveService } from '../SaveService';
-import type { RunData } from '../../roguelike/RunState';
+import type { RunData } from '../../roguelike/RunManager';
 import { FitWriter } from '../../fit/FitWriter';
 
 // ─── localStorage mock ────────────────────────────────────────────────────────

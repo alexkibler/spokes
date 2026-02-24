@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { type MapNode } from '../../roguelike/RunState';
+import { type MapNode } from '../../roguelike/RunManager';
 import { generateCourseProfile, type CourseProfile } from '../../course/CourseProfile';
 import { formatChallengeText, type EliteChallenge } from '../../roguelike/EliteChallenge';
 import { THEME } from '../../theme';

@@ -5,7 +5,7 @@
  * Rewards are selected with weighted rarity and applied immediately on pick.
  */
 
-import { RunManager } from './RunState';
+import { RunManager } from './RunManager';
 import type { EquipmentSlot } from './ItemRegistry';
 
 export type RewardRarity = 'common' | 'uncommon' | 'rare';

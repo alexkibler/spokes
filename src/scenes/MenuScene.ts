@@ -12,7 +12,7 @@
  */
 
 import Phaser from 'phaser';
-import { RunManager } from '../roguelike/RunState';
+import { RunManager } from '../roguelike/RunManager';
 import { RemotePairingOverlay } from './ui/RemotePairingOverlay';
 import { ConfirmationModal } from '../ui/ConfirmationModal';
 import type { ITrainerService } from '../services/ITrainerService';

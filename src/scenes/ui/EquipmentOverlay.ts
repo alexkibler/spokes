@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { THEME } from '../../theme';
 import { EquipmentPanel } from './EquipmentPanel';
-import { RunManager } from '../../roguelike/RunState';
+import { RunManager } from '../../roguelike/RunManager';
 
 export class EquipmentOverlay extends Phaser.GameObjects.Container {
   private onClose: () => void;

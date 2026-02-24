@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { type RunData } from '../../roguelike/RunState';
+import { type RunData } from '../../roguelike/RunManager';
 
 export class MapCameraController {
   private scene: Phaser.Scene;

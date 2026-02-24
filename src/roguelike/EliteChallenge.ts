@@ -4,7 +4,7 @@
  * Data types, challenge pool, and scoring helpers for Elite nodes.
  */
 
-import { RunManager } from './RunState';
+import { RunManager } from './RunManager';
 import { buildCourseProfile, generateCourseProfile, type CourseProfile } from '../course/CourseProfile';
 
 export type ConditionType =

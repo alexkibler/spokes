@@ -6,7 +6,7 @@
  */
 
 import Phaser from 'phaser';
-import { RunManager } from '../roguelike/RunState';
+import { RunManager } from '../roguelike/RunManager';
 import { SaveService } from '../services/SaveService';
 
 export class VictoryScene extends Phaser.Scene {

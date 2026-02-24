@@ -6,7 +6,7 @@
  */
 
 import Phaser from 'phaser';
-import { RunManager, type MapNode } from '../roguelike/RunState';
+import { RunManager, type MapNode } from '../roguelike/RunManager';
 import { generateCourseProfile, invertCourseProfile, type CourseProfile } from '../course/CourseProfile';
 import { generateHubAndSpokeMap } from '../course/CourseGenerator';
 import { type EliteChallenge } from '../roguelike/EliteChallenge';

@@ -13,7 +13,7 @@ import { MockTrainerService } from '../services/MockTrainerService';
 import type { HeartRateData } from '../services/HeartRateService';
 import { RemoteService, type CursorDirection } from '../services/RemoteService';
 import { SessionService } from '../services/SessionService';
-import { RunManager, type RunModifiers } from '../roguelike/RunState';
+import { RunManager, type RunModifiers } from '../roguelike/RunManager';
 import { evaluateChallenge, grantChallengeReward, type EliteChallenge } from '../roguelike/EliteChallenge';
 import type { RacerProfile } from '../race/RacerProfile';
 import {

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { RunManager } from '../../roguelike/RunState';
+import { RunManager } from '../../roguelike/RunManager';
 import { THEME } from '../../theme';
 import { Button } from '../../ui/Button';
 import { ITEM_REGISTRY, type ItemDef } from '../../roguelike/ItemRegistry';

@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { THEME } from '../../theme';
 import type { RewardDefinition, RewardRarity } from '../../roguelike/RewardPool';
-import { RunManager } from '../../roguelike/RunState';
+import { RunManager } from '../../roguelike/RunManager';
 import { ITEM_REGISTRY, formatModifierLines } from '../../roguelike/ItemRegistry';
 import { Button } from '../../ui/Button';
 import { msToKmh, msToMph } from '../../physics/CyclistPhysics';

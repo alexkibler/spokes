@@ -19,7 +19,7 @@ import {
   type EliteChallenge,
   type ChallengeMetrics,
 } from '../EliteChallenge';
-import { RunManager } from '../RunState';
+import { RunManager } from '../RunManager';
 
 // Mock Phaser.Events.EventEmitter to avoid loading Phaser in Node
 vi.mock('phaser', () => {

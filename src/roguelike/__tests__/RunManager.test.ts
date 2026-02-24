@@ -6,8 +6,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { RunManager } from '../RunState';
-import type { MapNode, MapEdge } from '../RunState';
+import { RunManager } from '../RunManager';
+import type { MapNode, MapEdge } from '../RunManager';
 
 // Mock Phaser.Events.EventEmitter to avoid loading Phaser in Node
 vi.mock('phaser', () => {

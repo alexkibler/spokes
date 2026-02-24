@@ -7,7 +7,7 @@
  * modifier; they are triggered through gameplay.
  */
 
-import type { RunModifiers } from './RunState';
+import type { RunModifiers } from './RunManager';
 import i18n from '../i18n';
 
 export type EquipmentSlot = 'helmet' | 'frame' | 'cranks' | 'pedals' | 'tires';

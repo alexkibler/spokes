@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { type RunData, type MapNode, type NodeType } from '../../roguelike/RunState';
+import { type RunData, type MapNode, type NodeType } from '../../roguelike/RunManager';
 import { THEME } from '../../theme';
 
 const SURFACE_LABELS: Record<string, string> = {
