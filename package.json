@@ -2,6 +2,7 @@
   "name": "spokes",
   "version": "0.1.0",
   "description": "2D Cycling Simulator – Phaser 3 + TypeScript + FTMS Bluetooth",
+  "license": "CC-BY-NC-SA-4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
