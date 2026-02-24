@@ -4,6 +4,7 @@ import { ITEM_REGISTRY, ALL_SLOTS, formatModifierLines, type EquipmentSlot } fro
 import { THEME } from '../../theme';
 import { Button } from '../../ui/Button';
 import i18n from '../../i18n';
+import { BaseOverlay } from './BaseOverlay';
 
 interface ShopItem {
   id: string;
@@ -40,83 +41,78 @@ const LW = 350; // left panel width
 const RW = 420; // right panel width
 const PANEL_GAP = 20;
 
-export class ShopOverlay extends Phaser.GameObjects.Container {
+export class ShopOverlay extends BaseOverlay {
   private goldTxt!: Phaser.GameObjects.Text;
   private onAction: () => void;
-  private runManager: RunManager;
+  // private runManager: RunManager; // Inherited from BaseOverlay
 
   // Groups for panels we rebuild on refresh
   private itemsGroup: Phaser.GameObjects.GameObject[] = [];
   private catalogBtns: Button[] = [];
 
-  // Panel geometry (set in constructor, used in rebuild methods)
-  private lx = 0; // left panel x (world)
-  private rx = 0; // right panel x
-  private py_ = 0;
+  // Relative coordinates within panelContainer
+  private lx = 0;
+  private rx = 0;
   private lw = LW;
 
   constructor(scene: Phaser.Scene, scrollY: number, runManager: RunManager, onAction: () => void, onClose: () => void) {
-    super(scene, 0, scrollY);
-    this.runManager = runManager;
-    this.setDepth(2000);
-    this.onAction = onAction;
-
-    const w = scene.scale.width;
-    const h = scene.scale.height;
-
     // ── Geometry ─────────────────────────────────────────────────────────────
-    // Right panel height drives layout (catalog has fixed item count)
     const rHeaderH = 80;
     const rFooterH = 48;
     const ph = rHeaderH + CATALOG.length * (ITEM_H + ITEM_GAP) + rFooterH;
     const totalW = LW + PANEL_GAP + RW;
-    const lx = Math.floor((w - totalW) / 2);
-    const rx = lx + LW + PANEL_GAP;
-    const py = Math.floor((h - ph) / 2);
 
-    this.lx = lx; this.rx = rx; this.py_ = py;
+    super({
+        scene,
+        width: totalW,
+        height: ph,
+        scrollY,
+        runManager,
+        onClose: undefined, // We handle close button manually to position it in right panel
+        hasPanelBackground: false
+    });
 
-    // ── Dim background ───────────────────────────────────────────────────────
-    const bg = scene.add.graphics();
-    bg.fillStyle(THEME.colors.ui.overlayDim, THEME.colors.ui.overlayDimAlpha);
-    bg.fillRect(0, 0, w, h);
-    bg.setInteractive(new Phaser.Geom.Rectangle(0, 0, w, h), Phaser.Geom.Rectangle.Contains);
-    this.add(bg);
+    this.onAction = onAction;
+    this.onClose = onClose; // Store it for our custom button
+
+    // Calculate relative X positions
+    this.lx = 0;
+    this.rx = LW + PANEL_GAP;
 
     // ── Left panel background ────────────────────────────────────────────────
     const leftBg = scene.add.graphics();
     leftBg.fillStyle(THEME.colors.ui.panelBg, 1);
-    leftBg.fillRoundedRect(lx, py, LW, ph, 12);
+    leftBg.fillRoundedRect(this.lx, 0, LW, ph, 12);
     leftBg.lineStyle(2, THEME.colors.ui.panelBorder, 1);
-    leftBg.strokeRoundedRect(lx, py, LW, ph, 12);
-    this.add(leftBg);
+    leftBg.strokeRoundedRect(this.lx, 0, LW, ph, 12);
+    this.panelContainer.add(leftBg);
 
     // Left panel title
-    const leftTitle = scene.add.text(lx + LW / 2, py + 22, 'YOUR ITEMS', {
+    const leftTitle = scene.add.text(this.lx + LW / 2, 22, 'YOUR ITEMS', {
       fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.title,
       color: '#aaddff', fontStyle: 'bold',
     }).setOrigin(0.5);
-    this.add(leftTitle);
+    this.panelContainer.add(leftTitle);
 
     // ── Right panel background ───────────────────────────────────────────────
     const rightBg = scene.add.graphics();
     rightBg.fillStyle(THEME.colors.ui.panelBg, 1);
-    rightBg.fillRoundedRect(rx, py, RW, ph, 12);
+    rightBg.fillRoundedRect(this.rx, 0, RW, ph, 12);
     rightBg.lineStyle(2, THEME.colors.ui.panelBorder, 1);
-    rightBg.strokeRoundedRect(rx, py, RW, ph, 12);
-    this.add(rightBg);
+    rightBg.strokeRoundedRect(this.rx, 0, RW, ph, 12);
+    this.panelContainer.add(rightBg);
 
-    const rightTitle = scene.add.text(rx + RW / 2, py + 22, 'TRAIL SHOP', {
+    const rightTitle = scene.add.text(this.rx + RW / 2, 22, 'TRAIL SHOP', {
       fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.title,
       color: THEME.colors.text.gold, fontStyle: 'bold',
     }).setOrigin(0.5);
-    this.add(rightTitle);
+    this.panelContainer.add(rightTitle);
 
     const run = this.runManager.getRun();
-    this.goldTxt = scene.add.text(rx + RW / 2, py + 52, `GOLD: ${run?.gold ?? 0}`, {
+    this.goldTxt = scene.add.text(this.rx + RW / 2, 52, `GOLD: ${run?.gold ?? 0}`, {
       fontFamily: THEME.fonts.main, fontSize: '15px', color: THEME.colors.text.main,
     }).setOrigin(0.5);
-    this.add(this.goldTxt);
+    this.panelContainer.add(this.goldTxt);
 
     // ── Build panels ─────────────────────────────────────────────────────────
     this.buildItemsPanel();
@@ -124,8 +120,8 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
 
     // ── Close button ─────────────────────────────────────────────────────────
     const closeBtn = new Button(scene, {
-      x: rx + RW / 2,
-      y: py + ph - rFooterH / 2,
+      x: this.rx + RW / 2,
+      y: ph - rFooterH / 2,
       text: 'CLOSE',
       onClick: () => {
         this.destroy();
@@ -134,9 +130,7 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
       color: THEME.colors.buttons.secondary,
       hoverColor: THEME.colors.buttons.secondaryHover,
     });
-    this.add(closeBtn);
-
-    scene.add.existing(this);
+    this.panelContainer.add(closeBtn);
   }
 
   // ── Items panel (left) ───────────────────────────────────────────────────
@@ -155,22 +149,21 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
     if (!run) return;
 
     const lx = this.lx;
-    const py = this.py_;
     const lw = this.lw;
-    let y = py + 48;
+    let y = 48; // relative to panel top
 
     // ── Equipped section ─────────────────────────────────────────────────────
     const eqHeader = scene.add.text(lx + 14, y, 'EQUIPPED', {
       fontFamily: THEME.fonts.main, fontSize: '10px',
       color: THEME.colors.text.muted, fontStyle: 'bold', letterSpacing: 2,
     }).setOrigin(0, 0.5);
-    this.add(eqHeader);
+    this.panelContainer.add(eqHeader);
     this.itemsGroup.push(eqHeader);
 
     const div1 = scene.add.graphics();
     div1.lineStyle(1, 0x2a2a44, 1);
     div1.lineBetween(lx + 14, y + 12, lx + lw - 14, y + 12);
-    this.add(div1);
+    this.panelContainer.add(div1);
     this.itemsGroup.push(div1);
 
     y += 24;
@@ -188,13 +181,13 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
       fontFamily: THEME.fonts.main, fontSize: '10px',
       color: THEME.colors.text.muted, fontStyle: 'bold', letterSpacing: 2,
     }).setOrigin(0, 0.5);
-    this.add(invHeader);
+    this.panelContainer.add(invHeader);
     this.itemsGroup.push(invHeader);
 
     const div2 = scene.add.graphics();
     div2.lineStyle(1, 0x2a2a44, 1);
     div2.lineBetween(lx + 14, y + 12, lx + lw - 14, y + 12);
-    this.add(div2);
+    this.panelContainer.add(div2);
     this.itemsGroup.push(div2);
 
     y += 24;
@@ -209,7 +202,7 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
       const empty = scene.add.text(lx + lw / 2, y + 10, '— nothing —', {
         fontFamily: THEME.fonts.main, fontSize: '11px', color: '#444466',
       }).setOrigin(0.5, 0);
-      this.add(empty);
+      this.panelContainer.add(empty);
       this.itemsGroup.push(empty);
     } else {
       for (const [itemId, count] of invCounts) {
@@ -224,14 +217,14 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
     const rowBg = scene.add.graphics();
     rowBg.fillStyle(itemId ? 0x1a2a1a : 0x111120, 1);
     rowBg.fillRoundedRect(lx + 10, y, lw - 20, SELL_ROW_H, 4);
-    this.add(rowBg);
+    this.panelContainer.add(rowBg);
     this.itemsGroup.push(rowBg);
 
     // Slot label
     const slotTxt = scene.add.text(lx + 20, y + SELL_ROW_H / 2, i18n.t(`slots.${slot}`), {
       fontFamily: THEME.fonts.main, fontSize: '9px', color: '#555577', fontStyle: 'bold',
     }).setOrigin(0, 0.5);
-    this.add(slotTxt);
+    this.panelContainer.add(slotTxt);
     this.itemsGroup.push(slotTxt);
 
     if (itemId) {
@@ -243,14 +236,14 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
       const nameTxt = scene.add.text(nameCol, y + (modStr ? SELL_ROW_H / 2 - 5 : SELL_ROW_H / 2), label, {
         fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ccffcc',
       }).setOrigin(0, 0.5);
-      this.add(nameTxt);
+      this.panelContainer.add(nameTxt);
       this.itemsGroup.push(nameTxt);
 
       if (modStr) {
         const modTxt = scene.add.text(nameCol, y + SELL_ROW_H / 2 + 6, modStr, {
           fontFamily: THEME.fonts.main, fontSize: '8px', color: '#7799aa',
         }).setOrigin(0, 0.5);
-        this.add(modTxt);
+        this.panelContainer.add(modTxt);
         this.itemsGroup.push(modTxt);
       }
 
@@ -267,7 +260,7 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
       const emptyTxt = scene.add.text(lx + 72, y + SELL_ROW_H / 2, '— empty —', {
         fontFamily: THEME.fonts.main, fontSize: '10px', color: '#333355',
       }).setOrigin(0, 0.5);
-      this.add(emptyTxt);
+      this.panelContainer.add(emptyTxt);
       this.itemsGroup.push(emptyTxt);
     }
   }
@@ -280,7 +273,7 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
     const rowBg = scene.add.graphics();
     rowBg.fillStyle(0x111120, 1);
     rowBg.fillRoundedRect(lx + 10, y, lw - 20, SELL_ROW_H, 4);
-    this.add(rowBg);
+    this.panelContainer.add(rowBg);
     this.itemsGroup.push(rowBg);
 
     const label = i18n.exists(`item.${itemId}`) ? i18n.t(`item.${itemId}`) : (def?.label ?? itemId);
@@ -289,7 +282,7 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
     const nameTxt = scene.add.text(lx + 20, y + SELL_ROW_H / 2, `${label}${countStr}`, {
       fontFamily: THEME.fonts.main, fontSize: '10px', color: isEquip ? '#aaaacc' : '#ccccdd',
     }).setOrigin(0, 0.5);
-    this.add(nameTxt);
+    this.panelContainer.add(nameTxt);
     this.itemsGroup.push(nameTxt);
 
     const sellPrice = SELL_PRICES[itemId];
@@ -318,8 +311,8 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
     btnBg.on('pointerout',  () => btnBg.setFillStyle(0x4a1a1a));
     btnBg.on('pointerdown', onClick);
 
-    this.add(btnBg);
-    this.add(btnLbl);
+    this.panelContainer.add(btnBg);
+    this.panelContainer.add(btnLbl);
     this.itemsGroup.push(btnBg, btnLbl);
   }
 
@@ -334,9 +327,8 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
 
     const scene = this.scene;
     const rx = this.rx;
-    const py = this.py_;
     const itemX = rx + RW / 2;
-    const firstItemY = py + 80;
+    const firstItemY = 80; // relative to panel top
 
     /** Total owned (inventory + equipped) for price scaling and sold-out checks. */
     const totalOwned = (itemId: string): number => {
@@ -386,7 +378,7 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
 
       if (soldOut || !canAfford) btn.setEnabled(false);
 
-      this.add(btn);
+      this.panelContainer.add(btn);
       this.catalogBtns.push(btn);
     }
   }

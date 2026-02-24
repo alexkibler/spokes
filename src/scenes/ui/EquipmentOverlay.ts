@@ -2,75 +2,84 @@ import Phaser from 'phaser';
 import { THEME } from '../../theme';
 import { EquipmentPanel } from './EquipmentPanel';
 import { RunManager } from '../../roguelike/RunManager';
+import { BaseOverlay } from './BaseOverlay';
+import { Button } from '../../ui/Button';
 
-export class EquipmentOverlay extends Phaser.GameObjects.Container {
-  private onClose: () => void;
+export class EquipmentOverlay extends BaseOverlay {
   private panel: EquipmentPanel;
-  private closeBg: Phaser.GameObjects.Rectangle;
-  private closeLbl: Phaser.GameObjects.Text;
+  private closeBtn: Button;
   private closeHit: Phaser.GameObjects.Text;
 
   constructor(scene: Phaser.Scene, scrollY: number, runManager: RunManager, onClose: () => void) {
-    super(scene, 0, scrollY);
-    this.setDepth(2100);
+    // Initial panel creation to get height
+    // We can't add it to scene yet if we want to add it to container later?
+    // EquipmentPanel extends Container, so `new EquipmentPanel(scene, ...)` adds it to scene if we don't handle it.
+    // EquipmentPanel constructor calls `super(scene, x, y)`.
+    // We can create it, then remove from scene and add to our container.
+    // Or just create it.
+
+    // We need the height before calling super?
+    // EquipmentPanel calculates height in constructor.
+    // So we can instantiate it, read height, then call super?
+    // No, `this` is not accessible before super.
+
+    // We can pass a dummy height to super, then resize.
+
+    super({
+        scene,
+        width: 520,
+        height: 400, // Dummy
+        scrollY,
+        runManager,
+        onClose: undefined,
+        hasPanelBackground: false
+    });
+
     this.onClose = onClose;
 
-    const w = scene.scale.width;
-    const h = scene.scale.height;
-
-    // Dim background — blocks all input beneath the overlay.
-    const bg = scene.add.graphics();
-    bg.fillStyle(THEME.colors.ui.overlayDim, THEME.colors.ui.overlayDimAlpha);
-    bg.fillRect(0, 0, w, h);
-    bg.setInteractive(new Phaser.Geom.Rectangle(0, 0, w, h), Phaser.Geom.Rectangle.Contains);
-    this.add(bg);
-
     this.panel = new EquipmentPanel(scene, 0, 0, runManager);
-    this.panel.onHeightChanged = () => this.positionElements();
-    this.add(this.panel);
+    this.panelContainer.add(this.panel);
 
-    this.closeBg = scene.add.rectangle(0, 0, 120, 30, THEME.colors.buttons.secondary)
-      .setInteractive({ useHandCursor: true });
-    this.closeLbl = scene.add.text(0, 0, 'CLOSE', {
-      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: '#ffffff', fontStyle: 'bold',
-    }).setOrigin(0.5);
+    this.panel.onHeightChanged = () => this.updateLayout();
 
-    this.closeBg.on('pointerover', () => this.closeBg.setFillStyle(THEME.colors.buttons.secondaryHover));
-    this.closeBg.on('pointerout',  () => this.closeBg.setFillStyle(THEME.colors.buttons.secondary));
-    this.closeBg.on('pointerdown', () => { this.destroy(); this.onClose(); });
+    // Close button (below panel)
+    this.closeBtn = new Button(scene, {
+        x: 260, // 520 / 2
+        y: 0, // set in updateLayout
+        text: 'CLOSE',
+        onClick: () => {
+            this.destroy();
+            this.onClose?.();
+        },
+        color: THEME.colors.buttons.secondary,
+        hoverColor: THEME.colors.buttons.secondaryHover,
+    });
+    this.panelContainer.add(this.closeBtn);
 
-    this.add([this.closeBg, this.closeLbl]);
-
-    this.closeHit = scene.add.text(0, 0, '×', {
+    // Close 'X' hit area (top right of panel)
+    // EquipmentPanel width is 520.
+    this.closeHit = scene.add.text(500, 18, '×', {
       fontFamily: THEME.fonts.main, fontSize: '24px', color: THEME.colors.text.muted,
     }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
     this.closeHit.on('pointerover', () => this.closeHit.setColor(THEME.colors.text.main));
     this.closeHit.on('pointerout',  () => this.closeHit.setColor(THEME.colors.text.muted));
-    this.closeHit.on('pointerdown', () => { this.destroy(); this.onClose(); });
-    this.add(this.closeHit);
+    this.closeHit.on('pointerdown', () => { this.destroy(); this.onClose?.(); });
+    this.panelContainer.add(this.closeHit);
 
-    this.positionElements();
-
-    scene.add.existing(this);
+    this.updateLayout();
   }
 
-  private positionElements(): void {
-    const w = this.scene.scale.width;
-    const h = this.scene.scale.height;
-    const cx = w / 2;
+  private updateLayout(): void {
+      const panelH = this.panel.panelHeight;
+      const totalH = panelH + 60; // Space for button
 
-    const panelW = 520;
-    const panelH = this.panel.panelHeight;
+      this.resizePanel(520, totalH);
 
-    const px = cx - panelW / 2;
-    const py = Math.max(10, (h - panelH - 52) / 2);
+      // Panel is at 0,0 in panelContainer
+      // Close button
+      this.closeBtn.setPosition(260, panelH + 20);
 
-    this.panel.setPosition(px, py);
-
-    const closeBtnY = py + panelH + 20;
-    this.closeBg.setPosition(cx, closeBtnY);
-    this.closeLbl.setPosition(cx, closeBtnY);
-
-    this.closeHit.setPosition(px + panelW - 20, py + 18);
+      // Close hit 'X'
+      this.closeHit.setPosition(500, 18);
   }
 }
