@@ -110,7 +110,16 @@ export class EliteChallengeOverlay extends Phaser.GameObjects.Container {
       wordWrap: { width: btnWidth },
       lineSpacing: 3,
     }).setOrigin(0, 0));
-    cursorY += condHeight;
+    cursorY += condHeight + 8;
+
+    // Intensity Warning
+    this.add(scene.add.text(px + padH, cursorY, '⚠ INTENSITY: ZONE 5 / RED ZONE', {
+      fontFamily: THEME.fonts.main,
+      fontSize: `${condFontSize - 2}px`,
+      color: '#ff4444',
+      fontStyle: 'bold',
+    }).setOrigin(0, 0));
+    cursorY += 24;
 
     // Reward line
     this.add(scene.add.text(px + padH, cursorY, `Reward: ${challenge.reward.description}`, {

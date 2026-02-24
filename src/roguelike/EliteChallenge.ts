@@ -44,9 +44,9 @@ export const ELITE_CHALLENGES: EliteChallenge[] = [
     flavorText:
       'A steep switchback cuts across the ridge. A local rival blocks the road and sneers: "Bet you can\'t hold threshold the whole way up."',
     conditionText:
-      'Complete this ride with average power above 110% of your FTP ({ftp_watts} W).',
-    condition: { type: 'avg_power_above_ftp_pct', ftpMultiplier: 1.10 },
-    reward: { type: 'gold', goldAmount: 60, description: 'earn 60 gold' },
+      'Complete this ride with average power above 125% of your FTP ({ftp_watts} W).',
+    condition: { type: 'avg_power_above_ftp_pct', ftpMultiplier: 1.25 },
+    reward: { type: 'gold', goldAmount: 120, description: 'earn 120 gold' },
   },
   {
     id: 'sprint_peak',
@@ -54,8 +54,8 @@ export const ELITE_CHALLENGES: EliteChallenge[] = [
     flavorText:
       'The road levels out and a crowd lines the barriers. A hand-painted sign reads: "Town sprint — 200m." Your legs are fresh. Your ego is not.',
     conditionText:
-      'Hit a peak power above 150% of your FTP ({ftp_watts} W) at any point during this ride.',
-    condition: { type: 'peak_power_above_ftp_pct', ftpMultiplier: 1.50 },
+      'Hit a peak power above 250% of your FTP ({ftp_watts} W) at any point during this ride.',
+    condition: { type: 'peak_power_above_ftp_pct', ftpMultiplier: 2.50 },
     reward: { type: 'item', item: 'tailwind', description: 'receive a Tailwind' },
   },
   {
@@ -74,9 +74,9 @@ export const ELITE_CHALLENGES: EliteChallenge[] = [
     flavorText:
       'Race marshals have chalked a start and finish line across the road. A stopwatch clicks. A crowd of two watches expectantly.',
     conditionText:
-      'Complete this ride in under 3 minutes.',
-    condition: { type: 'time_under_seconds', timeLimitSeconds: 180 },
-    reward: { type: 'gold', goldAmount: 80, description: 'earn 80 gold' },
+      'Complete this ride in under 2 minutes.',
+    condition: { type: 'time_under_seconds', timeLimitSeconds: 120 },
+    reward: { type: 'gold', goldAmount: 150, description: 'earn 150 gold' },
   },
   {
     id: 'vo2max_ramp',
@@ -84,9 +84,9 @@ export const ELITE_CHALLENGES: EliteChallenge[] = [
     flavorText:
       'The gradient ticks upward with every metre. A painted line on the road reads: "VO₂ or go home." Above it, someone has added: "Please go home."',
     conditionText:
-      'Complete this ride with average power above 120% of your FTP ({ftp_watts} W).',
-    condition: { type: 'avg_power_above_ftp_pct', ftpMultiplier: 1.20 },
-    reward: { type: 'gold', goldAmount: 100, description: 'earn 100 gold' },
+      'Complete this ride with average power above 140% of your FTP ({ftp_watts} W).',
+    condition: { type: 'avg_power_above_ftp_pct', ftpMultiplier: 1.40 },
+    reward: { type: 'gold', goldAmount: 200, description: 'earn 200 gold' },
   },
 ];
 

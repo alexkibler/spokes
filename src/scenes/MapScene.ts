@@ -20,6 +20,7 @@ import { EventOverlay } from './ui/EventOverlay';
 import { EliteChallengeOverlay } from './ui/EliteChallengeOverlay';
 import { EquipmentOverlay } from './ui/EquipmentOverlay';
 import { RemotePairingOverlay } from './ui/RemotePairingOverlay';
+import { ConfirmationModal } from '../ui/ConfirmationModal';
 
 const SURFACE_LABELS: Record<SurfaceType, string> = {
   asphalt: 'ASPHALT',
@@ -711,6 +712,29 @@ export class MapScene extends Phaser.Scene {
       (e.from === node.id && e.to === run.currentNodeId)
     );
 
+    // Hazard Confirmation Check
+    if (run.currentNodeId === 'node_hub' && connectingEdge?.to === node.id && node.metadata?.spokeId) {
+      const key = this.getRequiredKeyForSpoke(node.metadata.spokeId);
+      if (key && !run.inventory.includes(key)) {
+        this.overlayActive = true;
+        new ConfirmationModal(this, {
+          title: '⚠ HAZARD WARNING ⚠',
+          message: `This path is blocked by a hazard! Without the ${key.replace('_', ' ').toUpperCase()}, you must brute-force your way through with a BRUTAL Zone 5+ effort. Are you sure?`,
+          confirmLabel: 'PUSH THROUGH',
+          cancelLabel: 'RETREAT',
+          confirmColor: THEME.colors.buttons.danger,
+          onConfirm: () => {
+            this.overlayActive = false;
+            this.proceedWithNodeTransition(node, connectingEdge);
+          },
+          onCancel: () => {
+            this.overlayActive = false;
+          }
+        });
+        return;
+      }
+    }
+
     // Final Boss Lock Check
     if (node.type === 'finish' && connectingEdge) {
       const medals = run.inventory.filter(i => i.startsWith('medal_'));
@@ -743,59 +767,7 @@ export class MapScene extends Phaser.Scene {
       return;
     }
 
-    {
-      const edge = connectingEdge;
-      if (!edge && node.floor !== 0) return;
-
-      let course: any = generateCourseProfile(5, 0.05, 'asphalt');
-      let isBackwards = false;
-
-      if (edge) {
-        let profileToUse = edge.profile;
-
-        // Hazard Override Logic
-        // If traversing FROM Hub TO Spoke Start
-        if (run.currentNodeId === 'node_hub' && edge.to === node.id && node.metadata?.spokeId) {
-             const key = this.getRequiredKeyForSpoke(node.metadata.spokeId);
-             if (key && run.inventory.includes(key)) {
-                 // Bypass hazard!
-                 // Generate a nice flat asphalt ride of the same distance
-                 const distKm = edge.profile.totalDistanceM / 1000;
-                 profileToUse = generateCourseProfile(distKm, 0.00, 'asphalt');
-             }
-        }
-
-        if (edge.to === run.currentNodeId) {
-          course = invertCourseProfile(profileToUse);
-          isBackwards = true;
-        } else {
-          course = profileToUse;
-        }
-        RunStateManager.setActiveEdge(edge);
-      }
-
-      const destNodeId = edge
-        ? (edge.to === run.currentNodeId ? edge.from : edge.to)
-        : node.id;
-      const destNode = run.nodes.find(n => n.id === destNodeId);
-      const racers: RacerProfile[] = destNode?.type === 'finish'
-        ? createBossRacers(this.ftpW)
-        : [];
-
-      if (racers.length > 0) {
-        this.showBossEncounterSplash(racers[4], () => {
-          this.scene.start('GameScene', {
-            course, isBackwards,
-            isRoguelike: true, activeChallenge: null, racers,
-          });
-        });
-      } else {
-        this.scene.start('GameScene', {
-          course, isBackwards,
-          isRoguelike: true, activeChallenge: null,
-        });
-      }
-    }
+    this.proceedWithNodeTransition(node, connectingEdge);
   }
 
   private getRequiredKeyForSpoke(spokeId: string): string | null {
@@ -803,6 +775,73 @@ export class MapScene extends Phaser.Scene {
     if (spokeId === 'mountain') return 'funicular_ticket';
     if (spokeId === 'forest') return 'trail_machete';
     return null;
+  }
+
+  private proceedWithNodeTransition(node: MapNode, edge?: any): void {
+    const run = RunStateManager.getRun();
+    if (!run) return;
+
+    if (!edge && node.floor !== 0) return;
+
+    let course: any = generateCourseProfile(5, 0.05, 'asphalt');
+    let isBackwards = false;
+
+    if (edge) {
+      let profileToUse = edge.profile;
+
+      // Hazard Override Logic
+      if (run.currentNodeId === 'node_hub' && edge.to === node.id && node.metadata?.spokeId) {
+           const key = this.getRequiredKeyForSpoke(node.metadata.spokeId);
+           if (key) {
+               if (run.inventory.includes(key)) {
+                   // Bypass hazard!
+                   const distKm = edge.profile.totalDistanceM / 1000;
+                   profileToUse = generateCourseProfile(distKm, 0.00, 'asphalt');
+               } else {
+                   // BRUTE FORCE HAZARD!
+                   // Brutal 12% grade for 1km + original distance
+                   profileToUse = {
+                       ...edge.profile,
+                       segments: [
+                           { distanceM: 1000, grade: 0.12, surface: 'mud' }, // Brutal mud climb
+                           ...edge.profile.segments
+                       ],
+                       totalDistanceM: edge.profile.totalDistanceM + 1000
+                   };
+               }
+           }
+      }
+
+      if (edge.to === run.currentNodeId) {
+        course = invertCourseProfile(profileToUse);
+        isBackwards = true;
+      } else {
+        course = profileToUse;
+      }
+      RunStateManager.setActiveEdge(edge);
+    }
+
+    const destNodeId = edge
+      ? (edge.to === run.currentNodeId ? edge.from : edge.to)
+      : node.id;
+    const destNode = run.nodes.find(n => n.id === destNodeId);
+    const racers: RacerProfile[] = destNode?.type === 'finish'
+      ? createBossRacers(this.ftpW)
+      : [];
+
+    if (racers.length > 0) {
+      this.showBossEncounterSplash(racers[4], () => {
+        this.scene.start('GameScene', {
+          course, isBackwards,
+          isRoguelike: true, activeChallenge: null, racers,
+        });
+      });
+    } else {
+      this.scene.start('GameScene', {
+        course, isBackwards,
+        isRoguelike: true, activeChallenge: null,
+      });
+    }
   }
 
   private checkPendingNodeAction(): void {
