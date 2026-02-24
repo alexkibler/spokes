@@ -9,21 +9,21 @@
 1. [What This App Is](#1-what-this-app-is)
 2. [Tech Stack at a Glance](#2-tech-stack-at-a-glance)
 3. [Phaser 101 – What You Need to Know](#3-phaser-101--what-you-need-to-know)
-4. [Project Structure](#4-project-structure)
-5. [The Scene Lifecycle (Your New Request/Response Cycle)](#5-the-scene-lifecycle-your-new-requestresponse-cycle)
-6. [Scene Flow & Data Passing](#6-scene-flow--data-passing)
-7. [The Physics Loop (GameScene.update)](#7-the-physics-loop-gamesceneupdate)
-8. [The Trainer Service Abstraction](#8-the-trainer-service-abstraction)
-9. [Mobile Remote Control](#9-mobile-remote-control)
-10. [Course Profiles & Elevation](#10-course-profiles--elevation)
-11. [The Roguelike Map (MapScene)](#11-the-roguelike-map-mapscene)
-12. [Roguelike State (RunStateManager)](#12-roguelike-state-runstatemanager)
-13. [FIT File Export](#13-fit-file-export)
-14. [Units & Display Conventions](#14-units--display-conventions)
-15. [Dev Mode & Mock Mode](#15-dev-mode--mock-mode)
+4. [Core Architecture](#4-core-architecture)
+5. [Dependency Injection & State Management](#5-dependency-injection--state-management)
+6. [Project Structure](#6-project-structure)
+7. [The Scene Lifecycle (Your New Request/Response Cycle)](#7-the-scene-lifecycle-your-new-requestresponse-cycle)
+8. [Scene Flow & Data Passing](#8-scene-flow--data-passing)
+9. [The Physics Loop (GameScene.update)](#9-the-physics-loop-gamesceneupdate)
+10. [The Trainer Service Abstraction](#10-the-trainer-service-abstraction)
+11. [Mobile Remote Control](#11-mobile-remote-control)
+12. [Course Profiles & Elevation](#12-course-profiles--elevation)
+13. [The Roguelike Map (MapScene)](#13-the-roguelike-map-mapscene)
+14. [FIT File Export](#14-fit-file-export)
+15. [Units & Display Conventions](#15-units--display-conventions)
 16. [Testing](#16-testing)
 17. [Common Tasks & Where to Look](#17-common-tasks--where-to-look)
-18. [Gotchas & Things That Will Bite You](#18-gotchas--things-that-will-bite-you)
+18. [Quick Reference: Extending the Game](#18-quick-reference-extending-the-game)
 
 ---
 
@@ -93,39 +93,50 @@ update(time: number, delta: number) {
 - Y increases **downward** (opposite of math/CSS expectations)
 - Depths (z-ordering): higher depth = drawn on top
 
-### Game objects
+---
 
-The main primitives you'll encounter in this codebase:
+## 4. Core Architecture
 
-| Class | What it is |
-|-------|-----------|
-| `Phaser.GameObjects.Text` | Rendered text (not DOM) |
-| `Phaser.GameObjects.Graphics` | Drawing shapes, lines, fills |
-| `Phaser.GameObjects.TileSprite` | Repeating tiled texture (used for parallax layers) |
-| `Phaser.GameObjects.Container` | Group of objects that move/rotate together |
-| `Phaser.GameObjects.Rectangle` | Simple rectangle shape |
+We have refactored the codebase to decouple logic from presentation.
 
-All of these are created with `this.add.*()`:
+### Controllers
+`GameScene.ts` and `MapScene.ts` act as **Controllers**. They handle:
+- Input interpretation
+- Orchestrating game loop updates
+- Delegating rendering to sub-modules
+- Managing scene transitions
+
+### Visuals
+Rendering logic is moved out of scenes into dedicated classes in `src/scenes/visuals/` (e.g., `MapRenderer`, `CyclistRenderer`). These classes receive a container and data, and purely handle drawing.
+
+### UI Overlays
+UI complexity is managed by `BaseOverlay` and its subclasses in `src/scenes/ui/`. These encapsulate specific UI flows (Shop, Inventory, Pause) and block input to the underlying game while active.
+
+---
+
+## 5. Dependency Injection & State Management
+
+Global static state (formerly `RunStateManager`) has been replaced by `RunManager`, an instantiable class extending `Phaser.Events.EventEmitter`.
+
+### RunManager
+- Holds all roguelike state (gold, inventory, graph traversal).
+- Decouples persistence: it emits a `'save'` event rather than calling storage services directly.
+- Must be passed to any component that needs access to run state.
+
+### Injection Pattern
+`RunManager` is instantiated in `MenuScene` (or `main.ts`) and passed down:
+
+1. **Via Phaser Registry**: Shared across scenes using `this.registry.set('runManager', manager)`.
+2. **Via Constructor Injection**: Passed into UI Overlays and Helper classes.
 
 ```typescript
-const label = this.add.text(x, y, 'Hello', { fontSize: '24px' });
-const box = this.add.graphics();
-box.fillStyle(0xff0000, 1);
-box.fillRect(10, 10, 100, 50);
-```
-
-### Events
-
-Phaser input events use `on()`, similar to EventEmitter:
-
-```typescript
-this.input.on('pointerdown', (pointer) => { ... });
-someGameObject.on('pointerdown', () => { ... });
+// In MapScene.ts
+const overlay = new ShopOverlay(this, scrollY, this.runManager, ...);
 ```
 
 ---
 
-## 4. Project Structure
+## 6. Project Structure
 
 ```
 src/
@@ -134,21 +145,20 @@ src/
 │   └── main.ts              # Socket.io client + Remote UI
 ├── scenes/
 │   ├── MenuScene.ts         # Form UI, BT pairing, mode selection
-│   ├── MapScene.ts          # Roguelike node map, shop
-│   ├── GameScene.ts         # Riding: physics loop, HUD, parallax
-│   └── VictoryScene.ts      # End screen, FIT download
+│   ├── MapScene.ts          # Roguelike node map (Controller)
+│   ├── GameScene.ts         # Riding controller; physics loop
+│   ├── visuals/             # Rendering logic (MapRenderer, CyclistRenderer)
+│   └── ui/                  # UI Overlays (BaseOverlay, ShopOverlay, etc.)
 ├── services/
 │   ├── ITrainerService.ts   # Interface (what scenes depend on)
 │   ├── TrainerService.ts    # Real FTMS BLE implementation
-│   ├── MockTrainerService.ts # Fake 200W emitter for offline use
-│   ├── HeartRateService.ts  # Standard BLE heart rate monitor
-│   └── RemoteService.ts     # Socket.io connection for remote control
+│   └── MockTrainerService.ts # Fake 200W emitter for offline use
 ├── physics/
 │   └── CyclistPhysics.ts    # Pure function: watts + velocity + config → acceleration
 ├── course/
 │   └── CourseProfile.ts     # Segment data structure + query helpers + generator
 ├── roguelike/
-│   └── RunState.ts          # Static singleton: all roguelike run state
+│   └── RunManager.ts        # Roguelike state manager (Gold, Nodes, Modifiers)
 ├── fit/
 │   └── FitWriter.ts         # Binary FIT encoder, no external deps
 └── utils/
@@ -158,7 +168,7 @@ server.js                    # Node.js backend for socket.io + serving dist
 
 ---
 
-## 5. The Scene Lifecycle (Your New Request/Response Cycle)
+## 7. The Scene Lifecycle (Your New Request/Response Cycle)
 
 Every Phaser scene has these lifecycle methods. You'll implement all of them:
 
@@ -195,7 +205,7 @@ class MyScene extends Phaser.Scene {
 
 ---
 
-## 6. Scene Flow & Data Passing
+## 8. Scene Flow & Data Passing
 
 ```
 MenuScene
@@ -234,28 +244,9 @@ init(data: GameSceneData) {
 }
 ```
 
-### Roguelike state is shared via singleton
-
-For the map → ride → map cycle, data that needs to persist across scenes lives in `RunStateManager`:
-
-```typescript
-// MapScene writes:
-RunStateManager.setActiveEdge(selectedEdge);
-RunStateManager.setCurrentNode(targetNodeId);
-
-// GameScene reads:
-const run = RunStateManager.getRun();
-const edge = run.activeEdge;
-const course = edge.profile;
-
-// GameScene writes back:
-RunStateManager.completeActiveEdge();
-RunStateManager.addGold(rewardAmount);
-```
-
 ---
 
-## 7. The Physics Loop (GameScene.update)
+## 9. The Physics Loop (GameScene.update)
 
 This is the core of the app. Every frame (~60fps):
 
@@ -291,18 +282,9 @@ This is a pure function — no side effects, easy to test. It models:
 - **Rolling resistance:** `Crr × mass × g × cos(θ)`
 - **Gravity component:** `mass × g × sin(θ)` (positive = uphill resistance)
 
-### Grade smoothing
-
-Raw grade from the course profile is not applied directly — it's smoothed with exponential interpolation to avoid jarring transitions:
-
-```typescript
-// Lerp toward target grade each frame
-this.displayedGrade = lerp(this.displayedGrade, targetGrade, smoothingFactor);
-```
-
 ---
 
-## 8. The Trainer Service Abstraction
+## 10. The Trainer Service Abstraction
 
 This is a clean dependency injection pattern you'll recognize from backend dev.
 
@@ -341,32 +323,9 @@ mock.setPower(350);  // update what gets emitted
 - Subscribes to GATT characteristic `0x2AD2` (Indoor Bike Data) for notifications
 - Writes to `0x2AD9` (Control Point) to send grade/resistance commands
 
-### The data flow
-
-```
-[Trainer hardware]
-      │  BLE notification (0x2AD2)
-      ▼
-TrainerService.parseIndoorBikeData()
-      │  TrainerData object
-      ▼
-GameScene onData callback
-      │  stores latestPower, latestCadence
-      ▼
-GameScene.update() reads values each frame
-      │  calculates new grade
-      ▼
-trainer.setSimulationParams(grade, crr, cwa)
-      │  writes Op Code 0x11 to 0x2AD9
-      ▼
-[Trainer hardware adjusts resistance]
-```
-
-The game loop sends grade to the trainer every frame; the trainer adjusts its magnetic brake to create the appropriate resistance.
-
 ---
 
-## 9. Mobile Remote Control
+## 11. Mobile Remote Control
 
 The game supports a "Jackbox-style" mobile controller.
 
@@ -388,7 +347,7 @@ Vite proxies `/socket.io` requests to port 3000, so the game client can connect 
 
 ---
 
-## 10. Course Profiles & Elevation
+## 12. Course Profiles & Elevation
 
 ### The data structure
 
@@ -407,45 +366,9 @@ interface CourseProfile {
 
 A course is just an ordered array of segments. No GPS, no coordinates — purely distance + grade.
 
-### Querying a course
-
-```typescript
-import { getGradeAtDistance, getSurfaceAtDistance } from '../course/CourseProfile';
-
-// In the physics loop:
-const grade = getGradeAtDistance(course, this.distanceM);     // → 0.08 (8%)
-const surface = getSurfaceAtDistance(course, this.distanceM); // → 'gravel'
-const crr = getCrrForSurface(surface);                        // → 0.012
-```
-
-These functions walk the segment array to find which segment contains the given distance. When distance exceeds `totalDistanceM`, the course loops (wraps around).
-
-### Rolling resistance by surface
-
-```
-asphalt: 0.005  (fast, baseline)
-gravel:  0.012  (2.4× slower)
-dirt:    0.020  (4× slower)
-mud:     0.040  (8× slower — very hard riding)
-```
-
-### Procedural generation
-
-```typescript
-generateCourseProfile(distanceKm: number, maxGrade: number, surface?: SurfaceType): CourseProfile
-```
-
-Algorithm:
-1. Add flat bookend segments (easy start/finish)
-2. Fill middle with random-length segments (100m–2,500m each)
-3. Bias grade choices based on cumulative elevation (too high → add descents; too low → add climbs)
-4. Fix any elevation imbalance at the end with a corrective segment
-
-The elevation is "balanced" — what goes up must come down, approximately.
-
 ---
 
-## 11. The Roguelike Map (MapScene)
+## 13. The Roguelike Map (MapScene)
 
 ### Structure
 
@@ -475,54 +398,9 @@ Floor N:  [finish]
 | `shop` | Gold square | Buy items |
 | `finish` | Black circle | End of run → VictoryScene |
 
-### Traversal
-
-- **Forward:** Click a node in `connectedTo` of current node
-- **Backward:** Click a previously visited node (uses `invertCourseProfile()` to reverse grades)
-- **Teleport:** Consume teleport scroll from inventory → pick any visited node
-
-When you traverse an edge, MapScene calls:
-```typescript
-RunStateManager.setActiveEdge(edge);
-RunStateManager.setCurrentNode(targetNodeId);
-this.scene.start('GameScene', { ...rideData });
-```
-
-GameScene completes the ride, then returns to MapScene.
-
 ---
 
-## 12. Roguelike State (RunStateManager)
-
-A static singleton that holds all run state. Any scene can read/write it.
-
-```typescript
-// Starting a run
-RunStateManager.startNewRun(runLength, totalDistanceKm, difficulty);
-
-// Reading state
-const run = RunStateManager.getRun();
-run.gold;         // current gold balance
-run.inventory;    // string[] of items
-run.nodes;        // MapNode[]
-run.edges;        // MapEdge[] with isCleared status
-run.fitWriter;    // shared FitWriter instance (continues recording across edges)
-
-// Writing state
-RunStateManager.addGold(50);
-RunStateManager.spendGold(100);
-RunStateManager.addToInventory('tailwind');
-RunStateManager.removeFromInventory('teleport');
-RunStateManager.setCurrentNode('node-3-2');
-RunStateManager.setActiveEdge(edge);
-RunStateManager.completeActiveEdge();  // marks edge cleared, returns true if first clear
-```
-
-The `fitWriter` is shared across all edges of a run so the exported FIT file is one continuous activity.
-
----
-
-## 13. FIT File Export
+## 14. FIT File Export
 
 The `FitWriter` class encodes a Garmin-compatible binary `.fit` file from scratch — no external library.
 
@@ -547,11 +425,9 @@ const bytes: Uint8Array = fitWriter.export();
 // download it with a Blob + anchor click
 ```
 
-FIT is a binary format with a custom header, message definitions, and a CRC. The class handles all of this internally. You don't need to know the format.
-
 ---
 
-## 14. Units & Display Conventions
+## 15. Units & Display Conventions
 
 **Golden rule:** All internal calculations use SI (metric) units. Convert only for display.
 
@@ -560,49 +436,6 @@ Velocity: m/s internally  → km/h or mph for display
 Distance: meters          → km or miles for display
 Mass:     kg              → stays kg or shows lb for display
 ```
-
-```typescript
-import { KM_TO_MI, KG_TO_LB } from '../utils/UnitConversions';
-
-// Display speed
-const displaySpeed = units === 'imperial'
-  ? (velocityMs * 3.6 * KM_TO_MI).toFixed(1) + ' mph'
-  : (velocityMs * 3.6).toFixed(1) + ' km/h';
-```
-
-The `units` preference is a `'imperial' | 'metric'` string threaded through scene data from MenuScene.
-
----
-
-## 15. Dev Mode & Mock Mode
-
-### Mock Mode (offline simulation)
-- Available in all builds
-- Uses `MockTrainerService` emitting ~200W, 90rpm, 30km/h
-- Toggled from MenuScene with "Start Ride" or "Quick Demo" options (no real BT needed)
-
-### Dev Mode (fast testing)
-- Only available in `import.meta.env.DEV` builds
-- Sets mock power to **100,000 W** so you fly through courses instantly
-- Toggle button visible in MenuScene dev builds
-
-### Demo Mode (Quick Demo flag)
-- Uses `MockTrainerService` with **randomized power** (150–350W) and cadence (70–110rpm) that change per segment
-- Simulates a realistic-looking ride without a real trainer
-
-### How to check in code
-
-```typescript
-// In GameScene.create():
-if (data.isDevMode) {
-  (this.trainer as MockTrainerService).setPower(100_000);
-}
-if (data.isQuickDemo) {
-  // randomize power per segment
-}
-```
-
-The `false` on line 147 of `GameScene.ts` that was selected when you started this session is likely a debug flag or feature toggle — check what it's guarding.
 
 ---
 
@@ -625,8 +458,6 @@ What's tested:
 - `TrainerService.test.ts` — FTMS byte parsing
 - `UnitConversions.test.ts` — conversion accuracy
 
-Nothing about Phaser rendering is unit-tested (that's typical — visual output is hard to unit test).
-
 ---
 
 ## 17. Common Tasks & Where to Look
@@ -639,12 +470,6 @@ Nothing about Phaser rendering is unit-tested (that's typical — visual output 
 
 ### Add a new HUD element
 → `src/scenes/GameScene.ts` → `create()` section, alongside existing HUD setup. Also update `onResize()` to reposition it.
-
-### Add a new roguelike item
-→ `src/roguelike/RunState.ts` (add to inventory type), `src/scenes/MapScene.ts` (shop UI), `src/scenes/GameScene.ts` (apply effect)
-
-### Add a new node type to the map
-→ `src/roguelike/RunState.ts` (add to `NodeType`), `src/scenes/MapScene.ts` (drawing + behavior)
 
 ### Change what gets written to the FIT file
 → `src/fit/FitWriter.ts` → `recordData()` method
@@ -659,69 +484,37 @@ Nothing about Phaser rendering is unit-tested (that's typical — visual output 
 
 ---
 
-## 18. Gotchas & Things That Will Bite You
+## 18. Quick Reference: Extending the Game
 
-### delta is in milliseconds, not seconds
-```typescript
-update(time: number, delta: number) {
-  // delta ≈ 16.7 at 60fps — it's milliseconds
-  this.velocity += accel * (delta / 1000);  // divide by 1000!
-}
-```
+### Adding a New Item
+1. Open `src/roguelike/ItemRegistry.ts`.
+2. Add your item definition to `ITEM_REGISTRY`.
+   ```typescript
+   my_new_item: {
+     id: 'my_new_item',
+     label: 'Super Drink',
+     description: 'Doubles power for 10s.',
+     price: 150,
+     slot: undefined, // or 'helmet', etc.
+   }
+   ```
+3. Implement effect logic in `RunManager` or `GameScene` if needed.
 
-### Y axis is inverted
-Drawing at `y: 0` is the **top** of the screen. `y: 540` is the bottom. This catches everyone coming from CSS.
+### Adding a New Elite Challenge
+1. Open `src/roguelike/EliteChallenge.ts`.
+2. Add a new object to the `ELITE_CHALLENGES` array.
+   ```typescript
+   {
+     id: 'new_challenge',
+     title: 'Leg Burner',
+     condition: { type: 'avg_power_above_ftp_pct', ftpMultiplier: 1.5 },
+     reward: { type: 'gold', goldAmount: 100, description: 'earn 100 gold' }
+   }
+   ```
+3. Update `evaluateChallenge()` if a new condition type is needed.
 
-### Phaser objects are destroyed when a scene stops
-If you cache a reference to a Phaser game object and the scene restarts, it's gone. Re-create everything in `create()`.
-
-### Web Bluetooth requires a user gesture
-`navigator.bluetooth.requestDevice()` must be called from a click handler — not on page load, not in an async callback. The browser will throw otherwise.
-
-### Web Bluetooth only works in Chromium
-Chrome, Edge, Brave. Not Firefox, not Safari, not mobile (mostly). Don't waste time trying to debug BT issues in the wrong browser.
-
-### Grade is a decimal, not a percentage
-Throughout the codebase: `grade = 0.05` means 5%. Display it as `(grade * 100).toFixed(1) + '%'`.
-
-### Phaser's `this` context in callbacks
-Arrow functions inside scene methods preserve `this` correctly. But if you pass a method as a callback, bind it:
-
-```typescript
-// Works (arrow function):
-this.scale.on('resize', () => this.onResize());
-
-// Also works (Phaser's 3-arg form with context):
-this.scale.on('resize', this.onResize, this);
-
-// Breaks (loses 'this'):
-this.scale.on('resize', this.onResize);
-```
-
-### The course "wraps" if you exceed totalDistanceM
-`getGradeAtDistance()` uses modulo arithmetic. If you need to detect "end of course", compare `this.distanceM >= course.totalDistanceM` explicitly.
-
-### RunStateManager is global state
-It persists until `startNewRun()` is called again. If a player returns to MenuScene without completing a run, old state is still there. Check `getRun()` for null before reading.
-
-### TypeScript is strict — read the tsconfig
-`noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns` are all enabled. You'll get compile errors for things you'd normally ignore. This is intentional.
-
----
-
-## Quick Reference: Key Files
-
-| What you want to change | File |
-|------------------------|------|
-| App startup, scene list | `src/main.ts` |
-| Menu form, BT pairing | `src/scenes/MenuScene.ts` |
-| Node map, shop | `src/scenes/MapScene.ts` |
-| Physics loop, HUD, parallax | `src/scenes/GameScene.ts` |
-| End screen | `src/scenes/VictoryScene.ts` |
-| Real trainer BT | `src/services/TrainerService.ts` |
-| Fake trainer | `src/services/MockTrainerService.ts` |
-| Physics math | `src/physics/CyclistPhysics.ts` |
-| Course generation, queries | `src/course/CourseProfile.ts` |
-| Run state (roguelike) | `src/roguelike/RunState.ts` |
-| FIT file encoding | `src/fit/FitWriter.ts` |
-| Unit conversions | `src/utils/UnitConversions.ts` |
+### Adding a New Surface Type
+1. Open `src/course/CourseProfile.ts`.
+2. Add the type to `SurfaceType` union.
+3. Update `CRR_BY_SURFACE` with the rolling resistance coefficient.
+4. Update `CourseGenerator.ts` if you want it to appear in procedural maps.
