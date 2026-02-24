@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { RunStateManager } from '../../roguelike/RunState';
+import { RunManager } from '../../roguelike/RunState';
 import { ITEM_REGISTRY, ALL_SLOTS, formatModifierLines, type EquipmentSlot } from '../../roguelike/ItemRegistry';
 import { THEME } from '../../theme';
 import i18n from '../../i18n';
@@ -16,9 +16,11 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
   public panelHeight = 0;
   public onHeightChanged?: () => void;
   private contentGroup: Phaser.GameObjects.GameObject[] = [];
+  private runManager: RunManager;
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, runManager: RunManager) {
     super(scene, x, y);
+    this.runManager = runManager;
     this.refresh();
   }
 
@@ -31,7 +33,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
     }
     this.contentGroup = [];
 
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     if (!run) return;
 
     // ── Measure panel height dynamically ─────────────────────────────────────
@@ -97,13 +99,6 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
       if (equippedId) {
         const def = ITEM_REGISTRY[equippedId];
 
-        // Translation for item label happens via ITEM_REGISTRY (if refactored) or direct key lookup
-        // Assuming ITEM_REGISTRY.label will be updated or we use i18n key logic.
-        // For now, let's assume ITEM_REGISTRY returns a key or we translate it here.
-        // Plan step 6 is Refactor ItemRegistry.
-        // Let's use i18n.t if the label looks like a key, or just use the label if not?
-        // Actually, best to wait for ItemRegistry refactor.
-        // But to be safe, I'll wrap it in i18n.t just in case the label becomes a key.
         const labelKey = def?.label ?? equippedId;
         const translatedLabel = i18n.exists(`item.${equippedId}`) ? i18n.t(`item.${equippedId}`) : labelKey;
 
@@ -143,7 +138,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
           slotBg.strokeRoundedRect(sx, slotsY, SLOT_W, SLOT_H, 6);
         });
         hitZone.on('pointerdown', () => {
-          RunStateManager.unequipItem(slot);
+          this.runManager.unequipItem(slot);
           this.refresh();
         });
         this.add(hitZone);
@@ -244,12 +239,12 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
   }
 
   private handleEquip(itemId: string, slot: EquipmentSlot): void {
-    const run = RunStateManager.getRun();
+    const run = this.runManager.getRun();
     if (!run) return;
 
     const occupant = run.equipped[slot];
     if (!occupant) {
-      RunStateManager.equipItem(itemId);
+      this.runManager.equipItem(itemId);
       this.refresh();
     } else {
       this.showSwapWarning(itemId, slot, occupant);
@@ -339,7 +334,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
     confirmBg.on('pointerout',  () => confirmBg.setFillStyle(0x1a4a1a));
     confirmBg.on('pointerdown', () => {
       destroyModal();
-      RunStateManager.equipItem(incomingId);
+      this.runManager.equipItem(incomingId);
       this.refresh();
     });
     modalGroup.push(confirmBg, confirmLbl);

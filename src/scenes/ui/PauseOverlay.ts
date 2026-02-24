@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { THEME } from '../../theme';
 import { EquipmentPanel } from './EquipmentPanel';
 import { ConfirmationModal } from '../../ui/ConfirmationModal';
-import { RunStateManager } from '../../roguelike/RunState';
+import { RunManager } from '../../roguelike/RunState';
 import i18n from '../../i18n';
 
 export class PauseOverlay extends Phaser.GameObjects.Container {
@@ -11,6 +11,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
   private onResume: () => void;
   private onQuit: () => void; // Save & Quit
   private onBackToMap: () => void; // Back to Map
+  private runManager: RunManager;
 
   private menuButtons: Phaser.GameObjects.Rectangle[] = [];
   private selectedButtonIndex: number = -1;
@@ -28,10 +29,12 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
     scene: Phaser.Scene,
     callbacks: { onResume: () => void; onQuit: () => void; onBackToMap: () => void },
     currentFtpW: number,
-    private isRoguelike = false
+    isRoguelike: boolean,
+    runManager: RunManager
   ) {
     super(scene);
     this.setDepth(2000);
+    this.runManager = runManager;
     this.onResume = callbacks.onResume;
     this.onQuit = callbacks.onQuit;
     this.onBackToMap = callbacks.onBackToMap;
@@ -58,7 +61,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
     const startX = (w - TOTAL_W) / 2;
 
     // Equipment Panel
-    this.panel = new EquipmentPanel(scene, 0, 0);
+    this.panel = new EquipmentPanel(scene, 0, 0, this.runManager);
     const panelY = (h - this.panel.panelHeight) / 2;
     this.panel.setPosition(startX, panelY);
     this.panel.onHeightChanged = () => {
@@ -69,7 +72,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
 
     // Menu Container
     this.menuContainer = scene.add.container(startX + PANEL_W + GAP, 0);
-    this.buildMenu();
+    this.buildMenu(isRoguelike);
 
     const MENU_H = 300;
     this.menuContainer.setPosition(startX + PANEL_W + GAP, (h - MENU_H) / 2);
@@ -80,7 +83,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
     scene.add.existing(this);
   }
 
-  private buildMenu(): void {
+  private buildMenu(isRoguelike: boolean): void {
     const w = 220;
     const h = 300;
 
@@ -131,8 +134,8 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
     cy += 60;
 
     // Back to Map / Main Menu Button
-    const backLabel = this.isRoguelike ? i18n.t('pause.back_to_map') : i18n.t('pause.main_menu');
-    const backMessage = this.isRoguelike
+    const backLabel = isRoguelike ? i18n.t('pause.back_to_map') : i18n.t('pause.main_menu');
+    const backMessage = isRoguelike
       ? i18n.t('pause.abandon_msg_rogue')
       : i18n.t('pause.abandon_msg_menu');
     this.createButton(cx, cy, backLabel, THEME.colors.buttons.secondary, () => {
@@ -261,7 +264,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
       const val = parseInt(this.ftpInputStr, 10);
       if (!isNaN(val) && val > 0) {
           this.ftpW = Math.max(1, val);
-          RunStateManager.setFtp(this.ftpW);
+          this.runManager.setFtp(this.ftpW);
           if ('setFtp' in this.scene) {
              (this.scene as any).setFtp(this.ftpW);
           }

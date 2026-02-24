@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { THEME } from '../../theme';
 import { EquipmentPanel } from './EquipmentPanel';
+import { RunManager } from '../../roguelike/RunState';
 
 export class EquipmentOverlay extends Phaser.GameObjects.Container {
   private onClose: () => void;
@@ -9,7 +10,7 @@ export class EquipmentOverlay extends Phaser.GameObjects.Container {
   private closeLbl: Phaser.GameObjects.Text;
   private closeHit: Phaser.GameObjects.Text;
 
-  constructor(scene: Phaser.Scene, scrollY: number, onClose: () => void) {
+  constructor(scene: Phaser.Scene, scrollY: number, runManager: RunManager, onClose: () => void) {
     super(scene, 0, scrollY);
     this.setDepth(2100);
     this.onClose = onClose;
@@ -24,7 +25,7 @@ export class EquipmentOverlay extends Phaser.GameObjects.Container {
     bg.setInteractive(new Phaser.Geom.Rectangle(0, 0, w, h), Phaser.Geom.Rectangle.Contains);
     this.add(bg);
 
-    this.panel = new EquipmentPanel(scene, 0, 0);
+    this.panel = new EquipmentPanel(scene, 0, 0, runManager);
     this.panel.onHeightChanged = () => this.positionElements();
     this.add(this.panel);
 

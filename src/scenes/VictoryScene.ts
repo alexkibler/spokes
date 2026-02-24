@@ -6,7 +6,7 @@
  */
 
 import Phaser from 'phaser';
-import { RunStateManager } from '../roguelike/RunState';
+import { RunManager } from '../roguelike/RunState';
 import { SaveService } from '../services/SaveService';
 
 export class VictoryScene extends Phaser.Scene {
@@ -64,7 +64,8 @@ export class VictoryScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     // Stats
-    const run = RunStateManager.getRun();
+    const runManager = this.registry.get('runManager') as RunManager;
+    const run = runManager ? runManager.getRun() : null;
     const gold = run ? run.gold : 0;
     const floors = run ? run.runLength : 0;
 

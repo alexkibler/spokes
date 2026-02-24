@@ -5,21 +5,33 @@ import {
   NODES_PER_SPOKE,
   KM_PER_SPOKE
 } from '../CourseGenerator';
-import { RunStateManager } from '../../roguelike/RunState';
+import { RunManager } from '../../roguelike/RunState';
 
-// ─── localStorage mock ────────────────────────────────────────────────────────
-
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
+// Mock Phaser.Events.EventEmitter to avoid loading Phaser in Node
+vi.mock('phaser', () => {
+  class EventEmitter {
+    events: Record<string, Function[]> = {};
+    emit(event: string, ...args: any[]) {
+      if (this.events[event]) {
+        this.events[event].forEach(fn => fn(...args));
+      }
+      return true;
+    }
+    on(event: string, fn: Function) {
+      if (!this.events[event]) this.events[event] = [];
+      this.events[event].push(fn);
+      return this;
+    }
+    off() { return this; }
+  }
   return {
-    getItem:    (k: string) => store[k] ?? null,
-    setItem:    (k: string, v: string) => { store[k] = v; },
-    removeItem: (k: string) => { delete store[k]; },
-    clear:      () => { store = {}; },
+    default: {
+      Events: {
+        EventEmitter
+      }
+    }
   };
-})();
-
-vi.stubGlobal('localStorage', localStorageMock);
+});
 
 // ─── computeNumSpokes ─────────────────────────────────────────────────────────
 
@@ -47,12 +59,14 @@ describe('computeNumSpokes', () => {
 // ─── generateHubAndSpokeMap ───────────────────────────────────────────────────
 
 describe('generateHubAndSpokeMap', () => {
+  let runManager: RunManager;
+
   beforeEach(() => {
-    localStorageMock.clear();
+    runManager = new RunManager();
   });
 
   it('generates a hub and final boss', () => {
-    const run = RunStateManager.startNewRun(2, 20, 'normal');
+    const run = runManager.startNewRun(2, 20, 'normal');
     generateHubAndSpokeMap(run);
 
     const hub = run.nodes.find(n => n.id === 'node_hub');
@@ -65,7 +79,7 @@ describe('generateHubAndSpokeMap', () => {
   });
 
   it('generates 2 spokes for a 20 km run', () => {
-    const run = RunStateManager.startNewRun(2, 20, 'normal');
+    const run = runManager.startNewRun(2, 20, 'normal');
     generateHubAndSpokeMap(run);
 
     const numSpokes = computeNumSpokes(20); // 2
@@ -81,7 +95,7 @@ describe('generateHubAndSpokeMap', () => {
   });
 
   it('generates exactly the expected nodes per spoke', () => {
-    const run = RunStateManager.startNewRun(4, 200, 'normal');
+    const run = runManager.startNewRun(4, 200, 'normal');
     generateHubAndSpokeMap(run);
 
     const numSpokes = computeNumSpokes(200);
@@ -94,7 +108,7 @@ describe('generateHubAndSpokeMap', () => {
   });
 
   it('each island contains exactly 1 shop and 1 boss', () => {
-    const run = RunStateManager.startNewRun(4, 200, 'normal');
+    const run = runManager.startNewRun(4, 200, 'normal');
     generateHubAndSpokeMap(run);
 
     const numSpokes = computeNumSpokes(200);
@@ -106,7 +120,7 @@ describe('generateHubAndSpokeMap', () => {
   });
 
   it('island random nodes use only standard/event/hard types', () => {
-    const run = RunStateManager.startNewRun(4, 200, 'normal');
+    const run = runManager.startNewRun(4, 200, 'normal');
     generateHubAndSpokeMap(run);
 
     // Random nodes are at floor: entry, mid, pre-boss.
@@ -127,7 +141,7 @@ describe('generateHubAndSpokeMap', () => {
   });
 
   it('all boss nodes have spokeId metadata', () => {
-    const run = RunStateManager.startNewRun(4, 200, 'normal');
+    const run = runManager.startNewRun(4, 200, 'normal');
     generateHubAndSpokeMap(run);
 
     const bossNodes = run.nodes.filter(n => n.type === 'boss');
@@ -138,7 +152,7 @@ describe('generateHubAndSpokeMap', () => {
   });
 
   it('sets runLength equal to the number of spokes', () => {
-    const run = RunStateManager.startNewRun(99, 100, 'normal');
+    const run = runManager.startNewRun(99, 100, 'normal');
     generateHubAndSpokeMap(run);
 
     const expected = computeNumSpokes(100);
@@ -146,7 +160,7 @@ describe('generateHubAndSpokeMap', () => {
   });
 
   it('scales up to 8 spokes for a 400 km run', () => {
-    const run = RunStateManager.startNewRun(8, 400, 'normal');
+    const run = runManager.startNewRun(8, 400, 'normal');
     generateHubAndSpokeMap(run);
 
     expect(run.runLength).toBe(8);
@@ -155,10 +169,10 @@ describe('generateHubAndSpokeMap', () => {
   });
 
   it('baseKm scales proportionally with totalDistanceKm', () => {
-    const shortRun = RunStateManager.startNewRun(2, 50, 'normal');
+    const shortRun = runManager.startNewRun(2, 50, 'normal');
     generateHubAndSpokeMap(shortRun);
 
-    const longRun = RunStateManager.startNewRun(4, 200, 'normal');
+    const longRun = runManager.startNewRun(4, 200, 'normal');
     generateHubAndSpokeMap(longRun);
 
     // Find the hub→s1 edge for a spoke in each run and compare distances
@@ -170,7 +184,7 @@ describe('generateHubAndSpokeMap', () => {
   });
 
   it('all edges connect nodes that exist in the node list', () => {
-    const run = RunStateManager.startNewRun(4, 200, 'normal');
+    const run = runManager.startNewRun(4, 200, 'normal');
     generateHubAndSpokeMap(run);
 
     const nodeIds = new Set(run.nodes.map(n => n.id));

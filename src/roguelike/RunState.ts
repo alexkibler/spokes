@@ -1,16 +1,17 @@
 /**
- * RunState.ts
+ * RunManager.ts
  *
  * Defines the data structures for the roguelike progression system.
  * Tracks player progress, currency, and the procedurally generated map.
  */
 
+import Phaser from 'phaser';
 import type { CourseProfile } from '../course/CourseProfile';
 import type { EliteChallenge } from './EliteChallenge';
 import { FitWriter } from '../fit/FitWriter';
-import { SaveService } from '../services/SaveService';
 import type { Units } from '../scenes/MenuScene';
 import { ITEM_REGISTRY, type EquipmentSlot } from './ItemRegistry';
+import type { SavedRun } from '../services/SaveService';
 
 export type { EquipmentSlot };
 
@@ -91,17 +92,23 @@ export interface RunData {
   };
 }
 
-/** Global singleton or context-managed state for the current run */
-export class RunStateManager {
-  private static instance: RunData | null = null;
+/** Context-managed state for the current run */
+export class RunManager extends Phaser.Events.EventEmitter {
+  private runData: RunData | null = null;
 
-  static setRealTrainerRun(val: boolean): void {
-    if (this.instance) this.instance.isRealTrainerRun = val;
+  constructor(initialData?: RunData) {
+    super();
+    if (initialData) {
+      this.runData = initialData;
+    }
   }
 
-  static startNewRun(runLength: number, totalDistanceKm: number, difficulty: 'easy' | 'normal' | 'hard', ftpW = 200, weightKg = 68, units: Units = 'imperial'): RunData {
-    SaveService.clear();
-    this.instance = {
+  setRealTrainerRun(val: boolean): void {
+    if (this.runData) this.runData.isRealTrainerRun = val;
+  }
+
+  startNewRun(runLength: number, totalDistanceKm: number, difficulty: 'easy' | 'normal' | 'hard', ftpW = 200, weightKg = 68, units: Units = 'imperial'): RunData {
+    this.runData = {
       gold: 0,
       inventory: [],
       equipped: {},
@@ -124,11 +131,11 @@ export class RunStateManager {
       stats: { totalMapDistanceM: 0, totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
     };
     this.persist();
-    return this.instance;
+    return this.runData;
   }
 
-  static loadFromSave(saved: import('../services/SaveService').SavedRun): RunData {
-    this.instance = {
+  loadFromSave(saved: SavedRun): RunData {
+    this.runData = {
       modifiers: { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 }, // default for old saves
       modifierLog: [], // session-only, not persisted
       stats: { totalMapDistanceM: 0, totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
@@ -139,43 +146,44 @@ export class RunStateManager {
       fitWriter: new FitWriter(Date.now()),
     };
     // Re-apply modifiers from equipped items (modifiers are not persisted).
-    for (const itemId of Object.values(this.instance.equipped)) {
+    for (const itemId of Object.values(this.runData.equipped)) {
       if (!itemId) continue;
       const def = ITEM_REGISTRY[itemId];
       if (def?.modifier) {
         this.applyModifier(def.modifier, `${def.label} (equipped)`);
       }
     }
-    return this.instance;
+    this.persist();
+    return this.runData;
   }
 
-  static getRun(): RunData | null {
-    return this.instance;
+  getRun(): RunData | null {
+    return this.runData;
   }
 
-  static setCurrentNode(nodeId: string): void {
-    if (this.instance) {
-      this.instance.currentNodeId = nodeId;
-      if (!this.instance.visitedNodeIds.includes(nodeId)) {
-        this.instance.visitedNodeIds.push(nodeId);
+  setCurrentNode(nodeId: string): void {
+    if (this.runData) {
+      this.runData.currentNodeId = nodeId;
+      if (!this.runData.visitedNodeIds.includes(nodeId)) {
+        this.runData.visitedNodeIds.push(nodeId);
       }
       this.persist();
     }
   }
 
-  static returnToHub(): void {
-    if (this.instance) {
-      this.instance.currentNodeId = 'node_hub';
+  returnToHub(): void {
+    if (this.runData) {
+      this.runData.currentNodeId = 'node_hub';
       // Do NOT wipe visitedNodeIds
       this.persist();
     }
   }
 
-  static removeFromInventory(item: string): boolean {
-    if (this.instance) {
-      const idx = this.instance.inventory.indexOf(item);
+  removeFromInventory(item: string): boolean {
+    if (this.runData) {
+      const idx = this.runData.inventory.indexOf(item);
       if (idx !== -1) {
-        this.instance.inventory.splice(idx, 1);
+        this.runData.inventory.splice(idx, 1);
         this.persist();
         return true;
       }
@@ -184,47 +192,47 @@ export class RunStateManager {
   }
 
   /** Sets the active edge. Does NOT persist — we intentionally skip saving mid-ride state. */
-  static setActiveEdge(edge: MapEdge | null): void {
+  setActiveEdge(edge: MapEdge | null): void {
     console.log(`[SPOKES] setActiveEdge: ${edge ? `${edge.from}→${edge.to} isCleared=${edge.isCleared}` : 'null'}`);
-    if (this.instance) {
-      this.instance.activeEdge = edge;
+    if (this.runData) {
+      this.runData.activeEdge = edge;
     }
   }
 
   /** Marks the currently active edge as cleared and advances currentNodeId to the destination. Returns true if it was newly cleared. */
-  static completeActiveEdge(): boolean {
-    const ae = this.instance?.activeEdge;
-    console.log(`[SPOKES] completeActiveEdge: activeEdge=${ae ? `${ae.from}→${ae.to} isCleared=${ae.isCleared}` : 'null'} currentNodeId=${this.instance?.currentNodeId}`);
+  completeActiveEdge(): boolean {
+    const ae = this.runData?.activeEdge;
+    console.log(`[SPOKES] completeActiveEdge: activeEdge=${ae ? `${ae.from}→${ae.to} isCleared=${ae.isCleared}` : 'null'} currentNodeId=${this.runData?.currentNodeId}`);
 
-    if (this.instance && this.instance.activeEdge) {
+    if (this.runData && this.runData.activeEdge) {
       // Find the edge in the main list to update it persistently
-      const edge = this.instance.edges.find(e =>
-        e.from === this.instance!.activeEdge!.from &&
-        e.to === this.instance!.activeEdge!.to
+      const edge = this.runData.edges.find(e =>
+        e.from === this.runData!.activeEdge!.from &&
+        e.to === this.runData!.activeEdge!.to
       );
 
       console.log(`[SPOKES] completeActiveEdge: edge in list found=${!!edge} wasCleared=${edge?.isCleared}`);
 
       if (edge) {
         // Derive destination — whichever end of the edge isn't the origin
-        const destination = edge.from === this.instance.currentNodeId
+        const destination = edge.from === this.runData.currentNodeId
           ? edge.to
           : edge.from;
         console.log(`[SPOKES] completeActiveEdge: destination=${destination}`);
-        this.instance.currentNodeId = destination;
-        if (!this.instance.visitedNodeIds.includes(destination)) {
-          this.instance.visitedNodeIds.push(destination);
+        this.runData.currentNodeId = destination;
+        if (!this.runData.visitedNodeIds.includes(destination)) {
+          this.runData.visitedNodeIds.push(destination);
         }
 
         // If destination is a shop or event, signal MapScene to open the overlay after the ride
-        const destNode = this.instance.nodes.find(n => n.id === destination);
-        this.instance.pendingNodeAction =
+        const destNode = this.runData.nodes.find(n => n.id === destination);
+        this.runData.pendingNodeAction =
           (destNode?.type === 'shop' || destNode?.type === 'event') ? destNode.type : null;
 
         if (!edge.isCleared) {
           edge.isCleared = true;
           // Also update the active reference
-          this.instance.activeEdge.isCleared = true;
+          this.runData.activeEdge.isCleared = true;
           this.persist();
           console.log(`[SPOKES] completeActiveEdge: returning true (first clear)`);
           return true;
@@ -240,49 +248,44 @@ export class RunStateManager {
     return false;
   }
 
-  static setPendingNodeAction(action: 'shop' | 'event' | null): void {
-    if (this.instance) {
-      this.instance.pendingNodeAction = action;
+  setPendingNodeAction(action: 'shop' | 'event' | null): void {
+    if (this.runData) {
+      this.runData.pendingNodeAction = action;
     }
   }
 
-  static setFtp(w: number): void {
-    if (this.instance) {
-      this.instance.ftpW = w;
+  setFtp(w: number): void {
+    if (this.runData) {
+      this.runData.ftpW = w;
       this.persist();
     }
   }
 
-  static getLastFtp(): number {
-    const { save } = SaveService.loadResult();
-    return save?.runData.ftpW ?? 200;
-  }
-
-  static addGold(amount: number): void {
-    if (this.instance) {
-      this.instance.gold += amount;
+  addGold(amount: number): void {
+    if (this.runData) {
+      this.runData.gold += amount;
       this.persist();
     }
   }
 
-  static spendGold(amount: number): boolean {
-    if (this.instance && this.instance.gold >= amount) {
-      this.instance.gold -= amount;
+  spendGold(amount: number): boolean {
+    if (this.runData && this.runData.gold >= amount) {
+      this.runData.gold -= amount;
       this.persist();
       return true;
     }
     return false;
   }
 
-  static addToInventory(item: string): void {
-    if (this.instance) {
-      this.instance.inventory.push(item);
+  addToInventory(item: string): void {
+    if (this.runData) {
+      this.runData.inventory.push(item);
       this.persist();
     }
   }
 
-  static getModifiers(): RunModifiers {
-    return this.instance?.modifiers ?? { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 };
+  getModifiers(): RunModifiers {
+    return this.runData?.modifiers ?? { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 };
   }
 
   /**
@@ -290,21 +293,21 @@ export class RunStateManager {
    * - powerMult / weightMult: multiplicative
    * - dragReduction: additive, capped at 0.99
    */
-  static applyModifier(delta: Partial<RunModifiers>, label?: string): void {
-    if (!this.instance) return;
-    const m = this.instance.modifiers;
+  applyModifier(delta: Partial<RunModifiers>, label?: string): void {
+    if (!this.runData) return;
+    const m = this.runData.modifiers;
     if (delta.powerMult !== undefined)    m.powerMult     = m.powerMult * delta.powerMult;
     if (delta.dragReduction !== undefined) m.dragReduction = Math.min(0.99, m.dragReduction + delta.dragReduction);
     if (delta.weightMult !== undefined)   m.weightMult    = Math.max(0.01, m.weightMult * delta.weightMult);
     if (delta.crrMult !== undefined)      m.crrMult       = Math.max(0.01, m.crrMult * delta.crrMult);
-    if (label) this.instance.modifierLog.push({ label, ...delta });
+    if (label) this.runData.modifierLog.push({ label, ...delta });
     this.persist();
   }
 
   /** Reverses a previously-applied modifier delta (used when unequipping). */
-  private static reverseModifier(delta: Partial<RunModifiers>): void {
-    if (!this.instance) return;
-    const m = this.instance.modifiers;
+  private reverseModifier(delta: Partial<RunModifiers>): void {
+    if (!this.runData) return;
+    const m = this.runData.modifiers;
     if (delta.powerMult    !== undefined) m.powerMult     = m.powerMult / delta.powerMult;
     if (delta.dragReduction !== undefined) m.dragReduction = Math.max(0, m.dragReduction - delta.dragReduction);
     if (delta.weightMult   !== undefined) m.weightMult    = m.weightMult / delta.weightMult;
@@ -316,21 +319,21 @@ export class RunStateManager {
    * If the slot is already occupied, the existing item is unequipped first.
    * Returns false if the item is not in inventory or not equippable.
    */
-  static equipItem(itemId: string): boolean {
-    if (!this.instance) return false;
+  equipItem(itemId: string): boolean {
+    if (!this.runData) return false;
     const def = ITEM_REGISTRY[itemId];
     if (!def?.slot) return false;
 
-    const idx = this.instance.inventory.indexOf(itemId);
+    const idx = this.runData.inventory.indexOf(itemId);
     if (idx === -1) return false;
 
     // Unequip whatever is currently in the slot (if anything).
-    if (this.instance.equipped[def.slot]) {
+    if (this.runData.equipped[def.slot]) {
       this.unequipItem(def.slot);
     }
 
-    this.instance.inventory.splice(idx, 1);
-    this.instance.equipped[def.slot] = itemId;
+    this.runData.inventory.splice(idx, 1);
+    this.runData.equipped[def.slot] = itemId;
     if (def.modifier) {
       this.applyModifier(def.modifier, `${def.label} (equipped)`);
     }
@@ -342,9 +345,9 @@ export class RunStateManager {
    * Removes the item in the given slot, reverses its modifier, and returns it to inventory.
    * Returns the item id, or undefined if the slot was empty.
    */
-  static unequipItem(slot: EquipmentSlot): string | undefined {
-    if (!this.instance) return undefined;
-    const itemId = this.instance.equipped[slot];
+  unequipItem(slot: EquipmentSlot): string | undefined {
+    if (!this.runData) return undefined;
+    const itemId = this.runData.equipped[slot];
     if (!itemId) return undefined;
 
     const def = ITEM_REGISTRY[itemId];
@@ -352,19 +355,19 @@ export class RunStateManager {
       this.reverseModifier(def.modifier);
       // Remove the corresponding modifierLog entry.
       const logLabel = `${def.label} (equipped)`;
-      const logIdx = this.instance.modifierLog.findIndex(e => e.label === logLabel);
-      if (logIdx !== -1) this.instance.modifierLog.splice(logIdx, 1);
+      const logIdx = this.runData.modifierLog.findIndex(e => e.label === logLabel);
+      if (logIdx !== -1) this.runData.modifierLog.splice(logIdx, 1);
     }
 
-    delete this.instance.equipped[slot];
-    this.instance.inventory.push(itemId);
+    delete this.runData.equipped[slot];
+    this.runData.inventory.push(itemId);
     this.persist();
     return itemId;
   }
 
-  static recordSegmentStats(distanceM: number, recordCount: number, powerSum: number, cadenceSum: number): void {
-    if (!this.instance) return;
-    const s = this.instance.stats;
+  recordSegmentStats(distanceM: number, recordCount: number, powerSum: number, cadenceSum: number): void {
+    if (!this.runData) return;
+    const s = this.runData.stats;
     s.totalRiddenDistanceM += distanceM;
     s.totalRecordCount     += recordCount;
     s.totalPowerSum        += powerSum;
@@ -372,10 +375,10 @@ export class RunStateManager {
     this.persist();
   }
 
-  /** Saves current run state to localStorage. Called after every meaningful state change. */
-  private static persist(): void {
-    if (this.instance) {
-      SaveService.save(this.instance, this.instance.weightKg, this.instance.units);
+  /** Emits 'save' event with current state. */
+  private persist(): void {
+    if (this.runData) {
+      this.emit('save', this.runData);
     }
   }
 }
