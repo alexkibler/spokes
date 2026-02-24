@@ -4,8 +4,8 @@
  * Procedurally generates the Hub-and-Spoke map structure and course profiles.
  */
 
-import { generateCourseProfile, type CourseProfile, type SurfaceType } from './CourseProfile';
-import type { RunData, MapNode, MapEdge, NodeType } from '../roguelike/RunState';
+import { generateCourseProfile, type SurfaceType } from './CourseProfile';
+import type { RunData, MapNode, MapEdge } from '../roguelike/RunState';
 
 export const SPOKE_IDS = ['plains', 'coast', 'mountain', 'forest'] as const;
 export type SpokeId = typeof SPOKE_IDS[number];

@@ -80,6 +80,7 @@ export const THEME = {
       event: 0x4b0082,
       elite: 0x8a6800,
       finish: 0x000000,
+      boss: 0xcc0000, // Distinct red for spoke boss
     },
 
     status: {

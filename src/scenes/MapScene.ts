@@ -6,10 +6,10 @@
  */
 
 import Phaser from 'phaser';
-import { RunStateManager, type MapNode, type MapEdge, type NodeType, type ModifierLogEntry } from '../roguelike/RunState';
+import { RunStateManager, type MapNode, type NodeType, type ModifierLogEntry } from '../roguelike/RunState';
 import { generateCourseProfile, invertCourseProfile, type SurfaceType, type CourseProfile } from '../course/CourseProfile';
-import { generateHubAndSpokeMap, type SpokeId } from '../course/CourseGenerator';
-import { getRandomChallenge, generateEliteCourseProfile, type EliteChallenge } from '../roguelike/EliteChallenge';
+import { generateHubAndSpokeMap } from '../course/CourseGenerator';
+import { type EliteChallenge } from '../roguelike/EliteChallenge';
 import type { Units } from './MenuScene';
 import { RemoteService } from '../services/RemoteService';
 import { SessionService } from '../services/SessionService';
@@ -78,7 +78,6 @@ export class MapScene extends Phaser.Scene {
   private returnBtnBg: Phaser.GameObjects.Rectangle | null = null;
   private returnBtnTxt: Phaser.GameObjects.Text | null = null;
 
-  private static readonly FLOOR_SPACING = 80;
   private isDragging = false;
   private dragStartY = 0;
   private dragStartScrollY = 0;

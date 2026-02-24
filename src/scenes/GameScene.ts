@@ -1284,13 +1284,13 @@ export class GameScene extends Phaser.Scene {
       }
 
       const run = RunStateManager.getRun();
-      const currentNode = run?.nodes.find(n => n.id === run.currentNodeId);
+      const currentNode = run ? run.nodes.find(n => n.id === run.currentNodeId) : undefined;
       isFinishNode = currentNode?.type === 'finish';
 
       // Boss Logic: Award Medal
       if (currentNode?.type === 'boss' && currentNode.metadata?.spokeId && stats.bossResult?.playerWon) {
         const medalId = `medal_${currentNode.metadata.spokeId}`;
-        if (!run.inventory.includes(medalId)) {
+        if (run && !run.inventory.includes(medalId)) {
           RunStateManager.addToInventory(medalId);
           stats.challengeResult = { success: true, reward: `${currentNode.metadata.spokeId.toUpperCase()} MEDAL` };
         }
