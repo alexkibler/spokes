@@ -491,6 +491,13 @@ export class GameScene extends Phaser.Scene {
     RemoteService.getInstance().onResume(this.onRemoteResumeBound);
     RemoteService.getInstance().onBackToMap(this.onRemoteBackToMapBound);
     RemoteService.getInstance().onSaveQuit(this.onRemoteSaveQuitBound);
+
+    // Dev mode: skip the ride entirely and instantly complete the edge
+    if (this.isDevMode && this.isRoguelike) {
+      this.rideComplete = true;
+      this.showRideEndOverlay(true);
+      return;
+    }
   }
 
   update(_time: number, delta: number): void {

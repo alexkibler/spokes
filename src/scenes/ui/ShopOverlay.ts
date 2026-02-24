@@ -1,11 +1,58 @@
 import Phaser from 'phaser';
 import { RunStateManager } from '../../roguelike/RunState';
+import { ITEM_REGISTRY, ALL_SLOTS, formatModifierLines, type EquipmentSlot } from '../../roguelike/ItemRegistry';
 import { THEME } from '../../theme';
 import { Button } from '../../ui/Button';
+import i18n from '../../i18n';
+
+interface ShopItem {
+  id: string;
+  label: string;
+  description: string;
+  basePrice: number;
+  color: number;
+  hoverColor: number;
+  /** false = one per run (tailwind), true = stackable with scaling price */
+  stackable: boolean;
+}
+
+const CATALOG: ShopItem[] = [
+  { id: 'tailwind',        label: 'TAILWIND',          description: '2× power toggle during ride',     basePrice: 100, color: 0x2a2a44, hoverColor: 0x3a3a5a, stackable: false },
+  { id: 'teleport',        label: 'TELEPORT SCROLL',   description: 'Warp to any visited node',         basePrice: 10,  color: 0x442244, hoverColor: 0x553355, stackable: true  },
+  { id: 'reroll_voucher',  label: 'REROLL VOUCHER',    description: 'Reroll reward choices once',       basePrice: 50,  color: 0x2a2a08, hoverColor: 0x3a3a10, stackable: true  },
+  { id: 'aero_helmet',     label: 'AERO HELMET',       description: '+3% drag reduction (stacks)',      basePrice: 60,  color: 0x1a2a3a, hoverColor: 0x2a3a4a, stackable: true  },
+  { id: 'gold_crank',      label: 'SOLID GOLD CRANK',  description: '×1.25 permanent power (stacks)',   basePrice: 120, color: 0x3a2a00, hoverColor: 0x4a3a00, stackable: true  },
+  { id: 'antigrav_pedals', label: 'ANTIGRAV PEDALS',   description: '-8% rider weight (stacks)',         basePrice: 90,  color: 0x1a3a1a, hoverColor: 0x2a4a2a, stackable: true  },
+  { id: 'dirt_tires',      label: 'DIRT TIRES',        description: '-35% rolling resistance (stacks)', basePrice: 70,  color: 0x1a1a0a, hoverColor: 0x2a2a14, stackable: true  },
+  { id: 'carbon_frame',    label: 'CARBON FRAME',      description: '-12% weight, +3% aero (stacks)',   basePrice: 150, color: 0x0a1a2a, hoverColor: 0x142030, stackable: true  },
+];
+
+/** Sell price = 50% of base price (rounded down). Only items in CATALOG are sellable. */
+const SELL_PRICES: Record<string, number> = Object.fromEntries(
+  CATALOG.map(item => [item.id, Math.floor(item.basePrice / 2)])
+);
+
+const ITEM_H = 46;
+const ITEM_GAP = 6;
+const SELL_ROW_H = 36;
+const SELL_ROW_GAP = 4;
+const LW = 350; // left panel width
+const RW = 420; // right panel width
+const PANEL_GAP = 20;
 
 export class ShopOverlay extends Phaser.GameObjects.Container {
-  private goldTxt: Phaser.GameObjects.Text;
+  private goldTxt!: Phaser.GameObjects.Text;
   private onAction: () => void;
+
+  // Groups for panels we rebuild on refresh
+  private itemsGroup: Phaser.GameObjects.GameObject[] = [];
+  private catalogBtns: Button[] = [];
+
+  // Panel geometry (set in constructor, used in rebuild methods)
+  private lx = 0; // left panel x (world)
+  private rx = 0; // right panel x
+  private py_ = 0;
+  private lw = LW;
 
   constructor(scene: Phaser.Scene, scrollY: number, onAction: () => void, onClose: () => void) {
     super(scene, 0, scrollY);
@@ -15,141 +62,68 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
     const w = scene.scale.width;
     const h = scene.scale.height;
 
-    // Dim background
+    // ── Geometry ─────────────────────────────────────────────────────────────
+    // Right panel height drives layout (catalog has fixed item count)
+    const rHeaderH = 80;
+    const rFooterH = 48;
+    const ph = rHeaderH + CATALOG.length * (ITEM_H + ITEM_GAP) + rFooterH;
+    const totalW = LW + PANEL_GAP + RW;
+    const lx = Math.floor((w - totalW) / 2);
+    const rx = lx + LW + PANEL_GAP;
+    const py = Math.floor((h - ph) / 2);
+
+    this.lx = lx; this.rx = rx; this.py_ = py;
+
+    // ── Dim background ───────────────────────────────────────────────────────
     const bg = scene.add.graphics();
     bg.fillStyle(THEME.colors.ui.overlayDim, THEME.colors.ui.overlayDimAlpha);
     bg.fillRect(0, 0, w, h);
     bg.setInteractive(new Phaser.Geom.Rectangle(0, 0, w, h), Phaser.Geom.Rectangle.Contains);
     this.add(bg);
 
-    // ── Item catalog ────────────────────────────────────────────────────────
-    interface ShopItem {
-      id: string;
-      label: string;
-      description: string;
-      basePrice: number;
-      color: number;
-      hoverColor: number;
-      /** false = one per run (tailwind), true = stackable with scaling price */
-      stackable: boolean;
-    }
-    const CATALOG: ShopItem[] = [
-      { id: 'tailwind',        label: 'TAILWIND',          description: '2× power toggle during ride',     basePrice: 100, color: 0x2a2a44, hoverColor: 0x3a3a5a, stackable: false },
-      { id: 'teleport',        label: 'TELEPORT SCROLL',   description: 'Warp to any visited node',         basePrice: 10,  color: 0x442244, hoverColor: 0x553355, stackable: true  },
-      { id: 'reroll_voucher',  label: 'REROLL VOUCHER',    description: 'Reroll reward choices once',       basePrice: 50,  color: 0x2a2a08, hoverColor: 0x3a3a10, stackable: true  },
-      { id: 'aero_helmet',     label: 'AERO HELMET',       description: '+3% drag reduction (stacks)',      basePrice: 60,  color: 0x1a2a3a, hoverColor: 0x2a3a4a, stackable: true  },
-      { id: 'gold_crank',      label: 'SOLID GOLD CRANK',  description: '×1.25 permanent power (stacks)',   basePrice: 120, color: 0x3a2a00, hoverColor: 0x4a3a00, stackable: true  },
-      { id: 'antigrav_pedals', label: 'ANTIGRAV PEDALS',   description: '-8% rider weight (stacks)',         basePrice: 90,  color: 0x1a3a1a, hoverColor: 0x2a4a2a, stackable: true  },
-      { id: 'dirt_tires',      label: 'DIRT TIRES',        description: '-35% rolling resistance (stacks)', basePrice: 70,  color: 0x1a1a0a, hoverColor: 0x2a2a14, stackable: true  },
-      { id: 'carbon_frame',    label: 'CARBON FRAME',      description: '-12% weight, +3% aero (stacks)',   basePrice: 150, color: 0x0a1a2a, hoverColor: 0x142030, stackable: true  },
-    ];
+    // ── Left panel background ────────────────────────────────────────────────
+    const leftBg = scene.add.graphics();
+    leftBg.fillStyle(THEME.colors.ui.panelBg, 1);
+    leftBg.fillRoundedRect(lx, py, LW, ph, 12);
+    leftBg.lineStyle(2, THEME.colors.ui.panelBorder, 1);
+    leftBg.strokeRoundedRect(lx, py, LW, ph, 12);
+    this.add(leftBg);
 
-    const ITEM_H = 52;
-    const pw = 420;
-    const ph = 90 + CATALOG.length * (ITEM_H + 8) + 50;
-    const px = (w - pw) / 2;
-    const py = (h - ph) / 2;
+    // Left panel title
+    const leftTitle = scene.add.text(lx + LW / 2, py + 22, 'YOUR ITEMS', {
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.title,
+      color: '#aaddff', fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.add(leftTitle);
 
-    const panel = scene.add.graphics();
-    panel.fillStyle(THEME.colors.ui.panelBg, 1);
-    panel.fillRoundedRect(px, py, pw, ph, 12);
-    panel.lineStyle(2, THEME.colors.ui.panelBorder, 1);
-    panel.strokeRoundedRect(px, py, pw, ph, 12);
-    this.add(panel);
+    // ── Right panel background ───────────────────────────────────────────────
+    const rightBg = scene.add.graphics();
+    rightBg.fillStyle(THEME.colors.ui.panelBg, 1);
+    rightBg.fillRoundedRect(rx, py, RW, ph, 12);
+    rightBg.lineStyle(2, THEME.colors.ui.panelBorder, 1);
+    rightBg.strokeRoundedRect(rx, py, RW, ph, 12);
+    this.add(rightBg);
 
-    this.add(scene.add.text(w / 2, py + 24, 'TRAIL SHOP', {
-      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.title, color: THEME.colors.text.gold, fontStyle: 'bold',
-    }).setOrigin(0.5));
+    const rightTitle = scene.add.text(rx + RW / 2, py + 22, 'TRAIL SHOP', {
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.title,
+      color: THEME.colors.text.gold, fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.add(rightTitle);
 
     const run = RunStateManager.getRun();
-    this.goldTxt = scene.add.text(w / 2, py + 58, `GOLD: ${run?.gold ?? 0}`, {
+    this.goldTxt = scene.add.text(rx + RW / 2, py + 52, `GOLD: ${run?.gold ?? 0}`, {
       fontFamily: THEME.fonts.main, fontSize: '15px', color: THEME.colors.text.main,
     }).setOrigin(0.5);
     this.add(this.goldTxt);
 
-    const itemX = w / 2;
-    let firstItemY = py + 82;
+    // ── Build panels ─────────────────────────────────────────────────────────
+    this.buildItemsPanel();
+    this.buildCatalog();
 
-    // ── Build rows ──────────────────────────────────────────────────────────
-    const btns: Button[] = [];
-
-    /** Total owned (inventory + equipped) for price scaling and sold-out checks. */
-    const totalOwned = (itemId: string): number => {
-      const runData = RunStateManager.getRun();
-      if (!runData) return 0;
-      const inInv = runData.inventory.filter(i => i === itemId).length;
-      const inSlot = Object.values(runData.equipped).filter(id => id === itemId).length;
-      return inInv + inSlot;
-    };
-
-    const itemPrice = (item: ShopItem): number => {
-      return Math.round(item.basePrice * Math.pow(1.5, totalOwned(item.id)));
-    };
-
-    const refreshShop = () => {
-      const runData = RunStateManager.getRun();
-      if (!runData) return;
-
-      this.goldTxt.setText(`GOLD: ${runData.gold}`);
-
-      for (let i = 0; i < CATALOG.length; i++) {
-        const item = CATALOG[i];
-        const btn  = btns[i];
-        const price = itemPrice(item);
-        const owned = totalOwned(item.id);
-        const soldOut = !item.stackable && owned > 0;
-        const canAfford = runData.gold >= price;
-
-        if (soldOut) {
-          btn.setText(`${item.label}\n✓ OWNED`);
-          btn.setEnabled(false);
-        } else if (!canAfford) {
-          const ownedStr = owned > 0 ? ` (×${owned})` : '';
-          btn.setText(`${item.label}${ownedStr}\n${item.description} — ${price} GOLD`);
-          btn.setEnabled(false);
-        } else {
-          const ownedStr = owned > 0 ? ` (×${owned})` : '';
-          btn.setText(`${item.label}${ownedStr}\n${item.description} — ${price} GOLD`);
-          btn.setEnabled(true);
-        }
-      }
-    };
-
-    for (let i = 0; i < CATALOG.length; i++) {
-      const item = CATALOG[i];
-      const iy = firstItemY + i * (ITEM_H + 8);
-
-      const btn = new Button(scene, {
-        x: itemX,
-        y: iy + ITEM_H/2,
-        width: pw - 20,
-        height: ITEM_H,
-        text: '',
-        color: item.color,
-        hoverColor: item.hoverColor,
-        onClick: () => {
-          const price = itemPrice(item);
-          if (!RunStateManager.spendGold(price)) return;
-
-          // All items (equipment and consumable alike) go into inventory unequipped.
-          // Equipment items are activated via the Equipment overlay.
-          RunStateManager.addToInventory(item.id);
-          refreshShop();
-          this.onAction();
-        }
-      });
-
-      this.add(btn);
-      btns.push(btn);
-    }
-
-    refreshShop();
-
-    // ── Close button ────────────────────────────────────────────────────────
-    const closeBtnY = py + ph - 28;
+    // ── Close button ─────────────────────────────────────────────────────────
     const closeBtn = new Button(scene, {
-      x: w / 2,
-      y: closeBtnY,
+      x: rx + RW / 2,
+      y: py + ph - rFooterH / 2,
       text: 'CLOSE',
       onClick: () => {
         this.destroy();
@@ -161,5 +135,264 @@ export class ShopOverlay extends Phaser.GameObjects.Container {
     this.add(closeBtn);
 
     scene.add.existing(this);
+  }
+
+  // ── Items panel (left) ───────────────────────────────────────────────────
+
+  private buildItemsPanel(): void {
+    // Destroy previous content
+    for (const obj of this.itemsGroup) {
+      if (obj && (obj as Phaser.GameObjects.GameObject).active) {
+        (obj as Phaser.GameObjects.GameObject).destroy();
+      }
+    }
+    this.itemsGroup = [];
+
+    const scene = this.scene;
+    const run = RunStateManager.getRun();
+    if (!run) return;
+
+    const lx = this.lx;
+    const py = this.py_;
+    const lw = this.lw;
+    let y = py + 48;
+
+    // ── Equipped section ─────────────────────────────────────────────────────
+    const eqHeader = scene.add.text(lx + 14, y, 'EQUIPPED', {
+      fontFamily: THEME.fonts.main, fontSize: '10px',
+      color: THEME.colors.text.muted, fontStyle: 'bold', letterSpacing: 2,
+    }).setOrigin(0, 0.5);
+    this.add(eqHeader);
+    this.itemsGroup.push(eqHeader);
+
+    const div1 = scene.add.graphics();
+    div1.lineStyle(1, 0x2a2a44, 1);
+    div1.lineBetween(lx + 14, y + 12, lx + lw - 14, y + 12);
+    this.add(div1);
+    this.itemsGroup.push(div1);
+
+    y += 24;
+
+    for (const slot of ALL_SLOTS) {
+      const equippedId = run.equipped[slot as EquipmentSlot];
+      this.addSlotRow(slot as EquipmentSlot, equippedId ?? null, lx, lw, y);
+      y += SELL_ROW_H + SELL_ROW_GAP;
+    }
+
+    y += 6;
+
+    // ── Inventory section ────────────────────────────────────────────────────
+    const invHeader = scene.add.text(lx + 14, y, 'INVENTORY', {
+      fontFamily: THEME.fonts.main, fontSize: '10px',
+      color: THEME.colors.text.muted, fontStyle: 'bold', letterSpacing: 2,
+    }).setOrigin(0, 0.5);
+    this.add(invHeader);
+    this.itemsGroup.push(invHeader);
+
+    const div2 = scene.add.graphics();
+    div2.lineStyle(1, 0x2a2a44, 1);
+    div2.lineBetween(lx + 14, y + 12, lx + lw - 14, y + 12);
+    this.add(div2);
+    this.itemsGroup.push(div2);
+
+    y += 24;
+
+    // Group by id
+    const invCounts = new Map<string, number>();
+    for (const id of run.inventory) {
+      invCounts.set(id, (invCounts.get(id) ?? 0) + 1);
+    }
+
+    if (invCounts.size === 0) {
+      const empty = scene.add.text(lx + lw / 2, y + 10, '— nothing —', {
+        fontFamily: THEME.fonts.main, fontSize: '11px', color: '#444466',
+      }).setOrigin(0.5, 0);
+      this.add(empty);
+      this.itemsGroup.push(empty);
+    } else {
+      for (const [itemId, count] of invCounts) {
+        this.addInventoryRow(itemId, count, lx, lw, y);
+        y += SELL_ROW_H + SELL_ROW_GAP;
+      }
+    }
+  }
+
+  private addSlotRow(slot: EquipmentSlot, itemId: string | null, lx: number, lw: number, y: number): void {
+    const scene = this.scene;
+    const rowBg = scene.add.graphics();
+    rowBg.fillStyle(itemId ? 0x1a2a1a : 0x111120, 1);
+    rowBg.fillRoundedRect(lx + 10, y, lw - 20, SELL_ROW_H, 4);
+    this.add(rowBg);
+    this.itemsGroup.push(rowBg);
+
+    // Slot label
+    const slotTxt = scene.add.text(lx + 20, y + SELL_ROW_H / 2, i18n.t(`slots.${slot}`), {
+      fontFamily: THEME.fonts.main, fontSize: '9px', color: '#555577', fontStyle: 'bold',
+    }).setOrigin(0, 0.5);
+    this.add(slotTxt);
+    this.itemsGroup.push(slotTxt);
+
+    if (itemId) {
+      const def = ITEM_REGISTRY[itemId];
+      const label = i18n.exists(`item.${itemId}`) ? i18n.t(`item.${itemId}`) : (def?.label ?? itemId);
+      const modStr = def?.modifier ? formatModifierLines(def.modifier).join('  ') : '';
+
+      const nameCol = lx + 72;
+      const nameTxt = scene.add.text(nameCol, y + (modStr ? SELL_ROW_H / 2 - 5 : SELL_ROW_H / 2), label, {
+        fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ccffcc',
+      }).setOrigin(0, 0.5);
+      this.add(nameTxt);
+      this.itemsGroup.push(nameTxt);
+
+      if (modStr) {
+        const modTxt = scene.add.text(nameCol, y + SELL_ROW_H / 2 + 6, modStr, {
+          fontFamily: THEME.fonts.main, fontSize: '8px', color: '#7799aa',
+        }).setOrigin(0, 0.5);
+        this.add(modTxt);
+        this.itemsGroup.push(modTxt);
+      }
+
+      const sellPrice = SELL_PRICES[itemId];
+      if (sellPrice !== undefined) {
+        this.addSellButton(lx + lw - 20, y + SELL_ROW_H / 2, sellPrice, () => {
+          RunStateManager.unequipItem(slot);
+          RunStateManager.removeFromInventory(itemId);
+          RunStateManager.addGold(sellPrice);
+          this.refreshAll();
+        });
+      }
+    } else {
+      const emptyTxt = scene.add.text(lx + 72, y + SELL_ROW_H / 2, '— empty —', {
+        fontFamily: THEME.fonts.main, fontSize: '10px', color: '#333355',
+      }).setOrigin(0, 0.5);
+      this.add(emptyTxt);
+      this.itemsGroup.push(emptyTxt);
+    }
+  }
+
+  private addInventoryRow(itemId: string, count: number, lx: number, lw: number, y: number): void {
+    const scene = this.scene;
+    const def = ITEM_REGISTRY[itemId];
+    const isEquip = !!def?.slot;
+
+    const rowBg = scene.add.graphics();
+    rowBg.fillStyle(0x111120, 1);
+    rowBg.fillRoundedRect(lx + 10, y, lw - 20, SELL_ROW_H, 4);
+    this.add(rowBg);
+    this.itemsGroup.push(rowBg);
+
+    const label = i18n.exists(`item.${itemId}`) ? i18n.t(`item.${itemId}`) : (def?.label ?? itemId);
+    const countStr = count > 1 ? ` ×${count}` : '';
+
+    const nameTxt = scene.add.text(lx + 20, y + SELL_ROW_H / 2, `${label}${countStr}`, {
+      fontFamily: THEME.fonts.main, fontSize: '10px', color: isEquip ? '#aaaacc' : '#ccccdd',
+    }).setOrigin(0, 0.5);
+    this.add(nameTxt);
+    this.itemsGroup.push(nameTxt);
+
+    const sellPrice = SELL_PRICES[itemId];
+    if (sellPrice !== undefined) {
+      this.addSellButton(lx + lw - 20, y + SELL_ROW_H / 2, sellPrice, () => {
+        RunStateManager.removeFromInventory(itemId);
+        RunStateManager.addGold(sellPrice);
+        this.refreshAll();
+      });
+    }
+  }
+
+  private addSellButton(rightEdgeX: number, midY: number, price: number, onClick: () => void): void {
+    const scene = this.scene;
+    const BTN_W = 74;
+    const BTN_H = 24;
+    const bx = rightEdgeX - BTN_W / 2;
+
+    const btnBg = scene.add.rectangle(bx, midY, BTN_W, BTN_H, 0x4a1a1a)
+      .setInteractive({ useHandCursor: true });
+    const btnLbl = scene.add.text(bx, midY, `SELL  ${price}g`, {
+      fontFamily: THEME.fonts.main, fontSize: '9px', color: '#ffaaaa', fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    btnBg.on('pointerover', () => btnBg.setFillStyle(0x6a2a2a));
+    btnBg.on('pointerout',  () => btnBg.setFillStyle(0x4a1a1a));
+    btnBg.on('pointerdown', onClick);
+
+    this.add(btnBg);
+    this.add(btnLbl);
+    this.itemsGroup.push(btnBg, btnLbl);
+  }
+
+  // ── Catalog panel (right) ────────────────────────────────────────────────
+
+  private buildCatalog(): void {
+    // Destroy previous catalog buttons
+    for (const btn of this.catalogBtns) {
+      if (btn.active) btn.destroy();
+    }
+    this.catalogBtns = [];
+
+    const scene = this.scene;
+    const rx = this.rx;
+    const py = this.py_;
+    const itemX = rx + RW / 2;
+    const firstItemY = py + 80;
+
+    /** Total owned (inventory + equipped) for price scaling and sold-out checks. */
+    const totalOwned = (itemId: string): number => {
+      const runData = RunStateManager.getRun();
+      if (!runData) return 0;
+      const inInv = runData.inventory.filter(i => i === itemId).length;
+      const inSlot = Object.values(runData.equipped).filter(id => id === itemId).length;
+      return inInv + inSlot;
+    };
+
+    const itemPrice = (item: ShopItem): number =>
+      Math.round(item.basePrice * Math.pow(1.5, totalOwned(item.id)));
+
+    for (let i = 0; i < CATALOG.length; i++) {
+      const item = CATALOG[i];
+      const iy = firstItemY + i * (ITEM_H + ITEM_GAP);
+      const price = itemPrice(item);
+      const owned = totalOwned(item.id);
+      const soldOut = !item.stackable && owned > 0;
+      const runData = RunStateManager.getRun();
+      const canAfford = (runData?.gold ?? 0) >= price;
+
+      let btnText: string;
+      if (soldOut) {
+        btnText = `${item.label}\n✓ OWNED`;
+      } else {
+        const ownedStr = owned > 0 ? ` (×${owned})` : '';
+        btnText = `${item.label}${ownedStr}\n${item.description} — ${price} GOLD`;
+      }
+
+      const btn = new Button(scene, {
+        x: itemX,
+        y: iy + ITEM_H / 2,
+        width: RW - 20,
+        height: ITEM_H,
+        text: btnText,
+        color: item.color,
+        hoverColor: item.hoverColor,
+        onClick: () => {
+          const p = itemPrice(item);
+          if (!RunStateManager.spendGold(p)) return;
+          RunStateManager.addToInventory(item.id);
+          this.refreshAll();
+          this.onAction();
+        }
+      });
+
+      if (soldOut || !canAfford) btn.setEnabled(false);
+
+      this.add(btn);
+      this.catalogBtns.push(btn);
+    }
+  }
+
+  private refreshAll(): void {
+    const run = RunStateManager.getRun();
+    this.goldTxt.setText(`GOLD: ${run?.gold ?? 0}`);
+    this.buildItemsPanel();
+    this.buildCatalog();
   }
 }

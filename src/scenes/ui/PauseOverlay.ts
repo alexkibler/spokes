@@ -260,7 +260,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
 
       const val = parseInt(this.ftpInputStr, 10);
       if (!isNaN(val) && val > 0) {
-          this.ftpW = Math.min(9999, Math.max(50, val));
+          this.ftpW = Math.max(1, val);
           RunStateManager.setFtp(this.ftpW);
           if ('setFtp' in this.scene) {
              (this.scene as any).setFtp(this.ftpW);
@@ -287,7 +287,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
           this.ftpInputStr = this.ftpInputStr.slice(0, -1);
           this.updateFtpDisplay();
       } else if (event.key >= '0' && event.key <= '9') {
-          if (this.ftpInputStr.length < 4) {
+          if (this.ftpInputStr.length < 7) {
               this.ftpInputStr += event.key;
               this.updateFtpDisplay();
           }
