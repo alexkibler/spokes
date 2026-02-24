@@ -21,6 +21,8 @@ import { HeartRateService } from '../services/HeartRateService';
 import { RemoteService } from '../services/RemoteService';
 import { SaveService } from '../services/SaveService';
 import { SessionService } from '../services/SessionService';
+import { ContentRegistry } from '../roguelike/registry/ContentRegistry';
+import { ContentBootstrapper } from '../roguelike/content/ContentBootstrapper';
 import i18n from '../i18n';
 import {
   KM_TO_MI,
@@ -132,12 +134,17 @@ export class MenuScene extends Phaser.Scene {
   // ── Dev Mode ──────────────────────────────────────────────────────────────
   private isStartWarningActive = false;
   private languageToggle!: Phaser.GameObjects.Container;
+  private contentRegistry!: ContentRegistry;
 
   constructor() {
     super({ key: 'MenuScene' });
   }
 
   create(): void {
+    this.contentRegistry = new ContentRegistry();
+    ContentBootstrapper.bootstrap(this.contentRegistry);
+    this.registry.set('contentRegistry', this.contentRegistry);
+
     // Refresh FTP from storage (it might have changed in the pause menu)
     const { save } = SaveService.loadResult();
     this.ftpW = save?.runData.ftpW ?? 200;
@@ -1069,7 +1076,7 @@ export class MenuScene extends Phaser.Scene {
         return;
       }
 
-      const runManager = new RunManager();
+      const runManager = new RunManager(this.contentRegistry);
       runManager.on('save', (data: any) => {
           SaveService.save(data, data.weightKg, data.units);
       });
@@ -1319,7 +1326,7 @@ export class MenuScene extends Phaser.Scene {
 
   private doStartNewRun(): void {
     const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
-    const runManager = new RunManager();
+    const runManager = new RunManager(this.contentRegistry);
     runManager.on('save', (data: any) => {
         SaveService.save(data, data.weightKg, data.units);
     });
@@ -1340,7 +1347,7 @@ export class MenuScene extends Phaser.Scene {
 
   private doStartRun(): void {
     const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
-    const runManager = new RunManager();
+    const runManager = new RunManager(this.contentRegistry);
     runManager.on('save', (data: any) => {
         SaveService.save(data, data.weightKg, data.units);
     });

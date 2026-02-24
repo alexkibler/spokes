@@ -1,14 +1,14 @@
 import Phaser from 'phaser';
 import { RunManager } from '../../roguelike/RunManager';
-import { ITEM_REGISTRY, ALL_SLOTS, formatModifierLines, type EquipmentSlot } from '../../roguelike/ItemRegistry';
+import { ALL_SLOTS, type EquipmentSlot } from '../../roguelike/registry/types';
+import { formatModifierLines } from '../../roguelike/ModifierUtils';
 import { THEME } from '../../theme';
 import { Button } from '../../ui/Button';
 import i18n from '../../i18n';
 import { BaseOverlay } from './BaseOverlay';
 
-interface ShopItem {
+interface ShopItemConfig {
   id: string;
-  label: string;
   description: string;
   basePrice: number;
   color: number;
@@ -17,15 +17,15 @@ interface ShopItem {
   stackable: boolean;
 }
 
-const CATALOG: ShopItem[] = [
-  { id: 'tailwind',        label: 'TAILWIND',          description: '2× power toggle during ride',     basePrice: 100, color: 0x2a2a44, hoverColor: 0x3a3a5a, stackable: false },
-  { id: 'teleport',        label: 'TELEPORT SCROLL',   description: 'Warp to any visited node',         basePrice: 10,  color: 0x442244, hoverColor: 0x553355, stackable: true  },
-  { id: 'reroll_voucher',  label: 'REROLL VOUCHER',    description: 'Reroll reward choices once',       basePrice: 50,  color: 0x2a2a08, hoverColor: 0x3a3a10, stackable: true  },
-  { id: 'aero_helmet',     label: 'AERO HELMET',       description: '+3% drag reduction (stacks)',      basePrice: 60,  color: 0x1a2a3a, hoverColor: 0x2a3a4a, stackable: true  },
-  { id: 'gold_crank',      label: 'SOLID GOLD CRANK',  description: '×1.25 permanent power (stacks)',   basePrice: 120, color: 0x3a2a00, hoverColor: 0x4a3a00, stackable: true  },
-  { id: 'antigrav_pedals', label: 'ANTIGRAV PEDALS',   description: '-8% rider weight (stacks)',         basePrice: 90,  color: 0x1a3a1a, hoverColor: 0x2a4a2a, stackable: true  },
-  { id: 'dirt_tires',      label: 'DIRT TIRES',        description: '-35% rolling resistance (stacks)', basePrice: 70,  color: 0x1a1a0a, hoverColor: 0x2a2a14, stackable: true  },
-  { id: 'carbon_frame',    label: 'CARBON FRAME',      description: '-12% weight, +3% aero (stacks)',   basePrice: 150, color: 0x0a1a2a, hoverColor: 0x142030, stackable: true  },
+const CATALOG: ShopItemConfig[] = [
+  { id: 'tailwind',        description: '2× power toggle during ride',     basePrice: 100, color: 0x2a2a44, hoverColor: 0x3a3a5a, stackable: false },
+  { id: 'teleport',        description: 'Warp to any visited node',         basePrice: 10,  color: 0x442244, hoverColor: 0x553355, stackable: true  },
+  { id: 'reroll_voucher',  description: 'Reroll reward choices once',       basePrice: 50,  color: 0x2a2a08, hoverColor: 0x3a3a10, stackable: true  },
+  { id: 'aero_helmet',     description: '+3% drag reduction (stacks)',      basePrice: 60,  color: 0x1a2a3a, hoverColor: 0x2a3a4a, stackable: true  },
+  { id: 'gold_crank',      description: '×1.25 permanent power (stacks)',   basePrice: 120, color: 0x3a2a00, hoverColor: 0x4a3a00, stackable: true  },
+  { id: 'antigrav_pedals', description: '-8% rider weight (stacks)',         basePrice: 90,  color: 0x1a3a1a, hoverColor: 0x2a4a2a, stackable: true  },
+  { id: 'dirt_tires',      description: '-35% rolling resistance (stacks)', basePrice: 70,  color: 0x1a1a0a, hoverColor: 0x2a2a14, stackable: true  },
+  { id: 'carbon_frame',    description: '-12% weight, +3% aero (stacks)',   basePrice: 150, color: 0x0a1a2a, hoverColor: 0x142030, stackable: true  },
 ];
 
 /** Sell price = 50% of base price (rounded down). Only items in CATALOG are sellable. */
@@ -228,7 +228,7 @@ export class ShopOverlay extends BaseOverlay {
     this.itemsGroup.push(slotTxt);
 
     if (itemId) {
-      const def = ITEM_REGISTRY[itemId];
+      const def = this.runManager.registry.getItem(itemId);
       const label = i18n.exists(`item.${itemId}`) ? i18n.t(`item.${itemId}`) : (def?.label ?? itemId);
       const modStr = def?.modifier ? formatModifierLines(def.modifier).join('  ') : '';
 
@@ -267,7 +267,7 @@ export class ShopOverlay extends BaseOverlay {
 
   private addInventoryRow(itemId: string, count: number, lx: number, lw: number, y: number): void {
     const scene = this.scene;
-    const def = ITEM_REGISTRY[itemId];
+    const def = this.runManager.registry.getItem(itemId);
     const isEquip = !!def?.slot;
 
     const rowBg = scene.add.graphics();
@@ -339,24 +339,27 @@ export class ShopOverlay extends BaseOverlay {
       return inInv + inSlot;
     };
 
-    const itemPrice = (item: ShopItem): number =>
+    const itemPrice = (item: ShopItemConfig): number =>
       Math.round(item.basePrice * Math.pow(1.5, totalOwned(item.id)));
 
     for (let i = 0; i < CATALOG.length; i++) {
-      const item = CATALOG[i];
+      const itemCfg = CATALOG[i];
       const iy = firstItemY + i * (ITEM_H + ITEM_GAP);
-      const price = itemPrice(item);
-      const owned = totalOwned(item.id);
-      const soldOut = !item.stackable && owned > 0;
+      const price = itemPrice(itemCfg);
+      const owned = totalOwned(itemCfg.id);
+      const soldOut = !itemCfg.stackable && owned > 0;
       const runData = this.runManager.getRun();
       const canAfford = (runData?.gold ?? 0) >= price;
 
+      const def = this.runManager.registry.getItem(itemCfg.id);
+      const label = i18n.t(def?.label ?? itemCfg.id);
+
       let btnText: string;
       if (soldOut) {
-        btnText = `${item.label}\n✓ OWNED`;
+        btnText = `${label}\n✓ OWNED`;
       } else {
         const ownedStr = owned > 0 ? ` (×${owned})` : '';
-        btnText = `${item.label}${ownedStr}\n${item.description} — ${price} GOLD`;
+        btnText = `${label}${ownedStr}\n${itemCfg.description} — ${price} GOLD`;
       }
 
       const btn = new Button(scene, {
@@ -365,12 +368,12 @@ export class ShopOverlay extends BaseOverlay {
         width: RW - 20,
         height: ITEM_H,
         text: btnText,
-        color: item.color,
-        hoverColor: item.hoverColor,
+        color: itemCfg.color,
+        hoverColor: itemCfg.hoverColor,
         onClick: () => {
-          const p = itemPrice(item);
+          const p = itemPrice(itemCfg);
           if (!this.runManager.spendGold(p)) return;
-          this.runManager.addToInventory(item.id);
+          this.runManager.addToInventory(itemCfg.id);
           this.refreshAll();
           this.onAction();
         }

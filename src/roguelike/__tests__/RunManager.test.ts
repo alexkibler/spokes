@@ -7,6 +7,8 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { RunManager } from '../RunManager';
+import { ContentRegistry } from '../registry/ContentRegistry';
+import { ContentBootstrapper } from '../content/ContentBootstrapper';
 import type { MapNode, MapEdge } from '../RunManager';
 
 // Mock Phaser.Events.EventEmitter to avoid loading Phaser in Node
@@ -49,9 +51,12 @@ function makeEdge(from: string, to: string): MapEdge {
 
 describe('RunManager', () => {
   let manager: RunManager;
+  let registry: ContentRegistry;
 
   beforeEach(() => {
-    manager = new RunManager();
+    registry = new ContentRegistry();
+    ContentBootstrapper.bootstrap(registry);
+    manager = new RunManager(registry);
   });
 
   describe('startNewRun', () => {

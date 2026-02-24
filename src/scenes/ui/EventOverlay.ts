@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { RunManager } from '../../roguelike/RunManager';
 import { THEME } from '../../theme';
 import { Button } from '../../ui/Button';
-import { ITEM_REGISTRY, type ItemDef } from '../../roguelike/ItemRegistry';
+import { ItemDefinition } from '../../roguelike/registry/types';
 import i18n from '../../i18n';
 import { BaseOverlay } from './BaseOverlay';
 
@@ -25,22 +25,11 @@ export class EventOverlay extends BaseOverlay {
     const numOptions = 2;
     const totalBtnsHeight = numOptions * (btnHeight + btnGap) - btnGap;
 
-    // Pick Event Item Logic (Need access to this methods before super? No, methods are on prototype)
-    // But I can't call methods before super.
-    // So I need to duplicate the logic or move it to a static helper or just calculate it before super.
-    // However, I need `runManager` to get current floor.
-
-    // Calculate height requires description length.
-    // Description requires item label.
-    // Item requires run state.
-
-    // So I must do the calculation before super.
-
     const run = runManager.getRun();
     const currentFloor = run ? run.visitedNodeIds.length : 1;
     const totalFloors = run ? run.runLength : 10;
 
-    const equipmentItems = Object.values(ITEM_REGISTRY).filter(i => i.slot !== undefined);
+    const equipmentItems = runManager.registry.getAllItems().filter(i => i.slot !== undefined);
     const item = EventOverlay.pickEventItem(equipmentItems, currentFloor, totalFloors);
 
     const titleText = i18n.t('event.title');
@@ -136,7 +125,7 @@ export class EventOverlay extends BaseOverlay {
   }
 
   // Changed to static so it can be called before super()
-  private static pickEventItem(items: ItemDef[], currentFloor: number, totalFloors: number): ItemDef {
+  private static pickEventItem(items: ItemDefinition[], currentFloor: number, totalFloors: number): ItemDefinition {
       const progress = Math.min(1, currentFloor / Math.max(1, totalFloors));
       const weightedItems = items.map(item => {
           let weight = 0;
@@ -170,7 +159,7 @@ export class EventOverlay extends BaseOverlay {
       }
   }
 
-  private handleAttempt(item: ItemDef, chance: number): void {
+  private handleAttempt(item: ItemDefinition, chance: number): void {
       const roll = Math.random();
       if (roll < chance) {
           // Success
