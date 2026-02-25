@@ -6,23 +6,23 @@
  */
 
 import Phaser from 'phaser';
-import type { RunManager, MapNode } from '../roguelike/RunManager';
-import { generateCourseProfile, invertCourseProfile, type CourseProfile } from '../course/CourseProfile';
-import { generateHubAndSpokeMap } from '../course/CourseGenerator';
-import type { EliteChallenge } from '../roguelike/EliteChallenge';
-import { createBossRacers, createSpokeBoss, type RacerProfile } from '../race/RacerProfile';
+import type { RunManager, MapNode } from '../core/roguelike/RunManager';
+import { generateCourseProfile, invertCourseProfile, type CourseProfile } from '../core/course/CourseProfile';
+import { generateHubAndSpokeMap } from '../core/course/CourseGenerator';
+import type { EliteChallenge } from '../core/roguelike/EliteChallenge';
+import { createBossRacers, createSpokeBoss, type RacerProfile } from '../core/race/RacerProfile';
 import { THEME } from '../theme';
-import { ShopOverlay } from './ui/ShopOverlay';
-import { EventOverlay } from './ui/EventOverlay';
-import { EliteChallengeOverlay } from './ui/EliteChallengeOverlay';
-import { EquipmentOverlay } from './ui/EquipmentOverlay';
-import { RemotePairingOverlay } from './ui/RemotePairingOverlay';
-import { ConfirmationModal } from '../ui/ConfirmationModal';
+import { ShopOverlay } from '../ui/ShopOverlay';
+import { EventOverlay } from '../ui/EventOverlay';
+import { EliteChallengeOverlay } from '../ui/EliteChallengeOverlay';
+import { EquipmentOverlay } from '../ui/EquipmentOverlay';
+import { RemotePairingOverlay } from '../ui/RemotePairingOverlay';
+import { ConfirmationModal } from '../components/ConfirmationModal';
 
-import { MapRenderer } from './visuals/MapRenderer';
-import { MapStatsPanel } from './ui/MapStatsPanel';
-import { MapModifiersBar } from './ui/MapModifiersBar';
-import { MapHUD } from './ui/MapHUD';
+import { MapRenderer } from '../rendering/MapRenderer';
+import { MapStatsPanel } from '../ui/MapStatsPanel';
+import { MapModifiersBar } from '../ui/MapModifiersBar';
+import { MapHUD } from '../ui/MapHUD';
 import { MapCameraController } from './controllers/MapCameraController';
 import type { SaveManager } from '../services/SaveManager';
 import type { GameServices } from '../services/ServiceLocator';

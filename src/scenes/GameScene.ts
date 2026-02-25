@@ -8,24 +8,24 @@
 import Phaser from 'phaser';
 import { FitWriter } from '../fit/FitWriter';
 import type { RideRecord } from '../fit/FitWriter';
-import type { ITrainerService, TrainerData } from '../services/ITrainerService';
-import { MockTrainerService } from '../services/MockTrainerService';
-import type { HeartRateData } from '../services/HeartRateService';
-import type { CursorDirection } from '../services/RemoteService';
-import type { RunManager, RunModifiers } from '../roguelike/RunManager';
-import { ContentRegistry } from '../roguelike/registry/ContentRegistry';
-import { ContentBootstrapper } from '../roguelike/content/ContentBootstrapper';
-import { evaluateChallenge, grantChallengeReward, type EliteChallenge } from '../roguelike/EliteChallenge';
-import type { RacerProfile } from '../race/RacerProfile';
+import type { ITrainerService, TrainerData } from '../services/hardware/ITrainerService';
+import { MockTrainerService } from '../services/hardware/MockTrainerService';
+import type { HeartRateData } from '../services/hardware/HeartRateService';
+import type { CursorDirection } from '../network/RemoteService';
+import type { RunManager, RunModifiers } from '../core/roguelike/RunManager';
+import { ContentRegistry } from '../core/roguelike/registry/ContentRegistry';
+import { ContentBootstrapper } from '../core/roguelike/content/ContentBootstrapper';
+import { evaluateChallenge, grantChallengeReward, type EliteChallenge } from '../core/roguelike/EliteChallenge';
+import type { RacerProfile } from '../core/race/RacerProfile';
 import {
   calculateAcceleration,
   DEFAULT_PHYSICS,
   type PhysicsConfig,
-} from '../physics/CyclistPhysics';
+} from '../core/physics/CyclistPhysics';
 import {
   draftFactor,
   DRAFT_MAX_CDA_REDUCTION,
-} from '../physics/DraftingPhysics';
+} from '../core/physics/DraftingPhysics';
 import type { Units } from './MenuScene';
 import {
   DEFAULT_COURSE,
@@ -35,26 +35,26 @@ import {
   CRR_BY_SURFACE,
   type CourseProfile,
   type SurfaceType,
-} from '../course/CourseProfile';
+} from '../core/course/CourseProfile';
 import { THEME } from '../theme';
-import { GameHUD } from './ui/GameHUD';
-import { ElevationGraph } from './ui/ElevationGraph';
-import { RideOverlay, type RideStats } from './ui/RideOverlay';
-import { RewardOverlay } from './ui/RewardOverlay';
-import { pickRewards } from '../roguelike/RewardPool';
-import { PauseOverlay } from './ui/PauseOverlay';
-import { RemotePairingOverlay } from './ui/RemotePairingOverlay';
+import { GameHUD } from '../ui/GameHUD';
+import { ElevationGraph } from '../ui/ElevationGraph';
+import { RideOverlay, type RideStats } from '../ui/RideOverlay';
+import { RewardOverlay } from '../ui/RewardOverlay';
+import { pickRewards } from '../core/roguelike/RewardPool';
+import { PauseOverlay } from '../ui/PauseOverlay';
+import { RemotePairingOverlay } from '../ui/RemotePairingOverlay';
 
 // Visuals & UI Modules
-import { ParallaxBackground } from './visuals/ParallaxBackground';
-import { CyclistRenderer, type RenderableGhost } from './visuals/CyclistRenderer';
-import { RaceGapPanel } from './ui/RaceGapPanel';
-import { ChallengePanel, type ChallengeStats } from './ui/ChallengePanel';
-import { BottomControls } from './ui/BottomControls';
-import { EnvironmentEffectsUI, type ActiveEffect, EFFECT_META } from './ui/EnvironmentEffectsUI';
+import { ParallaxBackground } from '../rendering/ParallaxBackground';
+import { CyclistRenderer, type RenderableGhost } from '../rendering/CyclistRenderer';
+import { RaceGapPanel } from '../ui/RaceGapPanel';
+import { ChallengePanel, type ChallengeStats } from '../ui/ChallengePanel';
+import { BottomControls } from '../ui/BottomControls';
+import { EnvironmentEffectsUI, type ActiveEffect, EFFECT_META } from '../ui/EnvironmentEffectsUI';
 import type { SaveManager } from '../services/SaveManager';
 import type { GameServices } from '../services/ServiceLocator';
-import { RunManager as RunManagerClass } from '../roguelike/RunManager';
+import { RunManager as RunManagerClass } from '../core/roguelike/RunManager';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

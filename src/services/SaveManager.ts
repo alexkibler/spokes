@@ -6,8 +6,8 @@
  */
 
 import { IStorageProvider } from './storage/IStorageProvider';
-import type { RunData, MapNode, MapEdge, EquipmentSlot } from '../roguelike/RunManager';
-import type { ContentRegistry } from '../roguelike/registry/ContentRegistry';
+import type { RunData, MapNode, MapEdge, EquipmentSlot } from '../core/roguelike/RunManager';
+import type { ContentRegistry } from '../core/roguelike/registry/ContentRegistry';
 import type { Units } from '../scenes/MenuScene';
 
 const SAVE_KEY = 'paperPeloton_runSave';

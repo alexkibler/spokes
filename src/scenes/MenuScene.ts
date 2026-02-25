@@ -12,11 +12,11 @@
  */
 
 import Phaser from 'phaser';
-import { RemotePairingOverlay } from './ui/RemotePairingOverlay';
-import { ConfirmationModal } from '../ui/ConfirmationModal';
-import type { ITrainerService } from '../services/ITrainerService';
-import { TrainerService } from '../services/TrainerService';
-import { HeartRateService } from '../services/HeartRateService';
+import { RemotePairingOverlay } from '../ui/RemotePairingOverlay';
+import { ConfirmationModal } from '../components/ConfirmationModal';
+import type { ITrainerService } from '../services/hardware/ITrainerService';
+import { TrainerService } from '../services/hardware/TrainerService';
+import { HeartRateService } from '../services/hardware/HeartRateService';
 import type { SavedRun, SaveResult, SaveManager } from '../services/SaveManager';
 import i18n from '../i18n';
 import {

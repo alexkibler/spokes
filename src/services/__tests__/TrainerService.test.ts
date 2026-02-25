@@ -19,7 +19,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { parseIndoorBikeData } from '../TrainerService';
+import { parseIndoorBikeData } from '../hardware/TrainerService';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
