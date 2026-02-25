@@ -12,7 +12,7 @@ import type { Units } from '../../scenes/MenuScene';
 import Phaser from 'phaser';
 import type { SavedRun } from '../../services/SaveManager';
 import { ContentRegistry } from './registry/ContentRegistry';
-import { EquipmentSlot, RunModifiers } from './registry/types';
+import { EquipmentSlot, RunModifiers, RewardDefinition } from './registry/types';
 
 export type { EquipmentSlot, RunModifiers };
 
@@ -356,5 +356,149 @@ export class RunManager extends Phaser.Events.EventEmitter {
     s.totalRecordCount     += recordCount;
     s.totalPowerSum        += powerSum;
     s.totalCadenceSum      += cadenceSum;
+  }
+
+  // ── Zen Autoplay Logic ────────────────────────────────────────────────────────
+
+  getBestReward(rewards: RewardDefinition[]): RewardDefinition {
+    if (rewards.length === 0) throw new Error('No rewards to choose from');
+
+    let bestReward = rewards[0];
+    let maxVal = -Infinity;
+
+    for (const r of rewards) {
+      let val = 0;
+
+      if (r.statModifiers) {
+        // StatReward: Value = raw stat increase
+        // We sum up the absolute "benefit" of modifiers.
+        // powerMult: >1 is good. (1.04 -> 0.04)
+        // dragReduction: >0 is good. (0.02 -> 0.02)
+        // weightMult: <1 is good. (0.97 -> 0.03)
+        // crrMult: <1 is good.
+        if (r.statModifiers.powerMult) val += (r.statModifiers.powerMult - 1) * 100; // e.g. 4
+        if (r.statModifiers.dragReduction) val += r.statModifiers.dragReduction * 100; // e.g. 2
+        if (r.statModifiers.weightMult) val += (1 - r.statModifiers.weightMult) * 100; // e.g. 3
+        if (r.statModifiers.crrMult) val += (1 - r.statModifiers.crrMult) * 100;
+      } else if (r.equipmentSlot) {
+        // ItemReward
+        const itemId = r.itemId || r.id;
+        const itemDef = this.registry.getItem(itemId);
+
+        // Check for duplicate in inventory (not equipped)
+        if (this.runData && this.runData.inventory.includes(itemId)) {
+            val = 0;
+        } else if (itemDef && itemDef.modifier) {
+             // Calculate "Item Stats Value"
+             // Similar heuristic: sum of positive attributes
+             const calcItemScore = (mod: Partial<RunModifiers>) => {
+                 let s = 0;
+                 if (mod.powerMult) s += (mod.powerMult - 1) * 100;
+                 if (mod.dragReduction) s += mod.dragReduction * 100;
+                 if (mod.weightMult) s += (1 - mod.weightMult) * 100;
+                 if (mod.crrMult) s += (1 - mod.crrMult) * 100;
+                 return s;
+             };
+
+             const newScore = calcItemScore(itemDef.modifier);
+
+             // Check occupied slot
+             const currentItemId = this.runData?.equipped[r.equipmentSlot];
+             if (currentItemId) {
+                 const currentItem = this.registry.getItem(currentItemId);
+                 const currentScore = currentItem?.modifier ? calcItemScore(currentItem.modifier) : 0;
+                 val = newScore - currentScore;
+             } else {
+                 val = newScore;
+             }
+        }
+      }
+
+      // Bias towards picking *something* if everything is 0 or negative,
+      // but strictly following logic: "Pick the option with the highest Net Value."
+      if (val > maxVal) {
+        maxVal = val;
+        bestReward = r;
+      }
+    }
+    return bestReward;
+  }
+
+  getNextAutoplayNode(): MapNode | null {
+    const run = this.runData;
+    if (!run || !run.currentNodeId) return null;
+
+    const currentNode = run.nodes.find(n => n.id === run.currentNodeId);
+    if (!currentNode) return null;
+
+    // Medal gate: don't route to the finish until all medals are collected
+    const medalsHeld = run.inventory.filter(i => i.startsWith('medal_')).length;
+    const medalsNeeded = run.runLength;
+
+    // 1. Identify Target (Finish or Boss)
+    const maxFloor = Math.max(...run.nodes.map(n => n.floor));
+    let targets = run.nodes.filter(n =>
+      n.floor === maxFloor && !(n.type === 'finish' && medalsHeld < medalsNeeded)
+    );
+
+    // If finish was excluded and no other maxFloor nodes remain, target unvisited boss nodes
+    if (targets.length === 0 && medalsHeld < medalsNeeded) {
+      targets = run.nodes.filter(n => n.type === 'boss' && !run.visitedNodeIds.includes(n.id));
+    }
+
+    // 2. Compute Costs (DP backwards)
+    const costToFinish = new Map<string, number>(); // NodeID -> Min Cost to Finish
+
+    // Initialize targets
+    for (const t of targets) {
+        costToFinish.set(t.id, 0);
+    }
+
+    // Iterate backwards from maxFloor - 1 to currentFloor
+    for (let f = maxFloor - 1; f >= currentNode.floor; f--) {
+        const nodesOnFloor = run.nodes.filter(n => n.floor === f);
+        for (const u of nodesOnFloor) {
+            let minC = Infinity;
+            // For each neighbor v
+            for (const vId of u.connectedTo) {
+                const v = run.nodes.find(n => n.id === vId);
+                if (!v) continue;
+
+                // Weight of entering v
+                const w = (v.type === 'elite') ? 100 : 1;
+                const distV = costToFinish.get(vId);
+
+                if (distV !== undefined) {
+                    const c = w + distV;
+                    if (c < minC) minC = c;
+                }
+            }
+            if (minC !== Infinity) {
+                costToFinish.set(u.id, minC);
+            }
+        }
+    }
+
+    // 3. Select Next Node
+    let bestNext: MapNode | null = null;
+    let minNextCost = Infinity;
+
+    for (const nextId of currentNode.connectedTo) {
+        const nextNode = run.nodes.find(n => n.id === nextId);
+        if (!nextNode) continue;
+
+        const w = (nextNode.type === 'elite') ? 100 : 1;
+        const distNext = costToFinish.get(nextId);
+
+        if (distNext !== undefined) {
+            const totalCost = w + distNext;
+            if (totalCost < minNextCost) {
+                minNextCost = totalCost;
+                bestNext = nextNode;
+            }
+        }
+    }
+
+    return bestNext;
   }
 }

@@ -100,6 +100,14 @@ export class MenuScene extends Phaser.Scene {
   private ftpCursorMs     = 0;
   private ftpCursorOn     = true;
 
+  private autoplayDelayMs     = 2000;
+  private autoplayDelayText!: Phaser.GameObjects.Text;
+  private autoplayDelayInputField!: Phaser.GameObjects.Rectangle;
+  private autoplayDelayInputActive = false;
+  private autoplayDelayInputStr    = '';
+  private autoplayDelayCursorMs    = 0;
+  private autoplayDelayCursorOn    = true;
+
   private ignoreNextGlobalClick = false;
   private diffBtns   = new Map<Difficulty, Phaser.GameObjects.Rectangle>();
   private unitsBtns  = new Map<Units, Phaser.GameObjects.Rectangle>();
@@ -124,6 +132,7 @@ export class MenuScene extends Phaser.Scene {
   private unitsSection!: Phaser.GameObjects.Container;
   private diffSection!: Phaser.GameObjects.Container;
   private ftpSection!: Phaser.GameObjects.Container;
+  private autoplayDelaySection!: Phaser.GameObjects.Container;
   private devicesSection!: Phaser.GameObjects.Container;
   private startBtnContainer!: Phaser.GameObjects.Container;
   private saveBannerContainer: Phaser.GameObjects.Container | null = null;
@@ -183,6 +192,7 @@ export class MenuScene extends Phaser.Scene {
     this.buildUnitsSection();
     this.buildDifficultySection();
     this.buildFtpSection();
+    this.buildAutoplayDelaySection();
     this.buildDevicesSection();
     this.buildStartButton(save);
     this.setupInputHandlers();
@@ -234,8 +244,9 @@ export class MenuScene extends Phaser.Scene {
 
     // Row 2: Difficulty | FTP (centred together)
     const row2StartX = cx - 250 * s;
-    if (this.diffSection) this.diffSection.setScale(s).setPosition(row2StartX, 288 * s);
-    if (this.ftpSection)  this.ftpSection.setScale(s).setPosition(row2StartX + 320 * s, 288 * s);
+    if (this.diffSection)          this.diffSection.setScale(s).setPosition(row2StartX, 288 * s);
+    if (this.ftpSection)           this.ftpSection.setScale(s).setPosition(row2StartX + 320 * s, 288 * s);
+    if (this.autoplayDelaySection) this.autoplayDelaySection.setScale(s).setPosition(row2StartX + 510 * s, 288 * s);
 
     // Reserve space for the iOS home indicator / Android nav bar so interactive
     // elements never land in the system-gesture zone at the bottom of the screen.
@@ -296,6 +307,14 @@ export class MenuScene extends Phaser.Scene {
         this.showFtpInputDisplay();
       }
     }
+    if (this.autoplayDelayInputActive) {
+      this.autoplayDelayCursorMs += delta;
+      if (this.autoplayDelayCursorMs >= CURSOR_BLINK_MS) {
+        this.autoplayDelayCursorMs = 0;
+        this.autoplayDelayCursorOn = !this.autoplayDelayCursorOn;
+        this.showAutoplayDelayInputDisplay();
+      }
+    }
   }
 
   // ── Input Handling ────────────────────────────────────────────────────────
@@ -303,13 +322,14 @@ export class MenuScene extends Phaser.Scene {
   private setupInputHandlers(): void {
     this.input.on('pointerdown', () => {
       if (this.ignoreNextGlobalClick) { this.ignoreNextGlobalClick = false; return; }
-      if (this.weightInputActive) this.commitWeightEdit();
-      if (this.distInputActive)   this.commitDistEdit();
-      if (this.ftpInputActive)    this.commitFtpEdit();
+      if (this.weightInputActive)      this.commitWeightEdit();
+      if (this.distInputActive)        this.commitDistEdit();
+      if (this.ftpInputActive)         this.commitFtpEdit();
+      if (this.autoplayDelayInputActive) this.commitAutoplayDelayEdit();
     });
 
     this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
-      const active = this.weightInputActive || this.distInputActive || this.ftpInputActive;
+      const active = this.weightInputActive || this.distInputActive || this.ftpInputActive || this.autoplayDelayInputActive;
       if (!active) return;
 
       if ((event.key >= '0' && event.key <= '9') || event.key === '.') {
@@ -331,6 +351,12 @@ export class MenuScene extends Phaser.Scene {
           this.ftpCursorOn = true;
           this.ftpCursorMs = 0;
           this.showFtpInputDisplay();
+        } else if (this.autoplayDelayInputActive && this.autoplayDelayInputStr.length < 5) {
+          if (event.key === '.') return; // integers only
+          this.autoplayDelayInputStr += event.key;
+          this.autoplayDelayCursorOn = true;
+          this.autoplayDelayCursorMs = 0;
+          this.showAutoplayDelayInputDisplay();
         }
       } else if (event.key === 'Backspace') {
         if (this.weightInputActive) {
@@ -348,11 +374,17 @@ export class MenuScene extends Phaser.Scene {
           this.ftpCursorOn = true;
           this.ftpCursorMs = 0;
           this.showFtpInputDisplay();
+        } else if (this.autoplayDelayInputActive) {
+          this.autoplayDelayInputStr = this.autoplayDelayInputStr.slice(0, -1);
+          this.autoplayDelayCursorOn = true;
+          this.autoplayDelayCursorMs = 0;
+          this.showAutoplayDelayInputDisplay();
         }
       } else if (event.key === 'Enter' || event.key === 'Escape') {
-        if (this.weightInputActive) this.commitWeightEdit();
-        if (this.distInputActive)   this.commitDistEdit();
-        if (this.ftpInputActive)    this.commitFtpEdit();
+        if (this.weightInputActive)        this.commitWeightEdit();
+        if (this.distInputActive)          this.commitDistEdit();
+        if (this.ftpInputActive)           this.commitFtpEdit();
+        if (this.autoplayDelayInputActive) this.commitAutoplayDelayEdit();
       }
     });
   }
@@ -652,6 +684,86 @@ export class MenuScene extends Phaser.Scene {
   private showFtpInputDisplay(): void {
     const cursor = this.ftpCursorOn ? '|' : ' ';
     this.ftpText.setText((this.ftpInputStr || '0') + cursor + ' ' + i18n.t('menu.ftp_unit'));
+  }
+
+  // ── Autoplay Delay selector ────────────────────────────────────────────────
+
+  private buildAutoplayDelaySection(): void {
+    const PW = 180; const PH = 110;
+    const CX = PW / 2;
+
+    this.autoplayDelaySection = this.add.container(0, 0);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(THEME.colors.ui.hudBackground, 0.40);
+    bg.fillRoundedRect(0, 0, PW, PH, 6);
+    this.autoplayDelaySection.add(bg);
+
+    this.autoplayDelaySection.add(this.add.text(14, 10, i18n.t('menu.autoplay_delay'), {
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: THEME.colors.text.muted, letterSpacing: 3,
+    }));
+
+    const FIELD_W = PW - 28;
+    const FIELD_H = 44;
+    const fieldCY = 60;
+
+    this.autoplayDelayInputField = this.add
+      .rectangle(CX, fieldCY, FIELD_W, FIELD_H, THEME.colors.menu.inputBg)
+      .setStrokeStyle(2, THEME.colors.menu.inputBorder, 0.8)
+      .setInteractive({ useHandCursor: true });
+    this.autoplayDelaySection.add(this.autoplayDelayInputField);
+
+    this.autoplayDelayText = this.add.text(CX, fieldCY, `${this.autoplayDelayMs} ${i18n.t('menu.autoplay_delay_unit')}`, {
+      fontFamily: THEME.fonts.main, fontSize: '24px', color: THEME.colors.text.main, fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.autoplayDelaySection.add(this.autoplayDelayText);
+
+    const hint = this.add.text(CX, PH - 12, i18n.t('menu.edit_hint'), {
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.xsmall, color: '#666677',
+    }).setOrigin(0.5);
+    this.autoplayDelaySection.add(hint);
+
+    this.autoplayDelayInputField.on('pointerover', () => {
+      if (!this.autoplayDelayInputActive) this.autoplayDelayInputField.setStrokeStyle(2, THEME.colors.menu.inputBorderHover, 1);
+    });
+    this.autoplayDelayInputField.on('pointerout', () => {
+      if (!this.autoplayDelayInputActive) this.autoplayDelayInputField.setStrokeStyle(2, THEME.colors.menu.inputBorder, 0.8);
+    });
+    this.autoplayDelayInputField.on('pointerdown', () => {
+      this.ignoreNextGlobalClick = true;
+      this.startAutoplayDelayEdit();
+    });
+  }
+
+  private startAutoplayDelayEdit(): void {
+    if (this.autoplayDelayInputActive) return;
+    if (this.weightInputActive) this.commitWeightEdit();
+    if (this.distInputActive)   this.commitDistEdit();
+    if (this.ftpInputActive)    this.commitFtpEdit();
+
+    this.autoplayDelayInputActive = true;
+    this.autoplayDelayCursorMs    = 0;
+    this.autoplayDelayCursorOn    = true;
+    this.autoplayDelayInputStr    = String(this.autoplayDelayMs);
+    this.autoplayDelayInputField.setStrokeStyle(2, THEME.colors.menu.inputBorderFocus, 1);
+    this.showAutoplayDelayInputDisplay();
+  }
+
+  private commitAutoplayDelayEdit(): void {
+    if (!this.autoplayDelayInputActive) return;
+    this.autoplayDelayInputActive = false;
+    this.autoplayDelayInputField.setStrokeStyle(2, THEME.colors.menu.inputBorder, 0.8);
+    const parsed = parseInt(this.autoplayDelayInputStr, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      this.autoplayDelayMs = Math.max(500, Math.min(10000, parsed));
+    }
+    this.services.sessionService.setAutoplayDelayMs(this.autoplayDelayMs);
+    this.autoplayDelayText.setText(`${this.autoplayDelayMs} ${i18n.t('menu.autoplay_delay_unit')}`);
+  }
+
+  private showAutoplayDelayInputDisplay(): void {
+    const cursor = this.autoplayDelayCursorOn ? '|' : ' ';
+    this.autoplayDelayText.setText((this.autoplayDelayInputStr || '0') + cursor + ' ' + i18n.t('menu.autoplay_delay_unit'));
   }
 
   private startDistEdit(): void {

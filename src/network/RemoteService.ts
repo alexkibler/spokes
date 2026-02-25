@@ -113,6 +113,12 @@ export class RemoteService {
     }
   }
 
+  public sendAutoplayUpdate(enabled: boolean) {
+    if (this.socket && this.roomCode) {
+      this.socket.emit('HOST_AUTOPLAY_UPDATE', { enabled });
+    }
+  }
+
   // --- Event Subscription ---
 
   public onCursorMove(handler: (direction: CursorDirection) => void) {

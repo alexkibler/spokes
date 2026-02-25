@@ -33,6 +33,8 @@ ContentBootstrapper.bootstrap(contentRegistry);
 const saveManager = new SaveManager(new LocalStorageProvider(), contentRegistry);
 const remoteService = new RemoteService();
 const sessionService = new SessionService();
+sessionService.setRemoteService(remoteService);
+
 const runManager = new RunManager(contentRegistry);
 
 const services: GameServices = {

@@ -5,6 +5,7 @@ export const PowerBoostCommon: RewardDefinition = {
   label: 'reward.pool.power_boost.label',
   description: 'reward.pool.power_boost.desc',
   rarity: 'common',
+  statModifiers: { powerMult: 1.04 },
   apply: (run) => run.applyModifier({ powerMult: 1.04 }, 'POWER BOOST'),
 };
 
@@ -13,6 +14,7 @@ export const AeroTweakCommon: RewardDefinition = {
   label: 'reward.pool.aero_tweak.label',
   description: 'reward.pool.aero_tweak.desc',
   rarity: 'common',
+  statModifiers: { dragReduction: 0.02 },
   apply: (run) => run.applyModifier({ dragReduction: 0.02 }, 'AERO TWEAK'),
 };
 
@@ -21,6 +23,7 @@ export const LighterLoadCommon: RewardDefinition = {
   label: 'reward.pool.lighter_load.label',
   description: 'reward.pool.lighter_load.desc',
   rarity: 'common',
+  statModifiers: { weightMult: 0.97 },
   apply: (run) => run.applyModifier({ weightMult: 0.97 }, 'LIGHTER LOAD'),
 };
 
@@ -29,6 +32,7 @@ export const PowerSurgeUncommon: RewardDefinition = {
   label: 'reward.pool.power_surge.label',
   description: 'reward.pool.power_surge.desc',
   rarity: 'uncommon',
+  statModifiers: { powerMult: 1.07 },
   apply: (run) => run.applyModifier({ powerMult: 1.07 }, 'POWER SURGE'),
 };
 
@@ -37,6 +41,7 @@ export const AeroUpgradeUncommon: RewardDefinition = {
   label: 'reward.pool.aero_upgrade.label',
   description: 'reward.pool.aero_upgrade.desc',
   rarity: 'uncommon',
+  statModifiers: { dragReduction: 0.03 },
   apply: (run) => run.applyModifier({ dragReduction: 0.03 }, 'AERO UPGRADE'),
 };
 
@@ -45,6 +50,7 @@ export const WeightShedUncommon: RewardDefinition = {
   label: 'reward.pool.weight_shed.label',
   description: 'reward.pool.weight_shed.desc',
   rarity: 'uncommon',
+  statModifiers: { weightMult: 0.94 },
   apply: (run) => run.applyModifier({ weightMult: 0.94 }, 'WEIGHT SHED'),
 };
 
@@ -53,5 +59,6 @@ export const OverdriveRare: RewardDefinition = {
   label: 'reward.pool.overdrive.label',
   description: 'reward.pool.overdrive.desc',
   rarity: 'rare',
+  statModifiers: { powerMult: 1.12 },
   apply: (run) => run.applyModifier({ powerMult: 1.12 }, 'OVERDRIVE'),
 };

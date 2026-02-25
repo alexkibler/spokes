@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { THEME } from '../theme';
 import { Button } from '../components/Button';
+import type { SessionService } from '../services/game/SessionService';
 
 export class BottomControls {
   private scene: Phaser.Scene;
@@ -9,9 +10,13 @@ export class BottomControls {
   private statusLabel!: Phaser.GameObjects.Text;
   private btnMenu!: Button;
   private btnRemote!: Phaser.GameObjects.Text;
+  private btnAutoplay!: Button;
+  private sessionService: SessionService;
 
   constructor(scene: Phaser.Scene, onPause: () => void, onRemoteClick: () => void) {
     this.scene = scene;
+    const services = this.scene.registry.get('services');
+    this.sessionService = services.sessionService;
     this.buildBottomControls(onPause);
     this.buildRemoteButton(onRemoteClick);
   }
@@ -29,6 +34,22 @@ export class BottomControls {
       onClick: onPause,
     });
     this.btnMenu.setDepth(11);
+
+    const isAutoplay = this.sessionService.autoplayEnabled;
+    this.btnAutoplay = new Button(this.scene, {
+      x: 0, y: 0, width: 140, height: 34,
+      text: `AUTOPLAY: ${isAutoplay ? 'ON' : 'OFF'}`,
+      variant: isAutoplay ? 'success' : 'secondary',
+      textColor: isAutoplay ? THEME.colors.text.gold : THEME.colors.text.main,
+      onClick: () => {
+        const newState = !this.sessionService.autoplayEnabled;
+        this.sessionService.setAutoplay(newState);
+        this.btnAutoplay.setText(`AUTOPLAY: ${newState ? 'ON' : 'OFF'}`);
+        this.btnAutoplay.setVariant(newState ? 'success' : 'secondary');
+        this.btnAutoplay.setTextColor(newState ? THEME.colors.text.gold : THEME.colors.text.main);
+      }
+    });
+    this.btnAutoplay.setDepth(11);
   }
 
   private buildRemoteButton(onClick: () => void): void {
@@ -73,6 +94,10 @@ export class BottomControls {
       // Re-position menu button (Container)
       if (this.btnMenu) {
         this.btnMenu.setPosition(width - 90, stY);
+      }
+
+      if (this.btnAutoplay) {
+        this.btnAutoplay.setPosition(width - 240, stY);
       }
     }
 

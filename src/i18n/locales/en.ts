@@ -10,6 +10,8 @@ export const en = {
     difficulty: 'DIFFICULTY',
     ftp: 'FTP',
     ftp_unit: 'W',
+    autoplay_delay: 'AUTOPLAY DELAY',
+    autoplay_delay_unit: 'ms',
     edit_hint: 'click to edit · enter to confirm',
 
     diff: {

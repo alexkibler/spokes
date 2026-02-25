@@ -381,7 +381,7 @@ export class GameScene extends Phaser.Scene {
       this.bottomControls.setStatus('ok', 'BT CONNECTED');
     } else {
       // SIM Mode
-      const simPower = this.ftpW * 3;
+      const simPower = this.ftpW * 3000;
       this.trainer = new MockTrainerService({ power: simPower, speed: 45, cadence: 80 });
       this.trainer.onData((data) => this.handleData(data));
       void this.trainer.connect();
@@ -860,7 +860,8 @@ export class GameScene extends Phaser.Scene {
       },
       () => {
         this.scene.start('MenuScene');
-      }
+      },
+      this.services.sessionService
     );
   }
 
@@ -884,6 +885,7 @@ export class GameScene extends Phaser.Scene {
           goToMap();
         },
         rerollCount > 0 ? () => {
+          this.services.sessionService.setAutoplay(false);
           this.runManager.removeFromInventory('reroll_voucher');
           if (this.saveManager) this.saveManager.saveRun(this.runManager.exportData());
           overlay.destroy();
@@ -891,6 +893,7 @@ export class GameScene extends Phaser.Scene {
           showOverlay();
         } : null,
         this.runManager,
+        this.services.sessionService,
         headerStats ? { stats: headerStats, units: this.units } : undefined,
       );
     };

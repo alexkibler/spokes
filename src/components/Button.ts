@@ -83,7 +83,10 @@ export class Button extends Phaser.GameObjects.Container {
       this.setInteractive({ useHandCursor: true });
       this.on('pointerover', this.onHover, this);
       this.on('pointerout', this.onOut, this);
-      this.on('pointerdown', () => {
+      this.on('pointerdown', (_pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {
+         // Stop propagation so scene background listeners don't fire
+         event.stopPropagation();
+
          this.background.setFillStyle(this.hoverColor, 0.8); // Click feedback
          this.scene.time.delayedCall(100, () => {
              if (!this.isDisabled) this.background.setFillStyle(this.hoverColor);
@@ -117,6 +120,33 @@ export class Button extends Phaser.GameObjects.Container {
 
   public setTextColor(color: string): void {
     this.label.setColor(color);
+  }
+
+  public setVariant(variant: ButtonVariant): void {
+    switch (variant) {
+      case 'primary':
+        this.baseColor = THEME.colors.buttons.primary;
+        this.hoverColor = THEME.colors.buttons.primaryHover;
+        break;
+      case 'secondary':
+        this.baseColor = THEME.colors.buttons.secondary;
+        this.hoverColor = THEME.colors.buttons.secondaryHover;
+        break;
+      case 'danger':
+        this.baseColor = THEME.colors.buttons.danger;
+        this.hoverColor = THEME.colors.buttons.dangerHover;
+        break;
+      case 'success':
+        this.baseColor = THEME.colors.buttons.success;
+        this.hoverColor = 0x008877;
+        break;
+      default:
+        this.baseColor = THEME.colors.buttons.primary;
+        this.hoverColor = THEME.colors.buttons.primaryHover;
+    }
+    if (!this.isDisabled) {
+        this.background.setFillStyle(this.baseColor);
+    }
   }
 
   public setEnabled(enabled: boolean): void {

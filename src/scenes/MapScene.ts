@@ -18,6 +18,7 @@ import { EliteChallengeOverlay } from '../ui/overlay/EliteChallengeOverlay';
 import { EquipmentOverlay } from '../ui/overlay/EquipmentOverlay';
 import { RemotePairingOverlay } from '../ui/overlay/RemotePairingOverlay';
 import { ConfirmationModal } from '../components/ConfirmationModal';
+import { CountdownUI } from '../ui/CountdownUI';
 
 import { MapRenderer } from '../rendering/MapRenderer';
 import { MapStatsPanel } from '../ui/MapStatsPanel';
@@ -37,6 +38,8 @@ export class MapScene extends Phaser.Scene {
   private runManager!: RunManager;
   private saveManager!: SaveManager;
   private services!: GameServices;
+  private mapContainer!: Phaser.GameObjects.Container;
+  private countdownUI!: CountdownUI;
 
   private isTeleportMode = false;
   private overlayActive = false;
@@ -84,11 +87,15 @@ export class MapScene extends Phaser.Scene {
     }
 
     // Initialize Components
-    const mapContainer = this.add.container(0, 0);
+    this.mapContainer = this.add.container(0, 0);
     const graphics = this.add.graphics();
-    mapContainer.add(graphics);
+    this.mapContainer.add(graphics);
 
-    this.mapRenderer = new MapRenderer(this, mapContainer, graphics, (node) => this.onNodeClick(node));
+    this.countdownUI = new CountdownUI(this, this.mapContainer);
+    // Ensure countdown is above map elements but below overlays
+    this.countdownUI.setDepth(100);
+
+    this.mapRenderer = new MapRenderer(this, this.mapContainer, graphics, (node) => this.onNodeClick(node));
     this.statsPanel = new MapStatsPanel(this);
     this.modifiersBar = new MapModifiersBar(this);
 
@@ -102,6 +109,16 @@ export class MapScene extends Phaser.Scene {
         },
         onTeleportClick: () => {
             this.isTeleportMode = !this.isTeleportMode;
+            this.refresh();
+        },
+        onAutoplayClick: () => {
+            const newVal = !this.services.sessionService.autoplayEnabled;
+            this.services.sessionService.setAutoplay(newVal);
+            if (newVal) {
+                this.checkAutoplay();
+            } else {
+                this.cancelAutoplay();
+            }
             this.refresh();
         }
     });
@@ -121,6 +138,42 @@ export class MapScene extends Phaser.Scene {
 
     this.services.remoteService.onCursorMove(this.onRemoteCursorMoveBound);
     this.services.remoteService.onCursorSelect(this.onRemoteCursorSelectBound);
+
+    // Cancel autoplay on interaction
+    this.input.on('pointerdown', () => {
+        if (this.services.sessionService.autoplayEnabled && this.countdownUI.isActive()) {
+            this.cancelAutoplay();
+            this.refresh();
+        }
+    });
+
+    // Check autoplay start
+    this.checkAutoplay();
+  }
+
+  private cancelAutoplay() {
+      this.services.sessionService.setAutoplay(false);
+      this.countdownUI.stop();
+  }
+
+  private checkAutoplay() {
+      if (this.countdownUI.isActive()) return;
+
+      if (this.services.sessionService.autoplayEnabled && !this.overlayActive && !this.isTeleportMode) {
+           const nextNode = this.runManager.getNextAutoplayNode();
+           if (nextNode) {
+               const w = this.scale.width;
+               const h = this.cameraController.virtualHeight;
+               const nx = nextNode.x * w;
+               const ny = nextNode.y * h;
+
+               this.countdownUI.startNodeCountdown(nx, ny, 30, this.services.sessionService.autoplayDelayMs, () => {
+                   if (this.services.sessionService.autoplayEnabled) {
+                       this.onNodeClick(nextNode);
+                   }
+               });
+           }
+      }
   }
 
   private refresh(): void {
@@ -130,7 +183,9 @@ export class MapScene extends Phaser.Scene {
     this.mapRenderer.render(run, this.focusedNodeId, this.isTeleportMode, this.cameraController.virtualHeight);
     this.statsPanel.render(run);
     this.modifiersBar.render(run);
-    this.hud.update(run, this.isTeleportMode);
+    this.hud.update(run, this.isTeleportMode, this.services.sessionService.autoplayEnabled);
+
+    this.checkAutoplay();
   }
 
   private onResize(): void {
@@ -446,6 +501,7 @@ export class MapScene extends Phaser.Scene {
   private closeOverlay(): void {
       this.overlayActive = false;
       this.cameraController.inputEnabled = true;
+      this.checkAutoplay();
   }
 
   private openShop(): void {
@@ -474,7 +530,8 @@ export class MapScene extends Phaser.Scene {
         this.refresh();
         if (this.saveManager) this.saveManager.saveRun(this.runManager.exportData());
       },
-      () => this.closeOverlay()
+      () => this.closeOverlay(),
+      this.services.sessionService
     ));
   }
 
@@ -622,6 +679,21 @@ export class MapScene extends Phaser.Scene {
         this.closeOverlay();
         onProceed();
       });
+
+    // Autoplay: auto-click RACE! after delay (screen-space CountdownUI)
+    if (this.services.sessionService.autoplayEnabled) {
+      const overlayCountdown = new CountdownUI(this);
+      overlayCountdown.setScrollFactor(0);
+      overlayCountdown.setDepth(depth + 5);
+      btnHit.on('pointerdown', () => overlayCountdown.stop());
+      overlayCountdown.startButtonCountdown(btnX, btnY, btnW, btnH, this.services.sessionService.autoplayDelayMs, () => {
+        if (this.services.sessionService.autoplayEnabled) {
+          overlayCountdown.destroy();
+          this.closeOverlay();
+          onProceed();
+        }
+      });
+    }
   }
 
   shutdown(): void {

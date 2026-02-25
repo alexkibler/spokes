@@ -212,6 +212,16 @@ export class MapRenderer {
         }
       }
 
+      // Override visuals for a locked Grand Criterium (finish without all medals)
+      if (node.type === 'finish') {
+        const medalsHeld = run.inventory.filter(i => i.startsWith('medal_')).length;
+        const medalsNeeded = run.runLength;
+        if (medalsHeld < medalsNeeded) {
+          circle.setStrokeStyle(3, 0xff4444, 1);
+          circle.setAlpha(0.5);
+        }
+      }
+
       // Re-bind hover logic to update reachability styling if needed?
       // Actually, the pointerout handler resets style based on current reachability.
       // But the reachability depends on isTeleportMode which changes.
@@ -272,7 +282,15 @@ export class MapRenderer {
     });
 
     circle.on('pointerover', () => {
-      this.showTooltip(container.x, container.y, NODE_DESCRIPTIONS[node.type]);
+      let tipText = NODE_DESCRIPTIONS[node.type];
+      if (node.type === 'finish' && this.currentRunData) {
+        const medalsHeld = this.currentRunData.inventory.filter(i => i.startsWith('medal_')).length;
+        const medalsNeeded = this.currentRunData.runLength;
+        if (medalsHeld < medalsNeeded) {
+          tipText = `LOCKED: NEED ${medalsNeeded} MEDALS (HAVE ${medalsHeld})`;
+        }
+      }
+      this.showTooltip(container.x, container.y, tipText);
       if (this.currentRunData && this.isNodeReachable(node.id, this.currentRunData, this.currentIsTeleportMode)) {
         circle.setStrokeStyle(3, 0xffffff, 1);
       }
