@@ -55,18 +55,18 @@ export class EnvironmentEffectsUI {
     const cx = 860, cy = 230;
     this.effectContainer = this.scene.add.container(cx, cy).setDepth(15).setAlpha(0);
     const bgGfx = this.scene.add.graphics();
-    bgGfx.fillStyle(0x000000, 0.65);
+    bgGfx.fillStyle(THEME.colors.ui.hudBackground, 0.65);
     bgGfx.fillCircle(0, 0, 42);
     this.effectContainer.add(bgGfx);
-    this.effectNameText = this.scene.add.text(0, 0, '', { fontFamily: THEME.fonts.main, fontSize: '11px', fontStyle: 'bold', color: '#ffffff', align: 'center' }).setOrigin(0.5);
+    this.effectNameText = this.scene.add.text(0, 0, '', { fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, fontStyle: 'bold', color: THEME.colors.text.main, align: 'center' }).setOrigin(0.5);
     this.effectContainer.add(this.effectNameText);
 
     this.notifContainer = this.scene.add.container(this.scene.scale.width / 2, 200).setDepth(20).setAlpha(0);
     const notifBg = this.scene.add.graphics();
-    notifBg.fillStyle(0x000000, 0.80);
+    notifBg.fillStyle(THEME.colors.ui.hudBackground, 0.80);
     notifBg.fillRect(-175, -38, 350, 76);
     this.notifContainer.add(notifBg);
-    this.notifTitle = this.scene.add.text(0, -12, '', { fontFamily: THEME.fonts.main, fontSize: '26px', fontStyle: 'bold', color: '#ffffff', align: 'center' }).setOrigin(0.5);
+    this.notifTitle = this.scene.add.text(0, -12, '', { fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.hudValue, fontStyle: 'bold', color: THEME.colors.text.main, align: 'center' }).setOrigin(0.5);
     this.notifContainer.add(this.notifTitle);
     this.notifSub = this.scene.add.text(0, 18, '', { fontFamily: THEME.fonts.main, fontSize: '11px', color: '#cccccc', align: 'center', letterSpacing: 2 }).setOrigin(0.5);
     this.notifContainer.add(this.notifSub);
@@ -75,9 +75,9 @@ export class EnvironmentEffectsUI {
   private buildManualEffectButtons(): void {
     const x = 860;
     this.btnHeadwind = this.scene.add.rectangle(x, 120, 100, 34, 0x444444).setInteractive({ useHandCursor: true }).setDepth(15);
-    this.btnHeadwindLabel = this.scene.add.text(x, 120, 'HEADWIND', { fontFamily: THEME.fonts.main, fontSize: '12px', color: '#ffffff' }).setOrigin(0.5).setDepth(16);
+    this.btnHeadwindLabel = this.scene.add.text(x, 120, 'HEADWIND', { fontFamily: THEME.fonts.main, fontSize: '12px', color: THEME.colors.text.main }).setOrigin(0.5).setDepth(16);
     this.btnTailwind = this.scene.add.rectangle(x, 170, 100, 34, 0x444444).setInteractive({ useHandCursor: true }).setDepth(15);
-    this.btnTailwindLabel = this.scene.add.text(x, 170, 'TAILWIND', { fontFamily: THEME.fonts.main, fontSize: '12px', color: '#ffffff' }).setOrigin(0.5).setDepth(16);
+    this.btnTailwindLabel = this.scene.add.text(x, 170, 'TAILWIND', { fontFamily: THEME.fonts.main, fontSize: '12px', color: THEME.colors.text.main }).setOrigin(0.5).setDepth(16);
 
     this.btnHeadwind.on('pointerdown', () => this.toggleEffect('headwind'));
     this.btnTailwind.on('pointerdown', () => this.toggleEffect('tailwind'));

@@ -18,14 +18,14 @@ export class BottomControls {
 
   private buildBottomControls(onPause: () => void): void {
     this.bottomStrip = this.scene.add.graphics().setDepth(10);
-    this.statusDot = this.scene.add.arc(0, 0, 5, 0, 360, false, 0x555566).setDepth(11);
-    this.statusLabel = this.scene.add.text(0, 0, 'DISCONNECTED', { fontFamily: THEME.fonts.main, fontSize: '11px', color: '#8888aa' }).setOrigin(0, 0.5).setDepth(11);
+    this.statusDot = this.scene.add.arc(0, 0, 5, 0, 360, false, THEME.colors.status.off).setDepth(11);
+    this.statusLabel = this.scene.add.text(0, 0, 'DISCONNECTED', { fontFamily: THEME.fonts.main, fontSize: '11px', color: '#' + THEME.colors.status.off.toString(16).padStart(6, '0') }).setOrigin(0, 0.5).setDepth(11);
 
     this.btnMenu = new Button(this.scene, {
       x: 0, y: 0, width: 120, height: 34,
       text: 'PAUSE',
       variant: 'primary',
-      textColor: '#ffffff',
+      textColor: THEME.colors.text.main,
       onClick: onPause,
     });
     this.btnMenu.setDepth(11);

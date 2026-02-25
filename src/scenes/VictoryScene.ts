@@ -8,6 +8,7 @@
 import Phaser from 'phaser';
 import { RunManager } from '../roguelike/RunManager';
 import { SaveManager } from '../services/SaveManager';
+import { THEME } from '../theme';
 
 export class VictoryScene extends Phaser.Scene {
   constructor() {
@@ -53,14 +54,14 @@ export class VictoryScene extends Phaser.Scene {
 
     // Title
     this.add.text(cx, cy - 100, 'CONGRATULATIONS!', {
-      fontFamily: 'monospace',
+      fontFamily: THEME.fonts.main,
       fontSize: '42px',
       fontStyle: 'bold',
       color: '#ffcc00',
     }).setOrigin(0.5);
 
     this.add.text(cx, cy - 40, 'RUN COMPLETED', {
-      fontFamily: 'monospace',
+      fontFamily: THEME.fonts.main,
       fontSize: '24px',
       color: '#ffffff',
       letterSpacing: 4,
@@ -73,14 +74,14 @@ export class VictoryScene extends Phaser.Scene {
     const floors = run ? run.runLength : 0;
 
     this.add.text(cx, cy + 40, `TOTAL GOLD EARNED: ${gold}`, {
-      fontFamily: 'monospace',
-      fontSize: '18px',
+      fontFamily: THEME.fonts.main,
+      fontSize: THEME.fonts.sizes.large,
       color: '#00f5d4',
     }).setOrigin(0.5);
 
     this.add.text(cx, cy + 70, `FLOORS CLEARED: ${floors}/${floors}`, {
-      fontFamily: 'monospace',
-      fontSize: '18px',
+      fontFamily: THEME.fonts.main,
+      fontSize: THEME.fonts.sizes.large,
       color: '#aaaaaa',
     }).setOrigin(0.5);
 
@@ -89,18 +90,18 @@ export class VictoryScene extends Phaser.Scene {
     const btnW = 200;
     const btnH = 50;
 
-    const btn = this.add.rectangle(cx, btnY, btnW, btnH, 0x8b5a00)
+    const btn = this.add.rectangle(cx, btnY, btnW, btnH, THEME.colors.ui.panelBorder)
       .setInteractive({ useHandCursor: true });
     
     this.add.text(cx, btnY, 'MAIN MENU', {
-      fontFamily: 'monospace',
-      fontSize: '18px',
+      fontFamily: THEME.fonts.main,
+      fontSize: THEME.fonts.sizes.large,
       fontStyle: 'bold',
       color: '#ffffff'
     }).setOrigin(0.5);
 
     btn.on('pointerover', () => btn.setFillStyle(0xcc8800));
-    btn.on('pointerout', () => btn.setFillStyle(0x8b5a00));
+    btn.on('pointerout', () => btn.setFillStyle(THEME.colors.ui.panelBorder));
     btn.on('pointerdown', () => {
       this.scene.start('MenuScene');
     });

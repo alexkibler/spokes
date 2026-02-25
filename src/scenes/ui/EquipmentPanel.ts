@@ -91,7 +91,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
       this.contentGroup.push(slotBg);
 
       const slotLabel = this.scene.add.text(sx + SLOT_W / 2, slotsY + 8, i18n.t(`slots.${slot}`), {
-        fontFamily: THEME.fonts.main, fontSize: '9px',
+        fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.small,
         color: isEmpty ? '#555577' : '#66aa66', fontStyle: 'bold', letterSpacing: 1,
       }).setOrigin(0.5, 0);
       this.add(slotLabel);
@@ -106,7 +106,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
         const nameLines = this.wrapText(translatedLabel, 9);
 
         const nameText = this.scene.add.text(sx + SLOT_W / 2, slotsY + 22, nameLines.join('\n'), {
-          fontFamily: THEME.fonts.main, fontSize: '9px', color: '#ccffcc',
+          fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.small, color: '#ccffcc',
           align: 'center', wordWrap: { width: SLOT_W - 8 },
         }).setOrigin(0.5, 0);
         this.add(nameText);
@@ -146,7 +146,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
         this.contentGroup.push(hitZone);
       } else {
         const emptyText = this.scene.add.text(sx + SLOT_W / 2, slotsY + SLOT_H / 2, i18n.t('pause.equipment.empty'), {
-          fontFamily: THEME.fonts.main, fontSize: '9px', color: '#333355',
+          fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.small, color: '#333355',
         }).setOrigin(0.5);
         this.add(emptyText);
         this.contentGroup.push(emptyText);
@@ -156,14 +156,14 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
     // Inventory
     const invTitleY = slotsY + SLOT_H + 16;
     const invTitle = this.scene.add.text(16, invTitleY, i18n.t('pause.equipment.inventory_title'), {
-      fontFamily: THEME.fonts.main, fontSize: '11px', color: THEME.colors.text.muted,
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: THEME.colors.text.muted,
       fontStyle: 'bold', letterSpacing: 2,
     }).setOrigin(0, 0.5);
     this.add(invTitle);
     this.contentGroup.push(invTitle);
 
     const divider = this.scene.add.graphics();
-    divider.lineStyle(1, 0x2a2a44, 1);
+    divider.lineStyle(1, THEME.colors.buttons.primary, 1);
     divider.lineBetween(16, invTitleY + 14, PANEL_W - 16, invTitleY + 14);
     this.add(divider);
     this.contentGroup.push(divider);
@@ -172,7 +172,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
 
     if (invIds.length === 0) {
       const empty = this.scene.add.text(PANEL_W / 2, rowsStartY + 12, i18n.t('pause.equipment.inventory_empty'), {
-        fontFamily: THEME.fonts.main, fontSize: '11px', color: '#444466',
+        fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: '#444466',
       }).setOrigin(0.5, 0);
       this.add(empty);
       this.contentGroup.push(empty);
@@ -194,7 +194,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
          const translatedLabel = i18n.exists(`item.${itemId}`) ? i18n.t(`item.${itemId}`) : labelKey;
 
          const nameText = this.scene.add.text(22, ry + ROW_H / 2, `${translatedLabel}${countStr}`, {
-           fontFamily: THEME.fonts.main, fontSize: '11px', color: '#ccccdd',
+           fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: '#ccccdd',
          }).setOrigin(0, 0.5);
          this.add(nameText);
          this.contentGroup.push(nameText);
@@ -202,7 +202,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
          if (isEquipment && def?.modifier) {
            const statStr = formatModifierLines(def.modifier).join('  ');
            const statText = this.scene.add.text(22, ry + ROW_H / 2 + 1, statStr, {
-             fontFamily: THEME.fonts.main, fontSize: '9px', color: '#7777aa',
+             fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.small, color: '#7777aa',
            }).setOrigin(0, -0.7);
            this.add(statText);
            this.contentGroup.push(statText);
@@ -217,7 +217,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
            const btnBg = this.scene.add.rectangle(btnX, btnY, btnW, btnH, THEME.colors.buttons.primary)
              .setInteractive({ useHandCursor: true });
            const btnLabel = this.scene.add.text(btnX, btnY, i18n.t('pause.equipment.equip_btn'), {
-             fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ffffff', fontStyle: 'bold',
+             fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: THEME.colors.text.main, fontStyle: 'bold',
            }).setOrigin(0.5);
 
            btnBg.on('pointerover', () => btnBg.setFillStyle(THEME.colors.buttons.primaryHover));
@@ -290,7 +290,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
     const slotName = i18n.t(`slots.${slot}`);
     const replaceTitle = i18n.t('pause.equipment.replace_title').replace('{{slot}}', slotName);
     const headerTxt = scene.add.text(cx, my + 18, replaceTitle, {
-      fontFamily: THEME.fonts.main, fontSize: '14px', color: '#ffaa44', fontStyle: 'bold',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.medium, color: '#ffaa44', fontStyle: 'bold',
     }).setOrigin(0.5, 0).setDepth(3001);
     modalGroup.push(headerTxt);
 
@@ -302,7 +302,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
       ...curLines.map(l => `  − ${l}`),
     ].join('\n');
     const curTxt = scene.add.text(cx - 80, my + 50, curBlock, {
-      fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ff8888',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: '#ff8888',
       lineSpacing: 3,
     }).setOrigin(0, 0).setDepth(3001);
     modalGroup.push(curTxt);
@@ -315,7 +315,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
       ...incLines.map(l => `  + ${l}`),
     ].join('\n');
     const incTxt = scene.add.text(cx - 80, my + 50 + 16 + curLines.length * 14, incBlock, {
-      fontFamily: THEME.fonts.main, fontSize: '10px', color: '#88ff88',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: '#88ff88',
       lineSpacing: 3,
     }).setOrigin(0, 0).setDepth(3001);
     modalGroup.push(incTxt);
@@ -328,7 +328,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
     const confirmBg = scene.add.rectangle(cx - 70, my + MODAL_H - 28, 120, 30, 0x1a4a1a)
       .setInteractive({ useHandCursor: true }).setDepth(3001);
     const confirmLbl = scene.add.text(cx - 70, my + MODAL_H - 28, i18n.t('pause.equipment.confirm_swap'), {
-      fontFamily: THEME.fonts.main, fontSize: '10px', color: '#88ff88', fontStyle: 'bold',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: '#88ff88', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(3001);
 
     confirmBg.on('pointerover', () => confirmBg.setFillStyle(0x2a6a2a));
@@ -344,7 +344,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
     const cancelBg = scene.add.rectangle(cx + 70, my + MODAL_H - 28, 100, 30, 0x3a2a2a)
       .setInteractive({ useHandCursor: true }).setDepth(3001);
     const cancelLbl = scene.add.text(cx + 70, my + MODAL_H - 28, i18n.t('pause.equipment.cancel'), {
-      fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ff8888', fontStyle: 'bold',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: '#ff8888', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(3001);
 
     cancelBg.on('pointerover', () => cancelBg.setFillStyle(0x5a3a3a));

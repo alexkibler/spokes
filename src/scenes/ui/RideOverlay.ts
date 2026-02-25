@@ -96,7 +96,7 @@ export class RideOverlay extends Phaser.GameObjects.Container {
     }).setOrigin(0.5, 0));
 
     this.add(scene.add.text(cx, py + 76, `↑ ${segElevStr} gain`, {
-      fontFamily: THEME.fonts.main, fontSize: '11px', color: '#99bbcc', letterSpacing: 1,
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: '#99bbcc', letterSpacing: 1,
     }).setOrigin(0.5, 0));
 
     let cursorY = py + 96;
@@ -109,7 +109,7 @@ export class RideOverlay extends Phaser.GameObjects.Container {
         : `PELOTON WINS  (${finishedCount}/${totalCount} FINISHED)`;
       const bossCol = playerWon ? THEME.colors.text.accent : '#ff6600';
       this.add(scene.add.text(cx, cursorY, bossRes, {
-        fontFamily: THEME.fonts.main, fontSize: '14px', fontStyle: 'bold', color: bossCol, letterSpacing: 2,
+        fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.medium, fontStyle: 'bold', color: bossCol, letterSpacing: 2,
       }).setOrigin(0.5, 0));
       cursorY += 20;
     }
@@ -125,7 +125,7 @@ export class RideOverlay extends Phaser.GameObjects.Container {
         if (stats.challengeResult) {
           if (stats.challengeResult.success) {
             this.add(scene.add.text(cx, cursorY, `★ CHALLENGE COMPLETE — ${stats.challengeResult.reward}`, {
-              fontFamily: THEME.fonts.main, fontSize: '13px', fontStyle: 'bold', color: '#f0c030',
+              fontFamily: THEME.fonts.main, fontSize: '13px', fontStyle: 'bold', color: THEME.colors.text.gold,
             }).setOrigin(0.5, 0));
           } else {
             this.add(scene.add.text(cx, cursorY, `✗ CHALLENGE FAILED`, {
@@ -136,7 +136,7 @@ export class RideOverlay extends Phaser.GameObjects.Container {
         }
       } else {
         this.add(scene.add.text(cx, cursorY, `(ALREADY CLEARED)`, {
-          fontFamily: THEME.fonts.main, fontSize: '14px', color: '#aaaaaa',
+          fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.medium, color: THEME.colors.text.muted,
         }).setOrigin(0.5, 0));
         cursorY += 20;
       }
@@ -148,7 +148,7 @@ export class RideOverlay extends Phaser.GameObjects.Container {
       this.add(div);
 
       this.add(scene.add.text(cx, cursorY + 12, 'Save your ride data?', {
-        fontFamily: THEME.fonts.main, fontSize: '11px', color: '#888899', letterSpacing: 2,
+        fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: '#888899', letterSpacing: 2,
       }).setOrigin(0.5, 0));
       cursorY += 28;
     } else {
@@ -164,7 +164,7 @@ export class RideOverlay extends Phaser.GameObjects.Container {
 
     if (isRoguelike && isCompleted) {
       const btnText = isFinishNode ? 'VICTORY!' : 'CONTINUE RUN';
-      const textColor = isFinishNode ? '#000000' : '#ffffff';
+      const textColor = isFinishNode ? '#000000' : THEME.colors.text.main;
 
       const btn = new Button(scene, {
         x: cx,

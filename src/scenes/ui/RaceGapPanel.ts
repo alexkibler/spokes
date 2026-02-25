@@ -20,8 +20,8 @@ export class RaceGapPanel {
 
   private buildRaceGapPanel(): void {
     this.raceGapBg = this.scene.add.graphics().setDepth(12);
-    this.raceGapLabel = this.scene.add.text(0, 0, '', { fontFamily: THEME.fonts.main, fontSize: '8px', color: '#888899', letterSpacing: 2 }).setDepth(13).setOrigin(1, 0);
-    this.raceGapText = this.scene.add.text(0, 0, '', { fontFamily: THEME.fonts.main, fontSize: '14px', fontStyle: 'bold', color: '#ffffff' }).setDepth(13).setOrigin(1, 0);
+    this.raceGapLabel = this.scene.add.text(0, 0, '', { fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.xsmall, color: THEME.colors.text.subtle, letterSpacing: 2 }).setDepth(13).setOrigin(1, 0);
+    this.raceGapText = this.scene.add.text(0, 0, '', { fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.medium, fontStyle: 'bold', color: THEME.colors.text.main }).setDepth(13).setOrigin(1, 0);
     this.raceGapBg.setVisible(false); this.raceGapLabel.setVisible(false); this.raceGapText.setVisible(false);
   }
 

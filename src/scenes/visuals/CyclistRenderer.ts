@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { RacerProfile } from '../../race/RacerProfile';
+import { THEME } from '../../theme';
 import {
   draftFactor,
   DRAFT_MAX_CDA_REDUCTION,
@@ -87,7 +88,7 @@ export class CyclistRenderer {
 
   private drawCyclist(crankAngle: number, cycGroundY: number): void {
     this.cyclistGraphics.clear();
-    this.drawCyclistShape(this.cyclistGraphics, crankAngle, cycGroundY, 0x2a2018, 0x5a3a1a, 0xc49a6a);
+    this.drawCyclistShape(this.cyclistGraphics, crankAngle, cycGroundY, THEME.colors.cyclist.playerBike, THEME.colors.cyclist.playerJersey, THEME.colors.cyclist.playerSkin);
   }
 
   private drawAllGhosts(player: PlayerState, ghosts: RenderableGhost[], cycGroundY: number): void {
@@ -98,7 +99,7 @@ export class CyclistRenderer {
       if (alpha < 0.01) { ghost.graphics.clear(); continue; }
       const offsetX = Math.tanh(gapM / 120) * 280;
       ghost.graphics.setPosition(offsetX, 0).clear();
-      this.drawCyclistShape(ghost.graphics, ghost.crankAngle, cycGroundY, ghost.racer.color, ghost.racer.color & 0xaaaaaa, 0xddeeff);
+      this.drawCyclistShape(ghost.graphics, ghost.crankAngle, cycGroundY, ghost.racer.color, ghost.racer.color & 0xaaaaaa, THEME.colors.cyclist.ghostSkin);
     }
   }
 
@@ -136,14 +137,15 @@ export class CyclistRenderer {
         const scroll = player.draftAnimOffset % span;
 
         // 7 speed-line rows at different heights through the rider silhouette
+        const sc = THEME.colors.cyclist.slipstream;
         const rows: Array<{ y: number; thick: number; color: number; alphaMult: number }> = [
-          { y: gY - 38, thick: 1.0, color: 0xcceeff, alphaMult: 0.40 },
-          { y: gY - 32, thick: 1.5, color: 0xaaddff, alphaMult: 0.70 },
-          { y: gY - 26, thick: 2.0, color: 0x88ccff, alphaMult: 1.00 },
-          { y: gY - 20, thick: 2.5, color: 0x88ccff, alphaMult: 1.00 },
-          { y: gY - 14, thick: 2.0, color: 0xaaddff, alphaMult: 0.80 },
-          { y: gY -  8, thick: 1.5, color: 0xcceeff, alphaMult: 0.55 },
-          { y: gY -  2, thick: 1.0, color: 0xddeeFF, alphaMult: 0.30 },
+          { y: gY - 38, thick: 1.0, color: sc[0], alphaMult: 0.40 },
+          { y: gY - 32, thick: 1.5, color: sc[1], alphaMult: 0.70 },
+          { y: gY - 26, thick: 2.0, color: sc[2], alphaMult: 1.00 },
+          { y: gY - 20, thick: 2.5, color: sc[3], alphaMult: 1.00 },
+          { y: gY - 14, thick: 2.0, color: sc[4], alphaMult: 0.80 },
+          { y: gY -  8, thick: 1.5, color: sc[5], alphaMult: 0.55 },
+          { y: gY -  2, thick: 1.0, color: sc[6], alphaMult: 0.30 },
         ];
 
         // Number of lines scales with intensity (2 at minimum, 6 at full draft)

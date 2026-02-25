@@ -99,8 +99,8 @@ export class MapModifiersBar {
     const tipBg = this.scene.add.graphics().setScrollFactor(0).setDepth(210).setAlpha(0);
     const tipText = this.scene.add.text(0, 0, '', {
       fontFamily: THEME.fonts.main,
-      fontSize: '11px',
-      color: '#ffffff',
+      fontSize: THEME.fonts.sizes.default,
+      color: THEME.colors.text.main,
       align: 'left',
     }).setScrollFactor(0).setDepth(211).setAlpha(0);
 
@@ -114,7 +114,7 @@ export class MapModifiersBar {
       const ty = barY + chipH / 2 + 4;
       tipText.setPosition(tx + 8, ty + 5);
       tipBg.clear()
-        .fillStyle(0x000000, 0.92)
+        .fillStyle(THEME.colors.ui.hudBackground, 0.92)
         .lineStyle(1, 0x888888, 0.8)
         .fillRoundedRect(tx, ty, tw, th, 4)
         .strokeRoundedRect(tx, ty, tw, th, 4);
@@ -134,7 +134,7 @@ export class MapModifiersBar {
 
       const text = this.scene.add.text(cx, barY, chip.text, {
         fontFamily: THEME.fonts.main,
-        fontSize: '10px',
+        fontSize: THEME.fonts.sizes.caption,
         color: chip.textColor,
         fontStyle: 'bold',
       }).setOrigin(0.5).setScrollFactor(0).setDepth(23);

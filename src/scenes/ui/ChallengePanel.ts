@@ -29,9 +29,9 @@ export class ChallengePanel {
   private buildChallengePanel(): void {
     const PANEL_Y = 70, depth = 12;
     this.challengePanel = this.scene.add.graphics().setDepth(depth);
-    this.challengePanelTitle = this.scene.add.text(10, PANEL_Y + 5, '', { fontFamily: THEME.fonts.main, fontSize: '9px', color: THEME.colors.text.gold, letterSpacing: 2 }).setDepth(depth + 1);
-    this.challengePanelValue = this.scene.add.text(this.scene.scale.width / 2, PANEL_Y + 5, '', { fontFamily: THEME.fonts.main, fontSize: '11px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(depth + 1);
-    this.challengePanelTarget = this.scene.add.text(this.scene.scale.width - 10, PANEL_Y + 5, '', { fontFamily: THEME.fonts.main, fontSize: '9px', color: '#aaaaaa' }).setOrigin(1, 0).setDepth(depth + 1);
+    this.challengePanelTitle = this.scene.add.text(10, PANEL_Y + 5, '', { fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.small, color: THEME.colors.text.gold, letterSpacing: 2 }).setDepth(depth + 1);
+    this.challengePanelValue = this.scene.add.text(this.scene.scale.width / 2, PANEL_Y + 5, '', { fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: THEME.colors.text.main, fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(depth + 1);
+    this.challengePanelTarget = this.scene.add.text(this.scene.scale.width - 10, PANEL_Y + 5, '', { fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.small, color: '#aaaaaa' }).setOrigin(1, 0).setDepth(depth + 1);
     this.challengePanelBar = this.scene.add.graphics().setDepth(depth + 1);
 
     this.setVisible(false);
@@ -79,7 +79,7 @@ export class ChallengePanel {
       valueLabel = `TIME LEFT: ${Math.floor(remaining/60)}:${String(Math.floor(remaining%60)).padStart(2,'0')}  →  LIMIT: ${Math.floor(limit/60)}:${String(limit%60).padStart(2,'0')}`;
     }
 
-    this.challengePanelValue.setText(valueLabel).setStyle({ fontFamily: THEME.fonts.main, fontSize: '11px', color: '#ffffff', fontStyle: 'bold' });
+    this.challengePanelValue.setText(valueLabel).setStyle({ fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: THEME.colors.text.main, fontStyle: 'bold' });
     this.challengePanelTarget.setText(activeChallenge.reward.description.toUpperCase());
     const ratio = isTimeBased ? Math.max(0, Math.min(1, 1 - current / target)) : target > 0 ? Math.min(1, current / target) : 0;
     const passing = isTimeBased ? current < target : current >= target;

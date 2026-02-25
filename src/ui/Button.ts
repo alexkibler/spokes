@@ -67,7 +67,7 @@ export class Button extends Phaser.GameObjects.Container {
     this.label = scene.add.text(0, 0, config.text, {
       fontFamily: THEME.fonts.main,
       fontSize: config.fontSize ?? THEME.fonts.sizes.default,
-      color: this.isDisabled ? THEME.colors.text.muted : (config.textColor ?? '#ffffff'),
+      color: this.isDisabled ? THEME.colors.text.muted : (config.textColor ?? THEME.colors.text.main),
       fontStyle: 'bold',
       align: 'center',
     }).setOrigin(0.5);
@@ -124,7 +124,7 @@ export class Button extends Phaser.GameObjects.Container {
     if (enabled) {
       this.setInteractive({ useHandCursor: true });
       this.background.setFillStyle(this.baseColor);
-      this.label.setColor('#ffffff');
+      this.label.setColor(THEME.colors.text.main);
       this.label.setAlpha(1);
     } else {
       this.disableInteractive();

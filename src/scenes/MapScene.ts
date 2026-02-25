@@ -175,7 +175,7 @@ export class MapScene extends Phaser.Scene {
       
       // We perform the async operation here
       this.services.remoteService.initHost().then(newCode => {
-          this.hud.setRemoteButtonText(`REMOTE: ${newCode}`, '#00ff88'); // Handled by HUD update too, but instant feedback
+          this.hud.setRemoteButtonText(`REMOTE: ${newCode}`, THEME.colors.text.success); // Handled by HUD update too, but instant feedback
           this.overlayActive = true;
           this.cameraController.inputEnabled = false;
           new RemotePairingOverlay(this, newCode, () => {
@@ -184,7 +184,7 @@ export class MapScene extends Phaser.Scene {
           });
       }).catch(e => {
           console.error('Remote init failed', e);
-          this.hud.setRemoteButtonText('ERR', '#ff4444');
+          this.hud.setRemoteButtonText('ERR', THEME.colors.text.danger);
           this.time.delayedCall(2000, () => this.refresh());
       });
   }
@@ -537,14 +537,14 @@ export class MapScene extends Phaser.Scene {
     const h  = this.scale.height;
     const cx = w / 2;
     const cy = h / 2;
-    const mono = 'monospace';
+    const mono = THEME.fonts.main;
     const depth = 2100; // Above everything
 
     this.overlayActive = true;
     this.cameraController.inputEnabled = false;
 
     const dim = this.add.graphics().setDepth(depth).setScrollFactor(0);
-    dim.fillStyle(0x000000, 0.88);
+    dim.fillStyle(THEME.colors.ui.hudBackground, 0.88);
     dim.fillRect(0, 0, w, h);
 
     const panW = Math.min(520, w - 40);
@@ -564,7 +564,7 @@ export class MapScene extends Phaser.Scene {
     const titleText = spokeId ? '⚠ ' + i18n.t(`biomes.${spokeId}.name`) + ' BOSS' : '⚠ FINAL BOSS';
 
     this.add.text(cx, py + 22, titleText, {
-      fontFamily: mono, fontSize: '11px', color: racer.accentHex, letterSpacing: 4,
+      fontFamily: mono, fontSize: THEME.fonts.sizes.default, color: racer.accentHex, letterSpacing: 4,
     }).setOrigin(0.5, 0).setDepth(depth + 2).setScrollFactor(0);
 
     this.add.text(cx, py + 44, racer.displayName, {
@@ -572,7 +572,7 @@ export class MapScene extends Phaser.Scene {
     }).setOrigin(0.5, 0).setDepth(depth + 2).setScrollFactor(0);
 
     this.add.text(cx, py + 88, racer.flavorText, {
-      fontFamily: mono, fontSize: '12px', color: '#aaaaaa', align: 'center',
+      fontFamily: mono, fontSize: '12px', color: THEME.colors.text.muted, align: 'center',
       wordWrap: { width: panW - 40 },
     }).setOrigin(0.5, 0).setDepth(depth + 2).setScrollFactor(0);
 
@@ -586,7 +586,7 @@ export class MapScene extends Phaser.Scene {
     stats.forEach((s, i) => {
       const x = px + 30 + i * (panW - 60) / (stats.length - 1);
       this.add.text(x, statsY, s.label, {
-        fontFamily: mono, fontSize: '9px', color: '#666677', letterSpacing: 2,
+        fontFamily: mono, fontSize: THEME.fonts.sizes.small, color: '#666677', letterSpacing: 2,
       }).setOrigin(0.5, 0).setDepth(depth + 2).setScrollFactor(0);
       this.add.text(x, statsY + 14, s.value, {
         fontFamily: mono, fontSize: '16px', fontStyle: 'bold', color: '#ddddee',
@@ -608,7 +608,7 @@ export class MapScene extends Phaser.Scene {
     };
     drawBtn(false);
     const btnLabel = this.add.text(cx, btnY + btnH / 2, 'RACE!', {
-      fontFamily: mono, fontSize: '18px', fontStyle: 'bold', color: racer.hexColor, letterSpacing: 4,
+      fontFamily: mono, fontSize: THEME.fonts.sizes.large, fontStyle: 'bold', color: racer.hexColor, letterSpacing: 4,
     }).setOrigin(0.5).setDepth(depth + 3).setScrollFactor(0);
 
     const btnHit = this.add

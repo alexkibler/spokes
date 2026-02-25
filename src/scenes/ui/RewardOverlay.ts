@@ -90,18 +90,18 @@ export class RewardOverlay extends BaseOverlay {
         : `${msToKmh(stats.avgSpeedMs).toFixed(1)} km/h`;
 
       const metrics = scene.add.text(cx, 32, `${distStr}   ·   ${timeStr}   ·   ${stats.avgPowerW}W   ·   ${avgSpdStr}`, {
-        fontFamily: THEME.fonts.main, fontSize: '11px', color: '#cccccc', letterSpacing: 1,
+        fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: '#cccccc', letterSpacing: 1,
       }).setOrigin(0.5, 0);
       this.panelContainer.add(metrics);
 
       // Gold + challenge line
       const goldStr = stats.goldEarned !== undefined ? `+${stats.goldEarned} GOLD` : '';
       let challengeStr = '';
-      let challengeColor = '#888888';
+      let challengeColor = THEME.colors.text.subtle;
       if (stats.challengeResult) {
         if (stats.challengeResult.success) {
           challengeStr = i18n.t('reward.challenge_complete', { reward: stats.challengeResult.reward });
-          challengeColor = '#f0c030';
+          challengeColor = THEME.colors.text.gold;
         } else {
           challengeStr = i18n.t('reward.challenge_failed');
           challengeColor = '#aa6655';
@@ -110,7 +110,7 @@ export class RewardOverlay extends BaseOverlay {
 
       if (goldStr) {
         const goldTxt = scene.add.text(cx, 50, goldStr, {
-          fontFamily: THEME.fonts.main, fontSize: '14px', fontStyle: 'bold',
+          fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.medium, fontStyle: 'bold',
           color: THEME.colors.text.gold,
         }).setOrigin(0.5, 0);
         this.panelContainer.add(goldTxt);
@@ -119,14 +119,14 @@ export class RewardOverlay extends BaseOverlay {
       if (challengeStr) {
         const goldOffset = goldStr ? 18 : 0;
         const challTxt = scene.add.text(cx, 50 + goldOffset, challengeStr, {
-          fontFamily: THEME.fonts.main, fontSize: '11px', color: challengeColor,
+          fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: challengeColor,
         }).setOrigin(0.5, 0);
         this.panelContainer.add(challTxt);
       }
 
       // Divider
       const div = scene.add.graphics();
-      div.lineStyle(1, 0x2a2a44, 1);
+      div.lineStyle(1, THEME.colors.buttons.primary, 1);
       div.lineBetween(16, STATS_H - 1, panW - 16, STATS_H - 1);
       this.panelContainer.add(div);
     }
@@ -153,7 +153,7 @@ export class RewardOverlay extends BaseOverlay {
 
     const bannerSubtitle = scene.add.text(cx, bannerY + BANNER_H + 6, i18n.t('reward.subtitle'), {
       fontFamily: THEME.fonts.main,
-      fontSize: '11px',
+      fontSize: THEME.fonts.sizes.default,
       color: THEME.colors.text.muted,
       letterSpacing: 2,
     }).setOrigin(0.5, 0);
@@ -186,7 +186,7 @@ export class RewardOverlay extends BaseOverlay {
 
       const badgeTxt = scene.add.text(cardCx, cardT + BADGE_H / 2, reward.rarity.toUpperCase(), {
         fontFamily: THEME.fonts.main,
-        fontSize: '9px',
+        fontSize: THEME.fonts.sizes.small,
         color: rs.badgeText,
         fontStyle: 'bold',
         letterSpacing: 2,
@@ -196,7 +196,7 @@ export class RewardOverlay extends BaseOverlay {
       const labelTxt = scene.add.text(cardCx, cardT + BADGE_H + 16, i18n.t(reward.label), {
         fontFamily: THEME.fonts.main,
         fontSize: '13px',
-        color: '#ffffff',
+        color: THEME.colors.text.main,
         fontStyle: 'bold',
         align: 'center',
         wordWrap: { width: cardW - 16 },
@@ -205,7 +205,7 @@ export class RewardOverlay extends BaseOverlay {
 
       const descTxt = scene.add.text(cardCx, cardT + BADGE_H + 46, i18n.t(reward.description), {
         fontFamily: THEME.fonts.main,
-        fontSize: '11px',
+        fontSize: THEME.fonts.sizes.default,
         color: '#9999bb',
         align: 'center',
         wordWrap: { width: cardW - 16 },
@@ -297,7 +297,7 @@ export class RewardOverlay extends BaseOverlay {
     layer.push(panel);
 
     const headerTxt = scene.add.text(cx, py + 18, i18n.t('reward.equip_prompt', { item: i18n.t(itemLabel) }), {
-      fontFamily: THEME.fonts.main, fontSize: '14px', color: THEME.colors.text.gold, fontStyle: 'bold',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.medium, color: THEME.colors.text.gold, fontStyle: 'bold',
     }).setOrigin(0.5, 0);
     this.add(headerTxt);
     layer.push(headerTxt);
@@ -312,14 +312,14 @@ export class RewardOverlay extends BaseOverlay {
         i18n.t('reward.currently_equipped', { item: occupantName }),
         i18n.t('reward.unequip_warning'),
       ].join('\n'), {
-        fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ffaa44',
+        fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: '#ffaa44',
         align: 'center', lineSpacing: 3,
       }).setOrigin(0.5, 0);
       this.add(warnTxt);
       layer.push(warnTxt);
     } else {
       const slotTxt = scene.add.text(cx, py + 46, i18n.t('reward.slot_empty', { slot: slotLabel }), {
-        fontFamily: THEME.fonts.main, fontSize: '10px', color: '#aaaacc',
+        fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: '#aaaacc',
       }).setOrigin(0.5, 0);
       this.add(slotTxt);
       layer.push(slotTxt);
@@ -344,7 +344,7 @@ export class RewardOverlay extends BaseOverlay {
     const equipBg = scene.add.rectangle(cx - 72, equipBtnY, 130, 30, 0x1a4a1a)
       .setInteractive({ useHandCursor: true });
     const equipLbl = scene.add.text(cx - 72, equipBtnY, i18n.t('reward.equip_now'), {
-      fontFamily: THEME.fonts.main, fontSize: '11px', color: '#88ff88', fontStyle: 'bold',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: '#88ff88', fontStyle: 'bold',
     }).setOrigin(0.5);
     equipBg.on('pointerover', () => equipBg.setFillStyle(0x2a6a2a));
     equipBg.on('pointerout',  () => equipBg.setFillStyle(0x1a4a1a));
@@ -366,7 +366,7 @@ export class RewardOverlay extends BaseOverlay {
     const skipBg = scene.add.rectangle(cx + 72, equipBtnY, 130, 30, 0x2a2a3a)
       .setInteractive({ useHandCursor: true });
     const skipLbl = scene.add.text(cx + 72, equipBtnY, i18n.t('reward.equip_later'), {
-      fontFamily: THEME.fonts.main, fontSize: '11px', color: '#aaaacc', fontStyle: 'bold',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: '#aaaacc', fontStyle: 'bold',
     }).setOrigin(0.5);
     skipBg.on('pointerover', () => skipBg.setFillStyle(0x3a3a5a));
     skipBg.on('pointerout',  () => skipBg.setFillStyle(0x2a2a3a));
@@ -418,7 +418,7 @@ export class RewardOverlay extends BaseOverlay {
     modal.push(mpanel);
 
     const headerTxt = scene.add.text(cx, my + 18, i18n.t('pause.equipment.replace_title', { slot: i18n.t('slots.' + slot) }), {
-      fontFamily: THEME.fonts.main, fontSize: '14px', color: '#ffaa44', fontStyle: 'bold',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.medium, color: '#ffaa44', fontStyle: 'bold',
     }).setOrigin(0.5, 0);
     this.add(headerTxt);
     modal.push(headerTxt);
@@ -429,7 +429,7 @@ export class RewardOverlay extends BaseOverlay {
       ...curLines.map(l => `  − ${l}`),
     ].join('\n');
     const curTxt = scene.add.text(cx - 80, my + 50, curBlock, {
-      fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ff8888', lineSpacing: 3,
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: '#ff8888', lineSpacing: 3,
     }).setOrigin(0, 0);
     this.add(curTxt);
     modal.push(curTxt);
@@ -440,7 +440,7 @@ export class RewardOverlay extends BaseOverlay {
       ...incLines.map(l => `  + ${l}`),
     ].join('\n');
     const incTxt = scene.add.text(cx - 80, my + 50 + 16 + curLines.length * 14, incBlock, {
-      fontFamily: THEME.fonts.main, fontSize: '10px', color: '#88ff88', lineSpacing: 3,
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: '#88ff88', lineSpacing: 3,
     }).setOrigin(0, 0);
     this.add(incTxt);
     modal.push(incTxt);
@@ -456,7 +456,7 @@ export class RewardOverlay extends BaseOverlay {
     const confirmBg = scene.add.rectangle(cx - 70, my + MODAL_H - 28, 130, 30, 0x1a4a1a)
       .setInteractive({ useHandCursor: true });
     const confirmLbl = scene.add.text(cx - 70, my + MODAL_H - 28, i18n.t('pause.equipment.confirm_swap'), {
-      fontFamily: THEME.fonts.main, fontSize: '10px', color: '#88ff88', fontStyle: 'bold',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: '#88ff88', fontStyle: 'bold',
     }).setOrigin(0.5);
     confirmBg.on('pointerover', () => confirmBg.setFillStyle(0x2a6a2a));
     confirmBg.on('pointerout',  () => confirmBg.setFillStyle(0x1a4a1a));
@@ -473,7 +473,7 @@ export class RewardOverlay extends BaseOverlay {
     const cancelBg = scene.add.rectangle(cx + 70, my + MODAL_H - 28, 100, 30, 0x3a2a2a)
       .setInteractive({ useHandCursor: true });
     const cancelLbl = scene.add.text(cx + 70, my + MODAL_H - 28, i18n.t('pause.equipment.cancel'), {
-      fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ff8888', fontStyle: 'bold',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: '#ff8888', fontStyle: 'bold',
     }).setOrigin(0.5);
     cancelBg.on('pointerover', () => cancelBg.setFillStyle(0x5a3a3a));
     cancelBg.on('pointerout',  () => cancelBg.setFillStyle(0x3a2a2a));

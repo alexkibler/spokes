@@ -190,7 +190,7 @@ export class MapRenderer {
         circle.disableInteractive();
       } else if (isReachable) {
         const outlineColor = isTeleportMode ? 0xff88ff : 0xffd700;
-        circle.setStrokeStyle(isFocused ? 4 : 3, isFocused ? 0x00ff88 : outlineColor, 1);
+        circle.setStrokeStyle(isFocused ? 4 : 3, isFocused ? THEME.colors.status.ok : outlineColor, 1);
         circle.setScale(isFocused ? 1.3 : 1.1);
         circle.setAlpha(1.0);
         circle.setInteractive({ useHandCursor: true });
@@ -361,7 +361,7 @@ export class MapRenderer {
 
     const bg = this.tooltipContainer.getAt(0) as Phaser.GameObjects.Graphics;
     bg.clear();
-    bg.fillStyle(0x000000, 0.9);
+    bg.fillStyle(THEME.colors.ui.hudBackground, 0.9);
     bg.lineStyle(1, 0xffffff, 0.5);
     bg.fillRoundedRect(-w/2, -h/2, w, h, 6);
     bg.strokeRoundedRect(-w/2, -h/2, w, h, 6);

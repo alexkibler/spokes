@@ -45,7 +45,7 @@ export class Panel extends Phaser.GameObjects.Container {
     if (config.onClose) {
       this.closeButton = scene.add.text(config.width - 20, 20, '✕', {
         fontFamily: THEME.fonts.main,
-        fontSize: '18px',
+        fontSize: THEME.fonts.sizes.large,
         color: THEME.colors.text.muted,
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 

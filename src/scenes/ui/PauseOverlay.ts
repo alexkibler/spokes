@@ -99,7 +99,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
 
     // Title
     const title = this.scene.add.text(cx, cy, i18n.t('pause.title'), {
-      fontFamily: THEME.fonts.main, fontSize: '22px', color: '#ffffff', fontStyle: 'bold'
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.title, color: THEME.colors.text.main, fontStyle: 'bold'
     }).setOrigin(0.5);
     this.menuContainer.add(title);
 
@@ -115,16 +115,16 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
 
     // FTP Input Section
     const ftpLabel = this.scene.add.text(cx, cy - 15, i18n.t('pause.ftp_setting'), {
-        fontFamily: THEME.fonts.main, fontSize: '10px', color: '#aaaaaa'
+        fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: THEME.colors.text.muted
     }).setOrigin(0.5);
     this.menuContainer.add(ftpLabel);
 
-    this.ftpInputField = this.scene.add.rectangle(cx, cy + 10, 140, 36, 0x1a1a3a)
-        .setStrokeStyle(2, 0x3a3a8b)
+    this.ftpInputField = this.scene.add.rectangle(cx, cy + 10, 140, 36, THEME.colors.menu.inputBg)
+        .setStrokeStyle(2, THEME.colors.menu.inputBorder)
         .setInteractive({ useHandCursor: true });
 
     this.ftpText = this.scene.add.text(cx, cy + 10, `${this.ftpW} ${i18n.t('menu.ftp_unit')}`, {
-        fontFamily: THEME.fonts.main, fontSize: '18px', color: '#ffffff', fontStyle: 'bold'
+        fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.large, color: THEME.colors.text.main, fontStyle: 'bold'
     }).setOrigin(0.5);
 
     this.menuContainer.add([this.ftpInputField, this.ftpText]);
@@ -173,7 +173,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
       const btn = this.scene.add.rectangle(x, y, w, h, color)
         .setInteractive({ useHandCursor: true });
       const txt = this.scene.add.text(x, y, label, {
-          fontFamily: THEME.fonts.main, fontSize: '12px', color: '#ffffff', fontStyle: 'bold'
+          fontFamily: THEME.fonts.main, fontSize: '12px', color: THEME.colors.text.main, fontStyle: 'bold'
       }).setOrigin(0.5);
 
       btn.on('pointerover', () => btn.setAlpha(0.8));
@@ -238,7 +238,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
       if (this.ftpInputActive) return;
       this.ftpInputActive = true;
       this.ftpInputStr = String(this.ftpW);
-      this.ftpInputField.setStrokeStyle(2, 0x5588ff);
+      this.ftpInputField.setStrokeStyle(2, THEME.colors.menu.inputBorderFocus);
 
       this.ftpCursorOn = true;
       this.ftpCursorEvent = this.scene.time.addEvent({
@@ -257,7 +257,7 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
   private stopFtpEdit(): void {
       if (!this.ftpInputActive) return;
       this.ftpInputActive = false;
-      this.ftpInputField.setStrokeStyle(2, 0x3a3a8b);
+      this.ftpInputField.setStrokeStyle(2, THEME.colors.menu.inputBorder);
       if (this.ftpCursorEvent) this.ftpCursorEvent.remove();
       this.scene.input.keyboard!.off('keydown', this.handleKey, this);
 

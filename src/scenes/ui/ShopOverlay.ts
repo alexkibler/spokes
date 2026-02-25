@@ -153,14 +153,14 @@ export class ShopOverlay extends BaseOverlay {
 
     // ── Equipped section ─────────────────────────────────────────────────────
     const eqHeader = scene.add.text(lx + 14, y, 'EQUIPPED', {
-      fontFamily: THEME.fonts.main, fontSize: '10px',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption,
       color: THEME.colors.text.muted, fontStyle: 'bold', letterSpacing: 2,
     }).setOrigin(0, 0.5);
     this.panelContainer.add(eqHeader);
     this.itemsGroup.push(eqHeader);
 
     const div1 = scene.add.graphics();
-    div1.lineStyle(1, 0x2a2a44, 1);
+    div1.lineStyle(1, THEME.colors.buttons.primary, 1);
     div1.lineBetween(lx + 14, y + 12, lx + lw - 14, y + 12);
     this.panelContainer.add(div1);
     this.itemsGroup.push(div1);
@@ -177,14 +177,14 @@ export class ShopOverlay extends BaseOverlay {
 
     // ── Inventory section ────────────────────────────────────────────────────
     const invHeader = scene.add.text(lx + 14, y, 'INVENTORY', {
-      fontFamily: THEME.fonts.main, fontSize: '10px',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption,
       color: THEME.colors.text.muted, fontStyle: 'bold', letterSpacing: 2,
     }).setOrigin(0, 0.5);
     this.panelContainer.add(invHeader);
     this.itemsGroup.push(invHeader);
 
     const div2 = scene.add.graphics();
-    div2.lineStyle(1, 0x2a2a44, 1);
+    div2.lineStyle(1, THEME.colors.buttons.primary, 1);
     div2.lineBetween(lx + 14, y + 12, lx + lw - 14, y + 12);
     this.panelContainer.add(div2);
     this.itemsGroup.push(div2);
@@ -199,7 +199,7 @@ export class ShopOverlay extends BaseOverlay {
 
     if (invCounts.size === 0) {
       const empty = scene.add.text(lx + lw / 2, y + 10, '— nothing —', {
-        fontFamily: THEME.fonts.main, fontSize: '11px', color: '#444466',
+        fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: '#444466',
       }).setOrigin(0.5, 0);
       this.panelContainer.add(empty);
       this.itemsGroup.push(empty);
@@ -221,7 +221,7 @@ export class ShopOverlay extends BaseOverlay {
 
     // Slot label
     const slotTxt = scene.add.text(lx + 20, y + SELL_ROW_H / 2, i18n.t(`slots.${slot}`), {
-      fontFamily: THEME.fonts.main, fontSize: '9px', color: '#555577', fontStyle: 'bold',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.small, color: '#555577', fontStyle: 'bold',
     }).setOrigin(0, 0.5);
     this.panelContainer.add(slotTxt);
     this.itemsGroup.push(slotTxt);
@@ -233,7 +233,7 @@ export class ShopOverlay extends BaseOverlay {
 
       const nameCol = lx + 72;
       const nameTxt = scene.add.text(nameCol, y + (modStr ? SELL_ROW_H / 2 - 5 : SELL_ROW_H / 2), label, {
-        fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ccffcc',
+        fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: '#ccffcc',
       }).setOrigin(0, 0.5);
       this.panelContainer.add(nameTxt);
       this.itemsGroup.push(nameTxt);
@@ -257,7 +257,7 @@ export class ShopOverlay extends BaseOverlay {
       }
     } else {
       const emptyTxt = scene.add.text(lx + 72, y + SELL_ROW_H / 2, '— empty —', {
-        fontFamily: THEME.fonts.main, fontSize: '10px', color: '#333355',
+        fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: '#333355',
       }).setOrigin(0, 0.5);
       this.panelContainer.add(emptyTxt);
       this.itemsGroup.push(emptyTxt);
@@ -279,7 +279,7 @@ export class ShopOverlay extends BaseOverlay {
     const countStr = count > 1 ? ` ×${count}` : '';
 
     const nameTxt = scene.add.text(lx + 20, y + SELL_ROW_H / 2, `${label}${countStr}`, {
-      fontFamily: THEME.fonts.main, fontSize: '10px', color: isEquip ? '#aaaacc' : '#ccccdd',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.caption, color: isEquip ? '#aaaacc' : '#ccccdd',
     }).setOrigin(0, 0.5);
     this.panelContainer.add(nameTxt);
     this.itemsGroup.push(nameTxt);
@@ -303,7 +303,7 @@ export class ShopOverlay extends BaseOverlay {
     const btnBg = scene.add.rectangle(bx, midY, BTN_W, BTN_H, 0x4a1a1a)
       .setInteractive({ useHandCursor: true });
     const btnLbl = scene.add.text(bx, midY, `SELL  ${price}g`, {
-      fontFamily: THEME.fonts.main, fontSize: '9px', color: '#ffaaaa', fontStyle: 'bold',
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.small, color: '#ffaaaa', fontStyle: 'bold',
     }).setOrigin(0.5);
 
     btnBg.on('pointerover', () => btnBg.setFillStyle(0x6a2a2a));

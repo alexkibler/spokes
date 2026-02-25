@@ -1,3 +1,5 @@
+import { THEME } from '../theme';
+
 /**
  * RacerProfile.ts
  *
@@ -56,10 +58,10 @@ export function createBossProfile(playerFtpW: number): RacerProfile {
     massKg: 74,   // 66 kg rider + 8 kg carbon race bike
     cdA: 0.20,    // exceptional TT-style race position
     crr: 0.003,   // pro race tyre compound (half of default asphalt)
-    color:       0x88ccff,  // ghost-blue cyclist body
-    hexColor:    '#88ccff',
-    accentColor: 0xff6600,  // orange accent for elevation marker
-    accentHex:   '#ff6600',
+    color:       THEME.colors.racers.bossBody,
+    hexColor:    THEME.colors.racers.bossBodyHex,
+    accentColor: THEME.colors.racers.bossAccent,
+    accentHex:   THEME.colors.racers.bossAccentHex,
   };
 }
 
@@ -82,10 +84,7 @@ export function createBossRacers(playerFtpW: number): RacerProfile[] {
     { suffix: 'X',    powerMult: 2.25, massKg: 73, cdA: 0.20 },
   ];
   // Gradient from pale sky-blue (weakest) to vivid violet (strongest)
-  const colors = [
-    0x99ddff, 0x88ccff, 0x77bbff, 0x66aaff, 0x5599ee,
-    0x6688ff, 0x7777ff, 0x8866ff, 0x9955ff, 0xaa44ff,
-  ];
+  const colors = [...THEME.colors.racers.peloton];
   return variants.map((v, i) => ({
     id: `le_fantome_${v.suffix.toLowerCase()}`,
     displayName: `LE FANTÔME ${v.suffix}`,
@@ -96,8 +95,8 @@ export function createBossRacers(playerFtpW: number): RacerProfile[] {
     crr:         0.003,
     color:       colors[i],
     hexColor:    `#${colors[i].toString(16).padStart(6, '0')}`,
-    accentColor: 0xff6600,
-    accentHex:   '#ff6600',
+    accentColor: THEME.colors.racers.bossAccent,
+    accentHex:   THEME.colors.racers.bossAccentHex,
   }));
 }
 
@@ -114,10 +113,10 @@ export function createEliteRacer(name: string, powerW: number): RacerProfile {
     massKg: 78,   // 70 kg rider + 8 kg bike
     cdA: 0.30,    // road-race position
     crr: 0.005,   // standard asphalt
-    color:       0xffcc44,  // golden rival
-    hexColor:    '#ffcc44',
-    accentColor: 0xffcc44,
-    accentHex:   '#ffcc44',
+    color:       THEME.colors.racers.eliteBody,
+    hexColor:    THEME.colors.racers.eliteBodyHex,
+    accentColor: THEME.colors.racers.eliteBody,
+    accentHex:   THEME.colors.racers.eliteBodyHex,
   };
 }
 
@@ -142,10 +141,10 @@ export function createSpokeBoss(type: 'plains' | 'mountain' | 'coast' | 'forest'
       base.flavorText = '"Catch me if you can."';
       base.powerW = Math.round(playerFtpW * 1.5); // High power
       base.cdA = 0.22; // Good aero
-      base.color = 0x88cc44;
-      base.hexColor = '#88cc44';
-      base.accentColor = 0xccff66;
-      base.accentHex = '#ccff66';
+      base.color = THEME.colors.racers.plainsChampion;
+      base.hexColor = THEME.colors.racers.plainsChampionHex;
+      base.accentColor = THEME.colors.racers.plainsChampionAccent;
+      base.accentHex = THEME.colors.racers.plainsChampionAccentHex;
       break;
     case 'mountain': // Climber: Lightweight
       base.displayName = 'THE CLIMBER';
@@ -153,10 +152,10 @@ export function createSpokeBoss(type: 'plains' | 'mountain' | 'coast' | 'forest'
       base.powerW = Math.round(playerFtpW * 1.3);
       base.massKg = 60; // Light
       base.cdA = 0.30; // Not very aero
-      base.color = 0xcc4444;
-      base.hexColor = '#cc4444';
-      base.accentColor = 0xff6666;
-      base.accentHex = '#xff6666';
+      base.color = THEME.colors.racers.mountainChampion;
+      base.hexColor = THEME.colors.racers.mountainChampionHex;
+      base.accentColor = THEME.colors.racers.mountainChampionAccent;
+      base.accentHex = THEME.colors.racers.mountainChampionAccentHex;
       break;
     case 'coast': // Rouleur: High sustained, low Crr (ignores mud penalty somewhat)
       base.displayName = 'THE ROULEUR';
@@ -164,20 +163,20 @@ export function createSpokeBoss(type: 'plains' | 'mountain' | 'coast' | 'forest'
       base.powerW = Math.round(playerFtpW * 1.4);
       base.massKg = 80; // Heavy
       base.crr = 0.003; // Very low rolling resistance
-      base.color = 0x4488cc;
-      base.hexColor = '#4488cc';
-      base.accentColor = 0x66aaff;
-      base.accentHex = '#66aaff';
+      base.color = THEME.colors.racers.coastChampion;
+      base.hexColor = THEME.colors.racers.coastChampionHex;
+      base.accentColor = THEME.colors.racers.coastChampionAccent;
+      base.accentHex = THEME.colors.racers.coastChampionAccentHex;
       break;
     case 'forest': // Gravel/MTB: Balanced, handles bumps
       base.displayName = 'THE RANGER';
       base.flavorText = '"I know every root and rock."';
       base.powerW = Math.round(playerFtpW * 1.35);
       base.crr = 0.004; // Good tires
-      base.color = 0x228844;
-      base.hexColor = '#228844';
-      base.accentColor = 0x44cc66;
-      base.accentHex = '#44cc66';
+      base.color = THEME.colors.racers.forestChampion;
+      base.hexColor = THEME.colors.racers.forestChampionHex;
+      base.accentColor = THEME.colors.racers.forestChampionAccent;
+      base.accentHex = THEME.colors.racers.forestChampionAccentHex;
       break;
   }
   return base;

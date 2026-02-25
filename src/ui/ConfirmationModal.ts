@@ -70,7 +70,7 @@ export class ConfirmationModal extends Phaser.GameObjects.Container {
     const confirmBtn = scene.add.rectangle(cx + btnW / 2 + gap / 2, btnY, btnW, btnH, confirmColor)
       .setInteractive({ useHandCursor: true });
     const confirmTxt = scene.add.text(confirmBtn.x, confirmBtn.y, confirmLabel, {
-      fontFamily: THEME.fonts.main, fontSize: '12px', color: '#ffffff', fontStyle: 'bold'
+      fontFamily: THEME.fonts.main, fontSize: '12px', color: THEME.colors.text.main, fontStyle: 'bold'
     }).setOrigin(0.5);
 
     confirmBtn.on('pointerover', () => confirmBtn.setAlpha(0.8));
@@ -85,7 +85,7 @@ export class ConfirmationModal extends Phaser.GameObjects.Container {
     const cancelBtn = scene.add.rectangle(cx - btnW / 2 - gap / 2, btnY, btnW, btnH, THEME.colors.buttons.secondary)
       .setInteractive({ useHandCursor: true });
     const cancelTxt = scene.add.text(cancelBtn.x, cancelBtn.y, cancelLabel, {
-      fontFamily: THEME.fonts.main, fontSize: '12px', color: '#aaaaaa', fontStyle: 'bold'
+      fontFamily: THEME.fonts.main, fontSize: '12px', color: THEME.colors.text.muted, fontStyle: 'bold'
     }).setOrigin(0.5);
 
     cancelBtn.on('pointerover', () => cancelBtn.setAlpha(0.8));

@@ -190,7 +190,7 @@ export class EventOverlay extends BaseOverlay {
       const h = 300;
 
       // Resize panel and set outcome colors
-      this.resizePanel(w, h, 0x0d0d12, success ? 0x00ff88 : 0xff4444);
+      this.resizePanel(w, h, 0x0d0d12, success ? THEME.colors.status.ok : THEME.colors.status.err);
 
       // Add outcome content to panelContainer
       const cx = w / 2;
@@ -199,12 +199,12 @@ export class EventOverlay extends BaseOverlay {
       // panelContainer coordinates are 0,0 to w,h
 
       const titleText = this.scene.add.text(cx, cy - 80, title, { // approx y
-          fontFamily: THEME.fonts.main, fontSize: '32px', color: success ? '#00ff88' : '#ff4444', fontStyle: 'bold'
+          fontFamily: THEME.fonts.main, fontSize: '32px', color: success ? THEME.colors.text.success : THEME.colors.text.danger, fontStyle: 'bold'
       }).setOrigin(0.5);
       this.panelContainer.add(titleText);
 
       const msgText = this.scene.add.text(cx, cy, message, {
-          fontFamily: THEME.fonts.main, fontSize: '18px', color: '#ffffff', wordWrap: { width: 440 }, align: 'center'
+          fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.large, color: THEME.colors.text.main, wordWrap: { width: 440 }, align: 'center'
       }).setOrigin(0.5);
       this.panelContainer.add(msgText);
 

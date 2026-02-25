@@ -88,7 +88,7 @@ export class EliteChallengeOverlay extends BaseOverlay {
     const title = scene.add.text(pw / 2, bannerH / 2 - 4, `★  ${challenge.title.toUpperCase()}  ★`, {
       fontFamily: THEME.fonts.main,
       fontSize: `${titleFontSize}px`,
-      color: '#f0c030',
+      color: THEME.colors.text.gold,
       fontStyle: 'bold',
     }).setOrigin(0.5);
     this.panelContainer.add(title);
@@ -128,7 +128,7 @@ export class EliteChallengeOverlay extends BaseOverlay {
     const warn = scene.add.text(padH, cursorY, '⚠ INTENSITY: ZONE 5 / RED ZONE', {
       fontFamily: THEME.fonts.main,
       fontSize: `${condFontSize - 2}px`,
-      color: '#ff4444',
+      color: THEME.colors.text.danger,
       fontStyle: 'bold',
     }).setOrigin(0, 0);
     this.panelContainer.add(warn);
@@ -138,7 +138,7 @@ export class EliteChallengeOverlay extends BaseOverlay {
     const reward = scene.add.text(padH, cursorY, `Reward: ${challenge.reward.description}`, {
       fontFamily: THEME.fonts.main,
       fontSize: `${condFontSize}px`,
-      color: '#f0c030',
+      color: THEME.colors.text.gold,
       fontStyle: 'bold',
     }).setOrigin(0, 0);
     this.panelContainer.add(reward);
@@ -152,7 +152,7 @@ export class EliteChallengeOverlay extends BaseOverlay {
       height: btnHeight,
       text: 'ACCEPT CHALLENGE',
       variant: 'primary',
-      textColor: '#f0c030',
+      textColor: THEME.colors.text.gold,
       onClick: () => {
         // Elite nodes ride their own dedicated course profile (not the edge's profile)
         const course = node.eliteCourseProfile ?? generateCourseProfile(2, 0.06, 'asphalt');

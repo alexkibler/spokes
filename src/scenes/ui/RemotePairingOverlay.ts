@@ -27,7 +27,7 @@ export class RemotePairingOverlay extends Phaser.GameObjects.Container {
 
     // Title
     const title = scene.add.text(cx, cy - PANEL_H / 2 + 25, 'SCAN TO CONNECT', {
-      fontFamily: THEME.fonts.main, fontSize: '12px', color: '#00ff88', letterSpacing: 2,
+      fontFamily: THEME.fonts.main, fontSize: '12px', color: THEME.colors.text.success, letterSpacing: 2,
     }).setOrigin(0.5, 0);
     this.add(title);
 
@@ -41,13 +41,13 @@ export class RemotePairingOverlay extends Phaser.GameObjects.Container {
 
     // Code Label
     const codeLabel = scene.add.text(cx, cy + PANEL_H / 2 - 25, `CODE: ${roomCode}`, {
-      fontFamily: THEME.fonts.main, fontSize: '16px', color: '#ffffff', fontStyle: 'bold',
+      fontFamily: THEME.fonts.main, fontSize: '16px', color: THEME.colors.text.main, fontStyle: 'bold',
     }).setOrigin(0.5, 1);
     this.add(codeLabel);
 
     // Close Hint
     const closeHit = scene.add.text(cx + PANEL_W / 2 - 8, cy - PANEL_H / 2 + 8, '✕', {
-      fontFamily: THEME.fonts.main, fontSize: '14px', color: THEME.colors.text.muted,
+      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.medium, color: THEME.colors.text.muted,
     }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
     closeHit.on('pointerdown', () => { this.destroy(); onClose(); });
     this.add(closeHit);
@@ -59,7 +59,7 @@ export class RemotePairingOverlay extends Phaser.GameObjects.Container {
     // Generate QR
     QRCode.toDataURL(remoteUrl, {
       width: QR_SIZE, margin: 1,
-      color: { dark: '#000000', light: '#e8dcc8' },
+      color: { dark: '#000000', light: THEME.colors.backgroundHex },
     }).then((dataUrl) => {
       if (!this.scene) return; // Scene might be destroyed
       const texKey = `qr_${roomCode}`;
