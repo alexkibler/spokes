@@ -66,7 +66,7 @@ const PRESETS_MI_KM: number[] = [5, 10, 20, 40, 62, 100, 200].map(mi => mi * MI_
 
 const MIN_KG            =  40;
 const MAX_KG            = 200;
-const DEFAULT_WEIGHT_KG =  150 * LB_TO_KG; // 150 lb default
+const DEFAULT_WEIGHT_KG =  252 * LB_TO_KG; // 252 lb default
 
 const CURSOR_BLINK_MS = 530;
 
@@ -1128,12 +1128,12 @@ export class MenuScene extends Phaser.Scene {
     hwTestBtn.on('pointerdown', () => {
       const calibrationCourse = {
         segments: [
-          { distanceM: 3000, grade: 0.00, surface: 'asphalt' },
+          { distanceM: 1500, grade: 0.00, surface: 'asphalt' },
           // { distanceM: 500,  grade: 0.03, surface: 'asphalt' },
           // { distanceM: 500,  grade: -0.02, surface: 'asphalt' },
           // { distanceM: 500,  grade: 0.00, surface: 'asphalt' },
         ],
-        totalDistanceM: 3000
+        totalDistanceM: 1500
       };
 
       this.services.sessionService.setUnits(this.units);

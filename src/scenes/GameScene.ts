@@ -137,6 +137,7 @@ export class GameScene extends Phaser.Scene {
   private activePauseOverlay: PauseOverlay | null = null;
 
   private isRealTrainer = false;
+  private rawTrainerSpeedMs: number = 0;
 
   private fitWriter!: FitWriter;
   private rideStartTime = 0;
@@ -503,7 +504,8 @@ export class GameScene extends Phaser.Scene {
 
       const effectiveGrade = this.currentGrade * massRatio;
       const effectiveCrr = this.physicsConfig.crr * massRatio;
-      const cwa = 0.5 * this.physicsConfig.rhoAir * this.physicsConfig.cdA;
+      // Scale CWA to force the trainer to clamp harder at high speeds
+      const cwa = (0.5 * this.physicsConfig.rhoAir * this.physicsConfig.cdA);
 
       void this.trainer.setSimulationParams(effectiveGrade, effectiveCrr, cwa);
     }
@@ -521,12 +523,19 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Physics
-    const draftModifiers: RunModifiers = this.playerDraftFactor > 0
-      ? { ...this.runModifiers, dragReduction: Math.min(0.99, this.runModifiers.dragReduction + this.playerDraftFactor) }
-      : this.runModifiers;
-    const acceleration = calculateAcceleration(this.latestPower, this.smoothVelocityMs, this.physicsConfig, draftModifiers);
+    if (this.isRealTrainer) {
+      // Directly tie in-game speed to the physical flywheel's speed (bypassing virtual inertia)
+      // We use a fast lerp to smooth out any Bluetooth packet jitter
+      this.smoothVelocityMs += (this.rawTrainerSpeedMs - this.smoothVelocityMs) * dt * 5.0;
+    } else {
+      // Fallback to virtual acceleration for Mock Trainers
+      const draftModifiers: RunModifiers = this.playerDraftFactor > 0
+        ? { ...this.runModifiers, dragReduction: Math.min(0.99, this.runModifiers.dragReduction + this.playerDraftFactor) }
+        : this.runModifiers;
+      const acceleration = calculateAcceleration(this.latestPower, this.smoothVelocityMs, this.physicsConfig, draftModifiers);
+      this.smoothVelocityMs += acceleration * dt;
+    }
 
-    this.smoothVelocityMs += acceleration * dt;
     if (this.smoothVelocityMs < 0) this.smoothVelocityMs = 0;
 
     // Parallax
@@ -640,6 +649,9 @@ export class GameScene extends Phaser.Scene {
     if (data.instantaneousPower !== undefined) {
       this.rawPower = data.instantaneousPower;
       this.updatePowerDisplay();
+    }
+    if (data.instantaneousSpeed !== undefined) {
+      this.rawTrainerSpeedMs = data.instantaneousSpeed / 3.6; // Convert km/h to m/s
     }
     if (data.instantaneousCadence !== undefined) {
       this.hud.updateCadence(data.instantaneousCadence);
