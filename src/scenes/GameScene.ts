@@ -53,6 +53,7 @@ import { RaceGapPanel } from './ui/RaceGapPanel';
 import { ChallengePanel, type ChallengeStats } from './ui/ChallengePanel';
 import { BottomControls } from './ui/BottomControls';
 import { EnvironmentEffectsUI, type ActiveEffect, EFFECT_META } from './ui/EnvironmentEffectsUI';
+import { SaveManager } from '../services/SaveManager';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -162,6 +163,7 @@ export class GameScene extends Phaser.Scene {
   private onRemoteSaveQuitBound = this.onRemoteSaveQuit.bind(this);
 
   private runManager!: RunManager;
+  private saveManager!: SaveManager;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -211,6 +213,11 @@ export class GameScene extends Phaser.Scene {
              this.runManager = new RunManager(reg);
         }
         this.ftpW = this.runManager.getRun()?.ftpW ?? 200;
+
+        this.saveManager = this.registry.get('saveManager');
+        if (!this.saveManager) {
+            console.warn('SaveManager not found in registry (init fallback?)');
+        }
     } else {
         // Non-roguelike mode still needs a run manager instance for some logic (or we refactor to not need it)
         // For now, create a dummy one with a registry.
@@ -782,6 +789,11 @@ export class GameScene extends Phaser.Scene {
         }
       }
 
+      // Save progress
+      if (this.saveManager) {
+          this.saveManager.saveRun(this.runManager.exportData());
+      }
+
       // First-clear non-finish: skip stats panel and show combined reward screen
       // EXCEPTION: Boss nodes don't give random rewards, they give a medal (handled above)
       if (isFirstClear && !isFinishNode && currentNode?.type !== 'boss') {
@@ -806,6 +818,7 @@ export class GameScene extends Phaser.Scene {
           const currentNode = run?.nodes.find(n => n.id === run?.currentNodeId);
           if (currentNode?.type === 'boss') {
              this.runManager.returnToHub();
+             if (this.saveManager) this.saveManager.saveRun(this.runManager.exportData());
           }
           this.scene.start('MapScene');
         }
@@ -835,11 +848,13 @@ export class GameScene extends Phaser.Scene {
         picks,
         (reward) => {
           reward.apply(this.runManager);
+          if (this.saveManager) this.saveManager.saveRun(this.runManager.exportData());
           overlay.destroy();
           goToMap();
         },
         rerollCount > 0 ? () => {
           this.runManager.removeFromInventory('reroll_voucher');
+          if (this.saveManager) this.saveManager.saveRun(this.runManager.exportData());
           overlay.destroy();
           // On reroll, drop the stats header so focus stays on the new cards
           showOverlay();

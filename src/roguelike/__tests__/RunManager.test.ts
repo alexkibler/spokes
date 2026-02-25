@@ -133,18 +133,22 @@ describe('RunManager', () => {
       manager.startNewRun(5, 20, 'hard');
       expect(manager.getRun()?.gold).toBe(0);
     });
-
-    it('emits save event', () => {
-      const spy = vi.fn();
-      manager.on('save', spy);
-      manager.startNewRun(3, 10, 'normal');
-      expect(spy).toHaveBeenCalled();
-    });
   });
 
   describe('getRun', () => {
     it('returns null when no run has been started', () => {
       expect(manager.getRun()).toBeNull();
+    });
+  });
+
+  describe('exportData', () => {
+    it('throws error when no run active', () => {
+        expect(() => manager.exportData()).toThrow();
+    });
+
+    it('returns run data when active', () => {
+        manager.startNewRun(3, 10, 'normal');
+        expect(manager.exportData()).toBeDefined();
     });
   });
 

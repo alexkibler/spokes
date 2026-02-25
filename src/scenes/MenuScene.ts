@@ -19,7 +19,8 @@ import type { ITrainerService } from '../services/ITrainerService';
 import { TrainerService } from '../services/TrainerService';
 import { HeartRateService } from '../services/HeartRateService';
 import { RemoteService } from '../services/RemoteService';
-import { SaveService } from '../services/SaveService';
+import { SaveManager, type SavedRun, type SaveResult } from '../services/SaveManager';
+import { LocalStorageProvider } from '../services/storage/LocalStorageProvider';
 import { SessionService } from '../services/SessionService';
 import { ContentRegistry } from '../roguelike/registry/ContentRegistry';
 import { ContentBootstrapper } from '../roguelike/content/ContentBootstrapper';
@@ -136,6 +137,8 @@ export class MenuScene extends Phaser.Scene {
   private languageToggle!: Phaser.GameObjects.Container;
   private contentRegistry!: ContentRegistry;
 
+  private saveManager!: SaveManager;
+
   constructor() {
     super({ key: 'MenuScene' });
   }
@@ -145,9 +148,8 @@ export class MenuScene extends Phaser.Scene {
     ContentBootstrapper.bootstrap(this.contentRegistry);
     this.registry.set('contentRegistry', this.contentRegistry);
 
-    // Refresh FTP from storage (it might have changed in the pause menu)
-    const { save } = SaveService.loadResult();
-    this.ftpW = save?.runData.ftpW ?? 200;
+    this.saveManager = new SaveManager(new LocalStorageProvider(), this.contentRegistry);
+    this.registry.set('saveManager', this.saveManager);
 
     // Disconnect any lingering BT devices from a previous run, then clear
     // the session so the player starts fresh.
@@ -158,25 +160,10 @@ export class MenuScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#e8dcc8');
     this.bgGraphics = this.add.graphics();
 
-    this.buildTitle();
-    this.buildDistanceSection();
-    this.buildWeightSection();
-    this.buildUnitsSection();
-    this.buildDifficultySection();
-    this.buildFtpSection();
-    this.buildDevicesSection();
-    this.buildStartButton();
-    this.setupInputHandlers();
-
-    this.buildLanguageToggle();
-
-    // Check for an existing save and build the save banner if one exists
-    const { save: existingSave, wasIncompatible } = SaveService.loadResult();
-    if (existingSave) {
-      this.buildSaveBanner(existingSave);
-    } else if (wasIncompatible) {
-      this.buildIncompatibleSaveNotice();
-    }
+    // Load save data asynchronously, then build UI
+    this.saveManager.loadResult().then((result) => {
+      this.initUI(result);
+    });
 
     // Delay check slightly to allow BleClient polyfill to populate navigator.bluetooth
     this.time.delayedCall(2000, () => {
@@ -184,6 +171,33 @@ export class MenuScene extends Phaser.Scene {
     });
 
     this.scale.on('resize', this.onResize, this);
+    // onResize will be called in initUI after elements are created
+  }
+
+  private initUI(result: SaveResult): void {
+    const { save, wasIncompatible } = result;
+
+    // Refresh FTP from storage
+    this.ftpW = save?.runData.ftpW ?? 200;
+
+    this.buildTitle();
+    this.buildDistanceSection();
+    this.buildWeightSection();
+    this.buildUnitsSection();
+    this.buildDifficultySection();
+    this.buildFtpSection();
+    this.buildDevicesSection();
+    this.buildStartButton(save);
+    this.setupInputHandlers();
+
+    this.buildLanguageToggle();
+
+    if (save) {
+      this.buildSaveBanner(save);
+    } else if (wasIncompatible) {
+      this.buildIncompatibleSaveNotice();
+    }
+
     this.onResize();
   }
 
@@ -936,7 +950,7 @@ export class MenuScene extends Phaser.Scene {
 
   // ── Save Banner ────────────────────────────────────────────────────────────
 
-  private buildSaveBanner(saved: import('../services/SaveService').SavedRun): void {
+  private buildSaveBanner(saved: SavedRun): void {
     const BANNER_W = 620;
 
     this.saveBannerContainer = this.add.container(0, 0);
@@ -1031,10 +1045,10 @@ export class MenuScene extends Phaser.Scene {
 
   // ── Start buttons ──────────────────────────────────────────────────────────
 
-  private buildStartButton(): void {
+  private buildStartButton(saved: SavedRun | null): void {
     this.startBtnContainer = this.add.container(0, 0); // positioned by onResize
 
-    const hasSave = SaveService.hasSave();
+    const hasSave = !!saved;
     const btnW = 215;
     const gap = 20;
 
@@ -1042,7 +1056,7 @@ export class MenuScene extends Phaser.Scene {
       // Layout: [CONTINUE RUN] [START NEW RUN]
       const totalW = btnW * 2 + gap;
       const startX = -totalW / 2 + btnW / 2;
-      this.buildContinueRunButton(startX, btnW);
+      this.buildContinueRunButton(startX, btnW, saved);
       this.buildStartNewRunButton(startX + btnW + gap, btnW);
     } else {
       // Layout: [START RUN] (centred)
@@ -1050,7 +1064,7 @@ export class MenuScene extends Phaser.Scene {
     }
   }
 
-  private buildContinueRunButton(x: number, btnW: number): void {
+  private buildContinueRunButton(x: number, btnW: number, saved: SavedRun): void {
     const btn = this.add
       .rectangle(x, 0, btnW, 52, 0x1a7040)
       .setInteractive({ useHandCursor: true });
@@ -1063,8 +1077,6 @@ export class MenuScene extends Phaser.Scene {
     btn.on('pointerover', () => btn.setFillStyle(0x25a558));
     btn.on('pointerout',  () => btn.setFillStyle(0x1a7040));
     btn.on('pointerdown', () => {
-      const saved = SaveService.load();
-      if (!saved) return;
       // If the run was started with a real trainer, require reconnecting before continuing
       if (saved.runData.isRealTrainerRun && !this.trainerService) {
         new ConfirmationModal(this, {
@@ -1077,12 +1089,12 @@ export class MenuScene extends Phaser.Scene {
       }
 
       const runManager = new RunManager(this.contentRegistry);
-      runManager.on('save', (data: any) => {
-          SaveService.save(data, data.weightKg, data.units);
-      });
       this.registry.set('runManager', runManager);
 
       const run = runManager.loadFromSave(saved);
+      // Explicitly save to refresh timestamp or migrate data if needed
+      this.saveManager.saveRun(run, { weightKg: run.weightKg, units: run.units });
+
       SessionService.setUnits(run.units);
       SessionService.setWeightKg(run.weightKg);
       this.scene.start('MapScene');
@@ -1327,12 +1339,9 @@ export class MenuScene extends Phaser.Scene {
   private doStartNewRun(): void {
     const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
     const runManager = new RunManager(this.contentRegistry);
-    runManager.on('save', (data: any) => {
-        SaveService.save(data, data.weightKg, data.units);
-    });
     this.registry.set('runManager', runManager);
 
-    runManager.startNewRun(
+    const run = runManager.startNewRun(
       floors,
       this.distanceKm,
       this.difficulty,
@@ -1340,6 +1349,7 @@ export class MenuScene extends Phaser.Scene {
       this.weightKg,
       this.units,
     );
+    this.saveManager.saveRun(run, { weightKg: this.weightKg, units: this.units });
     SessionService.setUnits(this.units);
     SessionService.setWeightKg(this.weightKg);
     this.scene.start('MapScene');
@@ -1348,12 +1358,9 @@ export class MenuScene extends Phaser.Scene {
   private doStartRun(): void {
     const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
     const runManager = new RunManager(this.contentRegistry);
-    runManager.on('save', (data: any) => {
-        SaveService.save(data, data.weightKg, data.units);
-    });
     this.registry.set('runManager', runManager);
 
-    runManager.startNewRun(
+    const run = runManager.startNewRun(
       floors,
       this.distanceKm,
       this.difficulty,
@@ -1361,6 +1368,7 @@ export class MenuScene extends Phaser.Scene {
       this.weightKg,
       this.units,
     );
+    this.saveManager.saveRun(run, { weightKg: this.weightKg, units: this.units });
     SessionService.setUnits(this.units);
     SessionService.setWeightKg(this.weightKg);
     this.scene.start('MapScene');

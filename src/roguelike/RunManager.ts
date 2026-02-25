@@ -5,12 +5,12 @@
  * Tracks player progress, currency, and the procedurally generated map.
  */
 
-import Phaser from 'phaser';
 import type { CourseProfile } from '../course/CourseProfile';
 import type { EliteChallenge } from './EliteChallenge';
 import { FitWriter } from '../fit/FitWriter';
 import type { Units } from '../scenes/MenuScene';
-import type { SavedRun } from '../services/SaveService';
+import Phaser from 'phaser';
+import type { SavedRun } from '../services/SaveManager';
 import { ContentRegistry } from './registry/ContentRegistry';
 import { EquipmentSlot, RunModifiers } from './registry/types';
 
@@ -120,7 +120,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
       isRealTrainerRun: false,
       stats: { totalMapDistanceM: 0, totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
     };
-    this.persist();
     return this.runData;
   }
 
@@ -143,11 +142,19 @@ export class RunManager extends Phaser.Events.EventEmitter {
         this.applyModifier(def.modifier, `${def.label} (equipped)`);
       }
     }
-    this.persist();
     return this.runData;
   }
 
   getRun(): RunData | null {
+    return this.runData;
+  }
+
+  /**
+   * Returns a reference to the underlying run data for saving.
+   * Throws if no run is active.
+   */
+  exportData(): RunData {
+    if (!this.runData) throw new Error('No active run to export');
     return this.runData;
   }
 
@@ -157,7 +164,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
       if (!this.runData.visitedNodeIds.includes(nodeId)) {
         this.runData.visitedNodeIds.push(nodeId);
       }
-      this.persist();
     }
   }
 
@@ -165,7 +171,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
     if (this.runData) {
       this.runData.currentNodeId = 'node_hub';
       // Do NOT wipe visitedNodeIds
-      this.persist();
     }
   }
 
@@ -174,7 +179,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
       const idx = this.runData.inventory.indexOf(item);
       if (idx !== -1) {
         this.runData.inventory.splice(idx, 1);
-        this.persist();
         return true;
       }
     }
@@ -183,7 +187,7 @@ export class RunManager extends Phaser.Events.EventEmitter {
 
   /** Sets the active edge. Does NOT persist — we intentionally skip saving mid-ride state. */
   setActiveEdge(edge: MapEdge | null): void {
-    console.log(`[SPOKES] setActiveEdge: ${edge ? `${edge.from}→${edge.to} isCleared=${edge.isCleared}` : 'null'}`);
+    if (import.meta.env.DEV) console.log(`[SPOKES] setActiveEdge: ${edge ? `${edge.from}→${edge.to} isCleared=${edge.isCleared}` : 'null'}`);
     if (this.runData) {
       this.runData.activeEdge = edge;
     }
@@ -192,7 +196,7 @@ export class RunManager extends Phaser.Events.EventEmitter {
   /** Marks the currently active edge as cleared and advances currentNodeId to the destination. Returns true if it was newly cleared. */
   completeActiveEdge(): boolean {
     const ae = this.runData?.activeEdge;
-    console.log(`[SPOKES] completeActiveEdge: activeEdge=${ae ? `${ae.from}→${ae.to} isCleared=${ae.isCleared}` : 'null'} currentNodeId=${this.runData?.currentNodeId}`);
+    if (import.meta.env.DEV) console.log(`[SPOKES] completeActiveEdge: activeEdge=${ae ? `${ae.from}→${ae.to} isCleared=${ae.isCleared}` : 'null'} currentNodeId=${this.runData?.currentNodeId}`);
 
     if (this.runData && this.runData.activeEdge) {
       // Find the edge in the main list to update it persistently
@@ -201,14 +205,14 @@ export class RunManager extends Phaser.Events.EventEmitter {
         e.to === this.runData!.activeEdge!.to
       );
 
-      console.log(`[SPOKES] completeActiveEdge: edge in list found=${!!edge} wasCleared=${edge?.isCleared}`);
+      if (import.meta.env.DEV) console.log(`[SPOKES] completeActiveEdge: edge in list found=${!!edge} wasCleared=${edge?.isCleared}`);
 
       if (edge) {
         // Derive destination — whichever end of the edge isn't the origin
         const destination = edge.from === this.runData.currentNodeId
           ? edge.to
           : edge.from;
-        console.log(`[SPOKES] completeActiveEdge: destination=${destination}`);
+        if (import.meta.env.DEV) console.log(`[SPOKES] completeActiveEdge: destination=${destination}`);
         this.runData.currentNodeId = destination;
         if (!this.runData.visitedNodeIds.includes(destination)) {
           this.runData.visitedNodeIds.push(destination);
@@ -223,17 +227,14 @@ export class RunManager extends Phaser.Events.EventEmitter {
           edge.isCleared = true;
           // Also update the active reference
           this.runData.activeEdge.isCleared = true;
-          this.persist();
-          console.log(`[SPOKES] completeActiveEdge: returning true (first clear)`);
+          if (import.meta.env.DEV) console.log(`[SPOKES] completeActiveEdge: returning true (first clear)`);
           return true;
         } else {
-          console.log(`[SPOKES] completeActiveEdge: edge already cleared → returning false`);
+          if (import.meta.env.DEV) console.log(`[SPOKES] completeActiveEdge: edge already cleared → returning false`);
         }
       }
-
-      this.persist();
     } else {
-      console.warn(`[SPOKES] completeActiveEdge: no activeEdge → returning false`);
+      if (import.meta.env.DEV) console.warn(`[SPOKES] completeActiveEdge: no activeEdge → returning false`);
     }
     return false;
   }
@@ -247,21 +248,18 @@ export class RunManager extends Phaser.Events.EventEmitter {
   setFtp(w: number): void {
     if (this.runData) {
       this.runData.ftpW = w;
-      this.persist();
     }
   }
 
   addGold(amount: number): void {
     if (this.runData) {
       this.runData.gold += amount;
-      this.persist();
     }
   }
 
   spendGold(amount: number): boolean {
     if (this.runData && this.runData.gold >= amount) {
       this.runData.gold -= amount;
-      this.persist();
       return true;
     }
     return false;
@@ -270,7 +268,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
   addToInventory(item: string): void {
     if (this.runData) {
       this.runData.inventory.push(item);
-      this.persist();
     }
   }
 
@@ -291,7 +288,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
     if (delta.weightMult !== undefined)   m.weightMult    = Math.max(0.01, m.weightMult * delta.weightMult);
     if (delta.crrMult !== undefined)      m.crrMult       = Math.max(0.01, m.crrMult * delta.crrMult);
     if (label) this.runData.modifierLog.push({ label, ...delta });
-    this.persist();
   }
 
   /** Reverses a previously-applied modifier delta (used when unequipping). */
@@ -327,7 +323,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
     if (def.modifier) {
       this.applyModifier(def.modifier, `${def.label} (equipped)`);
     }
-    this.persist();
     return true;
   }
 
@@ -351,7 +346,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
 
     delete this.runData.equipped[slot];
     this.runData.inventory.push(itemId);
-    this.persist();
     return itemId;
   }
 
@@ -362,13 +356,5 @@ export class RunManager extends Phaser.Events.EventEmitter {
     s.totalRecordCount     += recordCount;
     s.totalPowerSum        += powerSum;
     s.totalCadenceSum      += cadenceSum;
-    this.persist();
-  }
-
-  /** Emits 'save' event with current state. */
-  private persist(): void {
-    if (this.runData) {
-      this.emit('save', this.runData);
-    }
   }
 }
