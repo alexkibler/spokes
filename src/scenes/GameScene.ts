@@ -39,11 +39,11 @@ import {
 import { THEME } from '../theme';
 import { GameHUD } from '../ui/GameHUD';
 import { ElevationGraph } from '../ui/ElevationGraph';
-import { RideOverlay, type RideStats } from '../ui/RideOverlay';
-import { RewardOverlay } from '../ui/RewardOverlay';
+import { RideOverlay, type RideStats } from '../ui/overlay/RideOverlay';
+import { RewardOverlay } from '../ui/overlay/RewardOverlay';
 import { pickRewards } from '../core/roguelike/RewardPool';
-import { PauseOverlay } from '../ui/PauseOverlay';
-import { RemotePairingOverlay } from '../ui/RemotePairingOverlay';
+import { PauseOverlay } from '../ui/overlay/PauseOverlay';
+import { RemotePairingOverlay } from '../ui/overlay/RemotePairingOverlay';
 
 // Visuals & UI Modules
 import { ParallaxBackground } from '../rendering/ParallaxBackground';

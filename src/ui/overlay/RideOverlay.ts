@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
-import { THEME } from '../theme';
-import { Button } from '../components/Button';
-import { msToKmh, msToMph } from '../core/physics/CyclistPhysics';
-import type { Units } from '../scenes/MenuScene';
+import { THEME } from '../../theme';
+import { Button } from '../../components/Button';
+import { msToKmh, msToMph } from '../../core/physics/CyclistPhysics';
+import type { Units } from '../../scenes/MenuScene';
 
 export interface RideStats {
   distanceM: number;

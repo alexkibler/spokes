@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
-import { THEME } from '../theme';
-import { RunManager } from '../core/roguelike/RunManager';
-import { Button } from '../components/Button';
+import { THEME } from '../../theme';
+import { RunManager } from '../../core/roguelike/RunManager';
+import { Button } from '../../components/Button';
 
 export interface BaseOverlayConfig {
   scene: Phaser.Scene;

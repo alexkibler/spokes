@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
-import { RunManager } from '../core/roguelike/RunManager';
-import { THEME } from '../theme';
-import { Button } from '../components/Button';
-import { ItemDefinition } from '../core/roguelike/registry/types';
-import i18n from '../i18n';
+import { RunManager } from '../../core/roguelike/RunManager';
+import { THEME } from '../../theme';
+import { Button } from '../../components/Button';
+import { ItemDefinition } from '../../core/roguelike/registry/types';
+import i18n from '../../i18n';
 import { BaseOverlay } from './BaseOverlay';
 
 export class EventOverlay extends BaseOverlay {

@@ -3,7 +3,7 @@ import { type RunData } from '../core/roguelike/RunManager';
 import { THEME } from '../theme';
 import { RemoteService } from '../network/RemoteService';
 import { Button } from '../components/Button';
-import { Typography } from '../components/components/Typography';
+import { Typography } from '../components/Typography';
 import i18next from '../i18n';
 
 export class MapHUD {

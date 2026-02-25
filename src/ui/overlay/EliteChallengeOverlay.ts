@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
-import { type MapNode, RunManager } from '../core/roguelike/RunManager';
-import { generateCourseProfile, type CourseProfile } from '../core/course/CourseProfile';
-import { formatChallengeText, type EliteChallenge } from '../core/roguelike/EliteChallenge';
-import { THEME } from '../theme';
-import { Button } from '../components/Button';
+import { type MapNode, RunManager } from '../../core/roguelike/RunManager';
+import { generateCourseProfile, type CourseProfile } from '../../core/course/CourseProfile';
+import { formatChallengeText, type EliteChallenge } from '../../core/roguelike/EliteChallenge';
+import { THEME } from '../../theme';
+import { Button } from '../../components/Button';
 import { BaseOverlay } from './BaseOverlay';
 
 export class EliteChallengeOverlay extends BaseOverlay {

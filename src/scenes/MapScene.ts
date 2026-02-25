@@ -12,11 +12,11 @@ import { generateHubAndSpokeMap } from '../core/course/CourseGenerator';
 import type { EliteChallenge } from '../core/roguelike/EliteChallenge';
 import { createBossRacers, createSpokeBoss, type RacerProfile } from '../core/race/RacerProfile';
 import { THEME } from '../theme';
-import { ShopOverlay } from '../ui/ShopOverlay';
-import { EventOverlay } from '../ui/EventOverlay';
-import { EliteChallengeOverlay } from '../ui/EliteChallengeOverlay';
-import { EquipmentOverlay } from '../ui/EquipmentOverlay';
-import { RemotePairingOverlay } from '../ui/RemotePairingOverlay';
+import { ShopOverlay } from '../ui/overlay/ShopOverlay';
+import { EventOverlay } from '../ui/overlay/EventOverlay';
+import { EliteChallengeOverlay } from '../ui/overlay/EliteChallengeOverlay';
+import { EquipmentOverlay } from '../ui/overlay/EquipmentOverlay';
+import { RemotePairingOverlay } from '../ui/overlay/RemotePairingOverlay';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 
 import { MapRenderer } from '../rendering/MapRenderer';

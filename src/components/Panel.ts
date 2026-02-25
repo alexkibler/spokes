@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { THEME } from '../../theme';
+import { THEME } from '../theme';
 
 export interface PanelConfig {
   x: number;

@@ -1,13 +1,13 @@
 import Phaser from 'phaser';
-import { THEME } from '../theme';
-import type { RewardDefinition, RewardRarity, EquipmentSlot } from '../core/roguelike/registry/types';
-import { RunManager } from '../core/roguelike/RunManager';
-import { formatModifierLines } from '../core/roguelike/ModifierUtils';
-import { Button } from '../components/Button';
-import { msToKmh, msToMph } from '../core/physics/CyclistPhysics';
-import i18n from '../i18n';
+import { THEME } from '../../theme';
+import type { RewardDefinition, RewardRarity, EquipmentSlot } from '../../core/roguelike/registry/types';
+import { RunManager } from '../../core/roguelike/RunManager';
+import { formatModifierLines } from '../../core/roguelike/ModifierUtils';
+import { Button } from '../../components/Button';
+import { msToKmh, msToMph } from '../../core/physics/CyclistPhysics';
+import i18n from '../../i18n';
 import type { RideStats } from './RideOverlay';
-import type { Units } from '../scenes/MenuScene';
+import type { Units } from '../../scenes/MenuScene';
 import { BaseOverlay } from './BaseOverlay';
 
 const RARITY_STYLE: Record<RewardRarity, { border: number; badgeBg: number; badgeText: string }> = {

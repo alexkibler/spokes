@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { THEME } from '../../theme';
+import { THEME } from '../theme';
 
 export type TypographyVariant = 'hero' | 'h1' | 'h2' | 'body' | 'caption' | 'label' | 'hudValue';
 

@@ -12,7 +12,7 @@
  */
 
 import Phaser from 'phaser';
-import { RemotePairingOverlay } from '../ui/RemotePairingOverlay';
+import { RemotePairingOverlay } from '../ui/overlay/RemotePairingOverlay';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 import type { ITrainerService } from '../services/hardware/ITrainerService';
 import { TrainerService } from '../services/hardware/TrainerService';

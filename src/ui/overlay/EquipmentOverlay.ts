@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
-import { THEME } from '../theme';
-import { EquipmentPanel } from './EquipmentPanel';
-import { RunManager } from '../core/roguelike/RunManager';
+import { THEME } from '../../theme';
+import { EquipmentPanel } from '../EquipmentPanel';
+import { RunManager } from '../../core/roguelike/RunManager';
 import { BaseOverlay } from './BaseOverlay';
-import { Button } from '../components/Button';
+import { Button } from '../../components/Button';
 
 export class EquipmentOverlay extends BaseOverlay {
   private panel: EquipmentPanel;

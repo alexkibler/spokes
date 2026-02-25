@@ -2,8 +2,8 @@ import Phaser from 'phaser';
 import { type RunData } from '../core/roguelike/RunManager';
 import { THEME } from '../theme';
 import i18next from '../i18n';
-import { Panel } from '../components/components/Panel';
-import { Typography } from '../components/components/Typography';
+import { Panel } from '../components/Panel';
+import { Typography } from '../components/Typography';
 
 export class MapStatsPanel {
   private scene: Phaser.Scene;

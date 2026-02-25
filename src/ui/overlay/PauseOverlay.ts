@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
-import { THEME } from '../theme';
-import { EquipmentPanel } from './EquipmentPanel';
-import { ConfirmationModal } from '../components/ConfirmationModal';
-import { RunManager } from '../core/roguelike/RunManager';
-import i18n from '../i18n';
+import { THEME } from '../../theme';
+import { EquipmentPanel } from '../EquipmentPanel';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { RunManager } from '../../core/roguelike/RunManager';
+import i18n from '../../i18n';
 
 export class PauseOverlay extends Phaser.GameObjects.Container {
   private panel: EquipmentPanel;

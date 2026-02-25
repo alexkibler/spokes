@@ -1,10 +1,10 @@
 import Phaser from 'phaser';
-import { RunManager } from '../core/roguelike/RunManager';
-import { ALL_SLOTS, type EquipmentSlot } from '../core/roguelike/registry/types';
-import { formatModifierLines } from '../core/roguelike/ModifierUtils';
-import { THEME } from '../theme';
-import { Button } from '../components/Button';
-import i18n from '../i18n';
+import { RunManager } from '../../core/roguelike/RunManager';
+import { ALL_SLOTS, type EquipmentSlot } from '../../core/roguelike/registry/types';
+import { formatModifierLines } from '../../core/roguelike/ModifierUtils';
+import { THEME } from '../../theme';
+import { Button } from '../../components/Button';
+import i18n from '../../i18n';
 import { BaseOverlay } from './BaseOverlay';
 
 interface ShopItemConfig {

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import QRCode from 'qrcode';
-import { THEME } from '../theme';
+import { THEME } from '../../theme';
 
 export class RemotePairingOverlay extends Phaser.GameObjects.Container {
   constructor(scene: Phaser.Scene, roomCode: string, onClose: () => void) {
