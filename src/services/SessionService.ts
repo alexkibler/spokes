@@ -1,11 +1,8 @@
 /**
  * SessionService.ts
  *
- * Static singleton that holds cross-scene session state:
+ * Holds cross-scene session state:
  * trainer, HRM service, units preference, and rider weight.
- *
- * Eliminates the need to thread these values through scene.start() init data.
- * MenuScene sets them; MapScene and GameScene read them.
  */
 
 import type { ITrainerService } from './ITrainerService';
@@ -14,27 +11,27 @@ import { HeartRateService } from './HeartRateService';
 import type { Units } from '../scenes/MenuScene';
 
 export class SessionService {
-  private static _trainer: ITrainerService | null = null;
-  private static _hrm: HeartRateService | null = null;
-  private static _units: Units = 'imperial';
-  private static _weightKg = 75;
+  private _trainer: ITrainerService | null = null;
+  private _hrm: HeartRateService | null = null;
+  private _units: Units = 'imperial';
+  private _weightKg = 75;
 
-  static get trainer(): ITrainerService | null { return this._trainer; }
-  static get hrm(): HeartRateService | null { return this._hrm; }
-  static get units(): Units { return this._units; }
-  static get weightKg(): number { return this._weightKg; }
+  get trainer(): ITrainerService | null { return this._trainer; }
+  get hrm(): HeartRateService | null { return this._hrm; }
+  get units(): Units { return this._units; }
+  get weightKg(): number { return this._weightKg; }
 
-  static setTrainer(t: ITrainerService | null): void { this._trainer = t; }
-  static setHrm(h: HeartRateService | null): void { this._hrm = h; }
-  static setUnits(u: Units): void { this._units = u; }
-  static setWeightKg(w: number): void { this._weightKg = w; }
+  setTrainer(t: ITrainerService | null): void { this._trainer = t; }
+  setHrm(h: HeartRateService | null): void { this._hrm = h; }
+  setUnits(u: Units): void { this._units = u; }
+  setWeightKg(w: number): void { this._weightKg = w; }
 
   /**
    * Disconnect and forget all device services.
    * Call from MenuScene.create() so real BT connections are closed when
    * the player returns to the main menu.
    */
-  static disconnectAll(): void {
+  disconnectAll(): void {
     this._trainer?.disconnect();
     this._trainer = null;
     this._hrm?.disconnect();
@@ -45,7 +42,7 @@ export class SessionService {
    * Disconnect and forget mock trainers only.
    * Real BT trainers are left connected so they persist across scenes.
    */
-  static disconnectMock(): void {
+  disconnectMock(): void {
     if (this._trainer instanceof MockTrainerService) {
       this._trainer.disconnect();
       this._trainer = null;

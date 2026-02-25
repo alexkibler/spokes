@@ -20,9 +20,11 @@ export class MapHUD {
   private onRemoteClick: () => void;
   private onReturnClick: () => void;
   private onTeleportClick: () => void;
+  private remoteService: RemoteService;
 
   constructor(
     scene: Phaser.Scene,
+    remoteService: RemoteService,
     callbacks: {
       onGearClick: () => void;
       onRemoteClick: () => void;
@@ -31,6 +33,7 @@ export class MapHUD {
     }
   ) {
     this.scene = scene;
+    this.remoteService = remoteService;
     this.onGearClick = callbacks.onGearClick;
     this.onRemoteClick = callbacks.onRemoteClick;
     this.onReturnClick = callbacks.onReturnClick;
@@ -127,7 +130,7 @@ export class MapHUD {
   private updateRemoteButton(): void {
     if (!this.remoteBtn) return;
 
-    const code = RemoteService.getInstance().getRoomCode();
+    const code = this.remoteService.getRoomCode();
     const isConnected = !!code;
     const label = isConnected ? `REMOTE: ${code}` : i18next.t('ui.hud.remote');
     const color = isConnected ? '#00ff88' : '#ccccff';

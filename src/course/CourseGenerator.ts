@@ -41,21 +41,20 @@ export const SPOKE_IDS = [
 export type SpokeId = typeof SPOKE_IDS[number];
 
 interface SpokeConfig {
-  label: string;
   color: number;
   hazardSurface: SurfaceType;
   hazardGrade: number;
 }
 
 const SPOKE_CONFIG: Record<SpokeId, SpokeConfig> = {
-  plains:   { label: 'Plains',   color: 0x88cc44, hazardSurface: 'asphalt', hazardGrade: 0.00 },
-  coast:    { label: 'Coast',    color: 0x4488cc, hazardSurface: 'mud',     hazardGrade: 0.02 },
-  mountain: { label: 'Mountain', color: 0xcc4444, hazardSurface: 'gravel',  hazardGrade: 0.15 },
-  forest:   { label: 'Forest',   color: 0x228844, hazardSurface: 'dirt',    hazardGrade: 0.08 },
-  desert:   { label: 'Desert',   color: 0xddaa44, hazardSurface: 'gravel',  hazardGrade: 0.06 },
-  tundra:   { label: 'Tundra',   color: 0x88ccdd, hazardSurface: 'mud',     hazardGrade: 0.04 },
-  canyon:   { label: 'Canyon',   color: 0xcc8844, hazardSurface: 'dirt',    hazardGrade: 0.10 },
-  jungle:   { label: 'Jungle',   color: 0x44aa44, hazardSurface: 'mud',     hazardGrade: 0.05 },
+  plains:   { color: 0x88cc44, hazardSurface: 'asphalt', hazardGrade: 0.00 },
+  coast:    { color: 0x4488cc, hazardSurface: 'mud',     hazardGrade: 0.02 },
+  mountain: { color: 0xcc4444, hazardSurface: 'gravel',  hazardGrade: 0.15 },
+  forest:   { color: 0x228844, hazardSurface: 'dirt',    hazardGrade: 0.08 },
+  desert:   { color: 0xddaa44, hazardSurface: 'gravel',  hazardGrade: 0.06 },
+  tundra:   { color: 0x88ccdd, hazardSurface: 'mud',     hazardGrade: 0.04 },
+  canyon:   { color: 0xcc8844, hazardSurface: 'dirt',    hazardGrade: 0.10 },
+  jungle:   { color: 0x44aa44, hazardSurface: 'mud',     hazardGrade: 0.05 },
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

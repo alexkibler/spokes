@@ -77,21 +77,108 @@ export interface RideRecord {
 
 // ─── FitWriter ────────────────────────────────────────────────────────────────
 
+const DB_NAME = 'SpokesFIT';
+const STORE_NAME = 'ride_records';
+const DB_VERSION = 1;
+
 export class FitWriter {
   private readonly records: RideRecord[] = [];
+  private db: IDBDatabase | null = null;
 
-  constructor(private readonly startTimeMs: number) {}
+  constructor(private readonly startTimeMs: number) {
+    this.initDB();
+  }
+
+  private initDB(): void {
+    if (typeof indexedDB === 'undefined') return;
+
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { autoIncrement: true });
+      }
+    };
+
+    request.onsuccess = (event) => {
+      this.db = (event.target as IDBOpenDBRequest).result;
+      // We don't auto-recover here; the app must call recoverUnfinishedSession() if desired.
+    };
+
+    request.onerror = (event) => {
+      console.error('[FitWriter] IndexedDB error:', (event.target as IDBOpenDBRequest).error);
+    };
+  }
 
   addRecord(rec: RideRecord): void {
     this.records.push(rec);
+    if (this.db) {
+      // Fire-and-forget write to WAL
+      const tx = this.db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).add(rec);
+      // We suppress errors for performance/simplicity in fire-and-forget
+      tx.onerror = (e) => console.warn('[FitWriter] WAL write failed', e);
+    }
   }
 
   get recordCount(): number {
     return this.records.length;
   }
 
+  /**
+   * Checks IndexedDB for existing records and restores them.
+   * Call this on boot if you suspect a crash occurred.
+   */
+  async recoverUnfinishedSession(): Promise<boolean> {
+    if (!this.db) {
+      // If DB isn't ready, wait a bit? Or just fail?
+      // Since initDB is async but constructor is sync, we might need to wait.
+      // Simple retry logic:
+      await new Promise(r => setTimeout(r, 500));
+      if (!this.db) return false;
+    }
+
+    return new Promise((resolve) => {
+      if (!this.db) { resolve(false); return; }
+
+      const tx = this.db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+
+      req.onsuccess = () => {
+        const restored = req.result as RideRecord[];
+        if (restored && restored.length > 0) {
+          console.log(`[FitWriter] Recovered ${restored.length} records from WAL`);
+          this.records.push(...restored);
+          // Note: We don't update this.startTimeMs because it's readonly.
+          // The consumer should ideally recreate FitWriter with the correct start time
+          // if full fidelity is needed, or we just accept the gap.
+          resolve(true);
+        } else {
+          resolve(false);
+        }
+      };
+
+      req.onerror = () => {
+        console.error('[FitWriter] Recovery failed', req.error);
+        resolve(false);
+      };
+    });
+  }
+
+  /** Clears the Write-Ahead Log. Called on successful export. */
+  private clearWAL(): void {
+    if (!this.db) return;
+    const tx = this.db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).clear();
+  }
+
   /** Encode the full ride as a binary FIT file and return the bytes. */
   export(): Uint8Array {
+    // Clear the crash recovery log since we are successfully exporting
+    this.clearWAL();
+
     const buf: number[] = [];
 
     // ── Low-level write helpers ─────────────────────────────────────────────

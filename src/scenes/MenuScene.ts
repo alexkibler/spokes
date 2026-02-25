@@ -12,18 +12,12 @@
  */
 
 import Phaser from 'phaser';
-import { RunManager } from '../roguelike/RunManager';
 import { RemotePairingOverlay } from './ui/RemotePairingOverlay';
 import { ConfirmationModal } from '../ui/ConfirmationModal';
 import type { ITrainerService } from '../services/ITrainerService';
 import { TrainerService } from '../services/TrainerService';
 import { HeartRateService } from '../services/HeartRateService';
-import { RemoteService } from '../services/RemoteService';
-import { SaveManager, type SavedRun, type SaveResult } from '../services/SaveManager';
-import { LocalStorageProvider } from '../services/storage/LocalStorageProvider';
-import { SessionService } from '../services/SessionService';
-import { ContentRegistry } from '../roguelike/registry/ContentRegistry';
-import { ContentBootstrapper } from '../roguelike/content/ContentBootstrapper';
+import type { SavedRun, SaveResult, SaveManager } from '../services/SaveManager';
 import i18n from '../i18n';
 import {
   KM_TO_MI,
@@ -32,6 +26,7 @@ import {
   LB_TO_KG,
   formatFixed
 } from '../utils/UnitConversions';
+import type { GameServices } from '../services/ServiceLocator';
 
 // ─── Units ────────────────────────────────────────────────────────────────────
 
@@ -135,8 +130,9 @@ export class MenuScene extends Phaser.Scene {
   // ── Dev Mode ──────────────────────────────────────────────────────────────
   private isStartWarningActive = false;
   private languageToggle!: Phaser.GameObjects.Container;
-  private contentRegistry!: ContentRegistry;
 
+  // Injected Services
+  private services!: GameServices;
   private saveManager!: SaveManager;
 
   constructor() {
@@ -144,16 +140,16 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.contentRegistry = new ContentRegistry();
-    ContentBootstrapper.bootstrap(this.contentRegistry);
-    this.registry.set('contentRegistry', this.contentRegistry);
-
-    this.saveManager = new SaveManager(new LocalStorageProvider(), this.contentRegistry);
-    this.registry.set('saveManager', this.saveManager);
+    // Retrieve services from registry (set in main.ts)
+    this.services = this.registry.get('services') as GameServices;
+    if (!this.services) {
+      throw new Error('GameServices not found in registry! Check main.ts wiring.');
+    }
+    this.saveManager = this.services.saveManager;
 
     // Disconnect any lingering BT devices from a previous run, then clear
     // the session so the player starts fresh.
-    SessionService.disconnectAll();
+    this.services.sessionService.disconnectAll();
     this.trainerService = null;
     this.hrmService     = null;
 
@@ -778,6 +774,61 @@ export class MenuScene extends Phaser.Scene {
     this.refreshDiffStyles();
   }
 
+  private buildUnitsSection(): void {
+    const PW = 145; const PH = 132;
+    const CX = PW / 2;
+
+    this.unitsSection = this.add.container(0, 150);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.40);
+    bg.fillRoundedRect(0, 0, PW, PH, 6);
+    this.unitsSection.add(bg);
+
+    this.unitsSection.add(this.add.text(14, 10, i18n.t('menu.units'), {
+      fontFamily: 'monospace', fontSize: '10px', color: '#aaaaaa', letterSpacing: 3,
+    }));
+
+    const BTN_W = 110;
+    const BTN_H = 32;
+
+    const unitOrder: Units[] = ['imperial', 'metric'];
+    const ys = [52, 96];
+
+    unitOrder.forEach((u, i) => {
+      const btn = this.add
+        .rectangle(CX, ys[i], BTN_W, BTN_H, 0x1a1a3a)
+        .setInteractive({ useHandCursor: true });
+
+      const label = u === 'imperial' ? i18n.t('menu.units_label.imperial') : i18n.t('menu.units_label.metric');
+      const btnTxt = this.add.text(CX, ys[i], label, {
+        fontFamily: 'monospace', fontSize: '11px',
+        color: '#ffffff', fontStyle: 'bold', letterSpacing: 1,
+      }).setOrigin(0.5);
+
+      this.unitsSection.add([btn, btnTxt]);
+      this.unitsBtns.set(u, btn);
+
+      btn.on('pointerdown', () => {
+        this.units = u;
+        this.refreshUnitsStyles();
+        this.refreshUnitDisplays();
+      });
+      btn.on('pointerover', () => { if (this.units !== u) btn.setFillStyle(0x3a3a6b); });
+      btn.on('pointerout',  () => this.refreshUnitsStyles());
+    });
+
+    this.refreshUnitsStyles();
+  }
+
+  private refreshUnitsStyles(): void {
+    for (const [u, btn] of this.unitsBtns) {
+      const selected = u === this.units;
+      btn.setFillStyle(selected ? 0x2a5a8b : 0x1a1a3a);
+      btn.setStrokeStyle(selected ? 2 : 0, 0xffffff, selected ? 0.85 : 0);
+    }
+  }
+
   private refreshDiffStyles(): void {
     for (const [diff, btn] of this.diffBtns) {
       const { colorOn, colorOff } = DIFF[diff];
@@ -835,7 +886,7 @@ export class MenuScene extends Phaser.Scene {
         const svc = new TrainerService();
         await svc.connect();
         this.trainerService = svc;
-        SessionService.setTrainer(svc);
+        this.services.sessionService.setTrainer(svc);
         this.trainerStatusDot.setFillStyle(0x00ff88);
         this.trainerStatusLabel.setText(i18n.t('menu.device.connected')).setColor('#00ff88');
         btnTrainer.setFillStyle(0x1a5a3a);
@@ -844,7 +895,7 @@ export class MenuScene extends Phaser.Scene {
         const msg = err?.message || JSON.stringify(err);
         console.error('[MenuScene] Trainer connection failed:', msg);
         this.trainerService = null;
-        SessionService.setTrainer(null);
+        this.services.sessionService.setTrainer(null);
         this.trainerStatusDot.setFillStyle(0xff4444);
         this.trainerStatusLabel.setText(i18n.t('menu.device.failed')).setColor('#ff4444');
         btnTrainer.setFillStyle(0x1a3a6b);
@@ -866,15 +917,15 @@ export class MenuScene extends Phaser.Scene {
     this.devicesSection.add([btnRemote, btnRemoteTxt]);
 
     btnRemote.on('pointerover', () => {
-      const code = RemoteService.getInstance().getRoomCode();
+      const code = this.services.remoteService.getRoomCode();
       if (!code) btnRemote.setFillStyle(0x5a5a6a);
     });
     btnRemote.on('pointerout', () => {
-      const code = RemoteService.getInstance().getRoomCode();
+      const code = this.services.remoteService.getRoomCode();
       if (!code) btnRemote.setFillStyle(0x4a4a5a);
     });
     btnRemote.on('pointerdown', async () => {
-      const existingCode = RemoteService.getInstance().getRoomCode();
+      const existingCode = this.services.remoteService.getRoomCode();
       if (existingCode) {
         new RemotePairingOverlay(this, existingCode, () => {});
         return;
@@ -884,7 +935,7 @@ export class MenuScene extends Phaser.Scene {
       btnRemoteTxt.setText('...');
 
       try {
-        const roomCode = await RemoteService.getInstance().initHost();
+        const roomCode = await this.services.remoteService.initHost();
         btnRemoteTxt.setText(roomCode).setFontSize(14).setColor('#00ff88');
         btnRemote.setFillStyle(0x222233).setStrokeStyle(1, 0x00ff88);
         new RemotePairingOverlay(this, roomCode, () => {});
@@ -930,7 +981,7 @@ export class MenuScene extends Phaser.Scene {
         const svc = new HeartRateService();
         await svc.connect();
         this.hrmService = svc;
-        SessionService.setHrm(svc);
+        this.services.sessionService.setHrm(svc);
         this.hrmStatusDot.setFillStyle(0xff4488);
         this.hrmStatusLabel.setText(i18n.t('menu.device.connected')).setColor('#ff4488');
         btnHrm.setFillStyle(0x5a1a5a);
@@ -939,7 +990,7 @@ export class MenuScene extends Phaser.Scene {
         const msg = err?.message || JSON.stringify(err);
         console.error('[MenuScene] HRM connection failed:', msg);
         this.hrmService = null;
-        SessionService.setHrm(null);
+        this.services.sessionService.setHrm(null);
         this.hrmStatusDot.setFillStyle(0xff4444);
         this.hrmStatusLabel.setText(i18n.t('menu.device.failed')).setColor('#ff4444');
         btnHrm.setFillStyle(0x3a1a5a);
@@ -1088,15 +1139,15 @@ export class MenuScene extends Phaser.Scene {
         return;
       }
 
-      const runManager = new RunManager(this.contentRegistry);
-      this.registry.set('runManager', runManager);
+      // Use injected runManager
+      const runManager = this.services.runManager;
 
       const run = runManager.loadFromSave(saved);
       // Explicitly save to refresh timestamp or migrate data if needed
       this.saveManager.saveRun(run, { weightKg: run.weightKg, units: run.units });
 
-      SessionService.setUnits(run.units);
-      SessionService.setWeightKg(run.weightKg);
+      this.services.sessionService.setUnits(run.units);
+      this.services.sessionService.setWeightKg(run.weightKg);
       this.scene.start('MapScene');
     });
   }
@@ -1201,70 +1252,6 @@ export class MenuScene extends Phaser.Scene {
     });
   }
 
-  // ── Units selector ─────────────────────────────────────────────────────────
-
-  private buildUnitsSection(): void {
-    const PW = 145; const PH = 132;
-    const CX = PW / 2;
-
-    this.unitsSection = this.add.container(0, 150);
-
-    const bg = this.add.graphics();
-    bg.fillStyle(0x000000, 0.40);
-    bg.fillRoundedRect(0, 0, PW, PH, 6);
-    this.unitsSection.add(bg);
-
-    this.unitsSection.add(this.add.text(14, 10, i18n.t('menu.units'), {
-      fontFamily: 'monospace', fontSize: '10px', color: '#aaaaaa', letterSpacing: 3,
-    }));
-
-    const BTN_W = 110;
-    const BTN_H = 32;
-
-    const unitOrder: Units[] = ['imperial', 'metric'];
-    const ys = [52, 96];
-
-    unitOrder.forEach((u, i) => {
-      const btn = this.add
-        .rectangle(CX, ys[i], BTN_W, BTN_H, 0x1a1a3a)
-        .setInteractive({ useHandCursor: true });
-
-      const label = u === 'imperial' ? i18n.t('menu.units_label.imperial') : i18n.t('menu.units_label.metric');
-      const btnTxt = this.add.text(CX, ys[i], label, {
-        fontFamily: 'monospace', fontSize: '11px',
-        color: '#ffffff', fontStyle: 'bold', letterSpacing: 1,
-      }).setOrigin(0.5);
-
-      this.unitsSection.add([btn, btnTxt]);
-      this.unitsBtns.set(u, btn);
-
-      btn.on('pointerdown', () => {
-        this.units = u;
-        this.refreshUnitsStyles();
-        this.refreshUnitDisplays();
-      });
-      btn.on('pointerover', () => { if (this.units !== u) btn.setFillStyle(0x3a3a6b); });
-      btn.on('pointerout',  () => this.refreshUnitsStyles());
-    });
-
-    this.refreshUnitsStyles();
-  }
-
-  private refreshUnitsStyles(): void {
-    for (const [u, btn] of this.unitsBtns) {
-      const selected = u === this.units;
-      btn.setFillStyle(selected ? 0x2a5a8b : 0x1a1a3a);
-      btn.setStrokeStyle(selected ? 2 : 0, 0xffffff, selected ? 0.85 : 0);
-    }
-  }
-
-  private refreshUnitDisplays(): void {
-    if (this.weightInputActive) this.commitWeightEdit();
-    this.distText.setText(this.fmtDist(this.distanceKm));
-    this.weightText.setText(this.fmtWeight(this.weightKg));
-    this.buildPresetButtons();
-  }
-
   // ── Format helpers ─────────────────────────────────────────────────────────
 
   private fmtDist(km: number): string {
@@ -1284,14 +1271,15 @@ export class MenuScene extends Phaser.Scene {
     return this.units === 'imperial' ? `${str} lb` : `${str} kg`;
   }
 
+  private refreshUnitDisplays(): void {
+    if (this.weightInputActive) this.commitWeightEdit();
+    this.distText.setText(this.fmtDist(this.distanceKm));
+    this.weightText.setText(this.fmtWeight(this.weightKg));
+    this.buildPresetButtons();
+  }
+
   // ── Button helper ──────────────────────────────────────────────────────────
 
-  /**
-   * Creates an interactive rectangle button + label text, adds BOTH to the
-   * given container (fixing the bug where only the text was added), and
-   * returns the text object so callers can store it for later updates.
-   */
-  /** Like addIconBtn but records created objects into presetObjects for later cleanup. */
   private addIconBtnTracked(
     container: Phaser.GameObjects.Container,
     x: number, y: number, w: number, h: number,
@@ -1338,8 +1326,9 @@ export class MenuScene extends Phaser.Scene {
 
   private doStartNewRun(): void {
     const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
-    const runManager = new RunManager(this.contentRegistry);
-    this.registry.set('runManager', runManager);
+    // Use injected runManager
+    const runManager = this.services.runManager;
+    // this.registry.set('runManager', runManager); // Redundant if using services everywhere
 
     const run = runManager.startNewRun(
       floors,
@@ -1350,15 +1339,14 @@ export class MenuScene extends Phaser.Scene {
       this.units,
     );
     this.saveManager.saveRun(run, { weightKg: this.weightKg, units: this.units });
-    SessionService.setUnits(this.units);
-    SessionService.setWeightKg(this.weightKg);
+    this.services.sessionService.setUnits(this.units);
+    this.services.sessionService.setWeightKg(this.weightKg);
     this.scene.start('MapScene');
   }
 
   private doStartRun(): void {
     const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
-    const runManager = new RunManager(this.contentRegistry);
-    this.registry.set('runManager', runManager);
+    const runManager = this.services.runManager;
 
     const run = runManager.startNewRun(
       floors,
@@ -1369,8 +1357,8 @@ export class MenuScene extends Phaser.Scene {
       this.units,
     );
     this.saveManager.saveRun(run, { weightKg: this.weightKg, units: this.units });
-    SessionService.setUnits(this.units);
-    SessionService.setWeightKg(this.weightKg);
+    this.services.sessionService.setUnits(this.units);
+    this.services.sessionService.setWeightKg(this.weightKg);
     this.scene.start('MapScene');
   }
 
