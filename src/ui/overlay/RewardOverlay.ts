@@ -200,7 +200,7 @@ export class RewardOverlay extends BaseOverlay {
           this.panelContainer.add(recText);
 
           if (this.sessionService.autoplayEnabled) {
-              this.countdownUI.startButtonCountdown(cardL, cardT, cardW, CARD_H, 5000, () => {
+              this.countdownUI.startButtonCountdown(cardL, cardT, cardW, CARD_H, this.sessionService.autoplayDelayMs, () => {
                   if (this.sessionService.autoplayEnabled) {
                       // Trigger pick logic
                       if (reward.equipmentSlot) {
@@ -454,13 +454,13 @@ export class RewardOverlay extends BaseOverlay {
       if (isImprovement) {
         // Countdown on Equip Now button → auto-equip
         promptCountdown.startButtonCountdown(
-          cx - 137, equipBtnY - 15, 130, 30, 2000,
+          cx - 137, equipBtnY - 15, 130, 30, this.sessionService.autoplayDelayMs,
           () => { if (this.sessionService.autoplayEnabled) { promptCountdown.destroy(); doEquipAndDone(); } }
         );
       } else {
         // Countdown on Equip Later button → auto-skip
         promptCountdown.startButtonCountdown(
-          cx + 7, equipBtnY - 15, 130, 30, 2000,
+          cx + 7, equipBtnY - 15, 130, 30, this.sessionService.autoplayDelayMs,
           () => { if (this.sessionService.autoplayEnabled) { promptCountdown.destroy(); destroyLayer(); onDone(); } }
         );
       }

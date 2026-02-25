@@ -167,7 +167,7 @@ export class MapScene extends Phaser.Scene {
                const nx = nextNode.x * w;
                const ny = nextNode.y * h;
 
-               this.countdownUI.startNodeCountdown(nx, ny, 30, 5000, () => {
+               this.countdownUI.startNodeCountdown(nx, ny, 30, this.services.sessionService.autoplayDelayMs, () => {
                    if (this.services.sessionService.autoplayEnabled) {
                        this.onNodeClick(nextNode);
                    }
@@ -677,6 +677,18 @@ export class MapScene extends Phaser.Scene {
         this.closeOverlay();
         onProceed();
       });
+
+    // Autoplay: auto-click RACE! after 2 seconds
+    if (this.services.sessionService.autoplayEnabled) {
+      btnHit.on('pointerdown', () => this.countdownUI.stop());
+      this.countdownUI.setDepth(depth + 5);
+      this.countdownUI.startButtonCountdown(btnX, btnY, btnW, btnH, this.services.sessionService.autoplayDelayMs, () => {
+        if (this.services.sessionService.autoplayEnabled) {
+          this.closeOverlay();
+          onProceed();
+        }
+      });
+    }
   }
 
   shutdown(): void {

@@ -381,7 +381,7 @@ export class GameScene extends Phaser.Scene {
       this.bottomControls.setStatus('ok', 'BT CONNECTED');
     } else {
       // SIM Mode
-      const simPower = this.ftpW * 3;
+      const simPower = this.ftpW * 3000;
       this.trainer = new MockTrainerService({ power: simPower, speed: 45, cadence: 80 });
       this.trainer.onData((data) => this.handleData(data));
       void this.trainer.connect();

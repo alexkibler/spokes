@@ -18,12 +18,14 @@ export class SessionService {
   private _weightKg = 75;
   private _remoteService: RemoteService | null = null;
   private _autoplayEnabled = false;
+  private _autoplayDelayMs = 2000;
 
   get trainer(): ITrainerService | null { return this._trainer; }
   get hrm(): HeartRateService | null { return this._hrm; }
   get units(): Units { return this._units; }
   get weightKg(): number { return this._weightKg; }
   get autoplayEnabled(): boolean { return this._autoplayEnabled; }
+  get autoplayDelayMs(): number { return this._autoplayDelayMs; }
 
   setTrainer(t: ITrainerService | null): void { this._trainer = t; }
   setHrm(h: HeartRateService | null): void { this._hrm = h; }
@@ -33,6 +35,8 @@ export class SessionService {
   setRemoteService(remote: RemoteService): void {
     this._remoteService = remote;
   }
+
+  setAutoplayDelayMs(ms: number): void { this._autoplayDelayMs = ms; }
 
   setAutoplay(enabled: boolean): void {
     this._autoplayEnabled = enabled;
