@@ -5,19 +5,21 @@
  * Tests schema versioning and content pruning logic.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { SaveManager } from '../SaveManager';
 import { IStorageProvider } from '../storage/IStorageProvider';
 import { RunData } from '../../roguelike/RunManager';
 import { FitWriter } from '../../fit/FitWriter';
+import type { ContentRegistry } from '../../roguelike/registry/ContentRegistry';
 
-// Mock ITEM_REGISTRY
-vi.mock('../../roguelike/ItemRegistry', () => ({
-  ITEM_REGISTRY: {
-    'valid_item': { id: 'valid_item', label: 'Valid Item' },
-    'valid_helmet': { id: 'valid_helmet', label: 'Valid Helmet', slot: 'helmet' },
-  }
-}));
+const MOCK_ITEMS: Record<string, { id: string; label: string }> = {
+  valid_item:   { id: 'valid_item',   label: 'Valid Item' },
+  valid_helmet: { id: 'valid_helmet', label: 'Valid Helmet' },
+};
+
+const mockContentRegistry = {
+  getItem: (id: string) => MOCK_ITEMS[id],
+} as unknown as ContentRegistry;
 
 // Mock Storage Provider
 class MockStorageProvider implements IStorageProvider {
@@ -62,7 +64,7 @@ describe('SaveManager', () => {
 
   beforeEach(() => {
     storage = new MockStorageProvider();
-    manager = new SaveManager(storage);
+    manager = new SaveManager(storage, mockContentRegistry);
   });
 
   it('saves and loads a valid run', async () => {
@@ -112,7 +114,7 @@ describe('SaveManager', () => {
 
     const loaded = await manager.loadRun();
     expect(loaded?.runData.equipped.helmet).toBeUndefined();
-    // 'valid_item' exists, so it stays (validator logic is: if itemId and !ITEM_REGISTRY[itemId] then prune).
+    // 'valid_item' exists in the mock ContentRegistry, so it stays.
     // 'valid_item' is in registry.
     expect(loaded?.runData.equipped.frame).toBe('valid_item');
   });

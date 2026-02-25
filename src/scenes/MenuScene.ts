@@ -144,13 +144,12 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create(): void {
-    // Instantiate SaveManager
-    this.saveManager = new SaveManager(new LocalStorageProvider());
-    this.registry.set('saveManager', this.saveManager);
-
     this.contentRegistry = new ContentRegistry();
     ContentBootstrapper.bootstrap(this.contentRegistry);
     this.registry.set('contentRegistry', this.contentRegistry);
+
+    this.saveManager = new SaveManager(new LocalStorageProvider(), this.contentRegistry);
+    this.registry.set('saveManager', this.saveManager);
 
     // Disconnect any lingering BT devices from a previous run, then clear
     // the session so the player starts fresh.

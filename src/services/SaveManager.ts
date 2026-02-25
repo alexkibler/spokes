@@ -7,7 +7,7 @@
 
 import { IStorageProvider } from './storage/IStorageProvider';
 import type { RunData, MapNode, MapEdge, EquipmentSlot } from '../roguelike/RunManager';
-import { ITEM_REGISTRY } from '../roguelike/ItemRegistry';
+import type { ContentRegistry } from '../roguelike/registry/ContentRegistry';
 import type { Units } from '../scenes/MenuScene';
 
 const SAVE_KEY = 'paperPeloton_runSave';
@@ -45,9 +45,11 @@ export interface SaveResult {
 
 export class SaveManager {
   private storage: IStorageProvider;
+  private contentRegistry: ContentRegistry;
 
-  constructor(storage: IStorageProvider) {
+  constructor(storage: IStorageProvider, contentRegistry: ContentRegistry) {
     this.storage = storage;
+    this.contentRegistry = contentRegistry;
   }
 
   /**
@@ -119,9 +121,9 @@ export class SaveManager {
       // 2. Content Validation (Pruning)
       // Validate Inventory
       parsed.runData.inventory = parsed.runData.inventory.filter((itemId) => {
-        const exists = !!ITEM_REGISTRY[itemId];
+        const exists = !!this.contentRegistry.getItem(itemId);
         if (!exists) {
-            console.warn(`[SaveManager] Pruning missing item from inventory: ${itemId}`);
+          console.warn(`[SaveManager] Pruning missing item from inventory: ${itemId}`);
         }
         return exists;
       });
@@ -129,11 +131,11 @@ export class SaveManager {
       // Validate Equipped
       const equipped = parsed.runData.equipped;
       for (const slot of Object.keys(equipped)) {
-          const itemId = equipped[slot as EquipmentSlot];
-          if (itemId && !ITEM_REGISTRY[itemId]) {
-              console.warn(`[SaveManager] Pruning missing item from slot ${slot}: ${itemId}`);
-              delete equipped[slot as EquipmentSlot];
-          }
+        const itemId = equipped[slot as EquipmentSlot];
+        if (itemId && !this.contentRegistry.getItem(itemId)) {
+          console.warn(`[SaveManager] Pruning missing item from slot ${slot}: ${itemId}`);
+          delete equipped[slot as EquipmentSlot];
+        }
       }
 
       return { save: parsed, wasIncompatible: false };

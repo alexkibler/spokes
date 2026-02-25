@@ -187,7 +187,7 @@ export class RunManager extends Phaser.Events.EventEmitter {
 
   /** Sets the active edge. Does NOT persist — we intentionally skip saving mid-ride state. */
   setActiveEdge(edge: MapEdge | null): void {
-    console.log(`[SPOKES] setActiveEdge: ${edge ? `${edge.from}→${edge.to} isCleared=${edge.isCleared}` : 'null'}`);
+    if (import.meta.env.DEV) console.log(`[SPOKES] setActiveEdge: ${edge ? `${edge.from}→${edge.to} isCleared=${edge.isCleared}` : 'null'}`);
     if (this.runData) {
       this.runData.activeEdge = edge;
     }
@@ -196,7 +196,7 @@ export class RunManager extends Phaser.Events.EventEmitter {
   /** Marks the currently active edge as cleared and advances currentNodeId to the destination. Returns true if it was newly cleared. */
   completeActiveEdge(): boolean {
     const ae = this.runData?.activeEdge;
-    console.log(`[SPOKES] completeActiveEdge: activeEdge=${ae ? `${ae.from}→${ae.to} isCleared=${ae.isCleared}` : 'null'} currentNodeId=${this.runData?.currentNodeId}`);
+    if (import.meta.env.DEV) console.log(`[SPOKES] completeActiveEdge: activeEdge=${ae ? `${ae.from}→${ae.to} isCleared=${ae.isCleared}` : 'null'} currentNodeId=${this.runData?.currentNodeId}`);
 
     if (this.runData && this.runData.activeEdge) {
       // Find the edge in the main list to update it persistently
@@ -205,14 +205,14 @@ export class RunManager extends Phaser.Events.EventEmitter {
         e.to === this.runData!.activeEdge!.to
       );
 
-      console.log(`[SPOKES] completeActiveEdge: edge in list found=${!!edge} wasCleared=${edge?.isCleared}`);
+      if (import.meta.env.DEV) console.log(`[SPOKES] completeActiveEdge: edge in list found=${!!edge} wasCleared=${edge?.isCleared}`);
 
       if (edge) {
         // Derive destination — whichever end of the edge isn't the origin
         const destination = edge.from === this.runData.currentNodeId
           ? edge.to
           : edge.from;
-        console.log(`[SPOKES] completeActiveEdge: destination=${destination}`);
+        if (import.meta.env.DEV) console.log(`[SPOKES] completeActiveEdge: destination=${destination}`);
         this.runData.currentNodeId = destination;
         if (!this.runData.visitedNodeIds.includes(destination)) {
           this.runData.visitedNodeIds.push(destination);
@@ -227,14 +227,14 @@ export class RunManager extends Phaser.Events.EventEmitter {
           edge.isCleared = true;
           // Also update the active reference
           this.runData.activeEdge.isCleared = true;
-          console.log(`[SPOKES] completeActiveEdge: returning true (first clear)`);
+          if (import.meta.env.DEV) console.log(`[SPOKES] completeActiveEdge: returning true (first clear)`);
           return true;
         } else {
-          console.log(`[SPOKES] completeActiveEdge: edge already cleared → returning false`);
+          if (import.meta.env.DEV) console.log(`[SPOKES] completeActiveEdge: edge already cleared → returning false`);
         }
       }
     } else {
-      console.warn(`[SPOKES] completeActiveEdge: no activeEdge → returning false`);
+      if (import.meta.env.DEV) console.warn(`[SPOKES] completeActiveEdge: no activeEdge → returning false`);
     }
     return false;
   }
