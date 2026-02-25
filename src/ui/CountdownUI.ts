@@ -42,7 +42,9 @@ export class CountdownUI {
       onUpdate: (tween) => {
         if (!this.active) return;
         const angle = tween.getValue();
-        this.drawCircle(x, y, radius, angle);
+        if (typeof angle === 'number') {
+            this.drawCircle(x, y, radius, angle);
+        }
       },
       onComplete: () => {
         if (!this.active) return;
@@ -67,7 +69,10 @@ export class CountdownUI {
       duration: duration,
       onUpdate: (tween) => {
         if (!this.active) return;
-        this.drawRect(x, y, width, height, tween.getValue(), perimeter);
+        const val = tween.getValue();
+        if (typeof val === 'number') {
+            this.drawRect(x, y, width, height, val, perimeter);
+        }
       },
       onComplete: () => {
         if (!this.active) return;
@@ -115,7 +120,7 @@ export class CountdownUI {
     this.graphics.strokePath();
   }
 
-  private drawRect(x: number, y: number, width: number, height: number, progressLen: number, totalLen: number): void {
+  private drawRect(x: number, y: number, width: number, height: number, progressLen: number, _totalLen: number): void {
     this.graphics.clear();
 
     // Coordinates are center-based or top-left?
@@ -138,7 +143,6 @@ export class CountdownUI {
     // Let's start top-left, clockwise.
     // Top -> Right -> Bottom -> Left.
 
-    const halfPerimeter = totalLen / 2;
     // Actually, let's keep it simple: just draw the path up to progressLen.
     // But we want it to *shrink*.
     // So we draw from Start to Start + ProgressLen?
