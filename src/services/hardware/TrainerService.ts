@@ -156,6 +156,8 @@ export class TrainerService implements ITrainerService {
   private controlGranted = false;
   private dataCallback: ((data: Partial<TrainerData>) => void) | null = null;
 
+  private debugLog: string[] = ['timestamp,event_type,speed_kmh,power_w,cadence_rpm,sent_grade,sent_crr,sent_cwa'];
+
   // Store the most recent simulation parameters in case they are sent
   // before the trainer is ready (e.g. during the connection handshake).
   private pendingParams: { grade: number; crr: number; cwa: number } | null = null;
@@ -180,8 +182,12 @@ export class TrainerService implements ITrainerService {
       FTMS_SERVICE_UUID,
       INDOOR_BIKE_DATA_UUID,
       (data) => {
+        const parsed = parseIndoorBikeData(data);
+        const row = `${Date.now()},IN_DATA,${parsed.instantaneousSpeed ?? ''},${parsed.instantaneousPower ?? ''},${parsed.instantaneousCadence ?? ''},,,`;
+        this.debugLog.push(row);
+
         if (this.dataCallback) {
-          this.dataCallback(parseIndoorBikeData(data));
+          this.dataCallback(parsed);
         }
       },
     );
@@ -261,10 +267,24 @@ export class TrainerService implements ITrainerService {
     buf.setUint8(6, Math.min(255, Math.round(cwa / 0.01)));               // CWA
 
     try {
+      const row = `${Date.now()},OUT_CMD,,,,${grade.toFixed(4)},${crr.toFixed(4)},${cwa.toFixed(2)}`;
+      this.debugLog.push(row);
       await BleClient.write(this.deviceId, FTMS_SERVICE_UUID, CONTROL_POINT_UUID, buf);
     } catch (err) {
       console.error('[TrainerService] Failed to set simulation params:', err);
     }
+  }
+
+  downloadDebugLog(): void {
+    const csvContent = this.debugLog.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `spokes_trainer_debug_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
   // ── Private handlers ───────────────────────────────────────────────────────

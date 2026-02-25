@@ -165,6 +165,15 @@ export class PauseOverlay extends Phaser.GameObjects.Container {
             }
         });
     });
+
+    const services = this.scene.registry.get('services') as any;
+    const trainer = services?.sessionService?.trainer;
+    if (trainer && typeof trainer.downloadDebugLog === 'function') {
+      cy += 50;
+      this.createButton(cx, cy, 'DOWNLOAD BT LOG', THEME.colors.buttons.secondary, () => {
+        trainer.downloadDebugLog();
+      });
+    }
   }
 
   private createButton(x: number, y: number, label: string, color: number, onClick: () => void): void {
