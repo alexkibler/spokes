@@ -1,4 +1,4 @@
-# Spokes
+# Spokes (formerly Paper Peloton)
 
 2D roguelike cycling simulator built with **Phaser 3**, **TypeScript**, and **Vite**.
 Connects to FTMS-compatible smart trainers over Web Bluetooth, with a built-in Mock Mode for development without hardware.
