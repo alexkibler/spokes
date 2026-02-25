@@ -22,6 +22,8 @@ import { RemoteService } from '../services/RemoteService';
 import { SaveManager, type SavedRun, type SaveResult } from '../services/SaveManager';
 import { LocalStorageProvider } from '../services/storage/LocalStorageProvider';
 import { SessionService } from '../services/SessionService';
+import { ContentRegistry } from '../roguelike/registry/ContentRegistry';
+import { ContentBootstrapper } from '../roguelike/content/ContentBootstrapper';
 import i18n from '../i18n';
 import {
   KM_TO_MI,
@@ -133,6 +135,7 @@ export class MenuScene extends Phaser.Scene {
   // ── Dev Mode ──────────────────────────────────────────────────────────────
   private isStartWarningActive = false;
   private languageToggle!: Phaser.GameObjects.Container;
+  private contentRegistry!: ContentRegistry;
 
   private saveManager!: SaveManager;
 
@@ -144,6 +147,10 @@ export class MenuScene extends Phaser.Scene {
     // Instantiate SaveManager
     this.saveManager = new SaveManager(new LocalStorageProvider());
     this.registry.set('saveManager', this.saveManager);
+
+    this.contentRegistry = new ContentRegistry();
+    ContentBootstrapper.bootstrap(this.contentRegistry);
+    this.registry.set('contentRegistry', this.contentRegistry);
 
     // Disconnect any lingering BT devices from a previous run, then clear
     // the session so the player starts fresh.
@@ -1082,7 +1089,7 @@ export class MenuScene extends Phaser.Scene {
         return;
       }
 
-      const runManager = new RunManager();
+      const runManager = new RunManager(this.contentRegistry);
       this.registry.set('runManager', runManager);
 
       const run = runManager.loadFromSave(saved);
@@ -1332,7 +1339,7 @@ export class MenuScene extends Phaser.Scene {
 
   private doStartNewRun(): void {
     const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
-    const runManager = new RunManager();
+    const runManager = new RunManager(this.contentRegistry);
     this.registry.set('runManager', runManager);
 
     const run = runManager.startNewRun(
@@ -1351,7 +1358,7 @@ export class MenuScene extends Phaser.Scene {
 
   private doStartRun(): void {
     const floors = Math.max(4, Math.round(this.distanceKm / 1.25));
-    const runManager = new RunManager();
+    const runManager = new RunManager(this.contentRegistry);
     this.registry.set('runManager', runManager);
 
     const run = runManager.startNewRun(

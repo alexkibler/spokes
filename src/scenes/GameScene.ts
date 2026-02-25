@@ -14,6 +14,8 @@ import type { HeartRateData } from '../services/HeartRateService';
 import { RemoteService, type CursorDirection } from '../services/RemoteService';
 import { SessionService } from '../services/SessionService';
 import { RunManager, type RunModifiers } from '../roguelike/RunManager';
+import { ContentRegistry } from '../roguelike/registry/ContentRegistry';
+import { ContentBootstrapper } from '../roguelike/content/ContentBootstrapper';
 import { evaluateChallenge, grantChallengeReward, type EliteChallenge } from '../roguelike/EliteChallenge';
 import type { RacerProfile } from '../race/RacerProfile';
 import {
@@ -205,7 +207,10 @@ export class GameScene extends Phaser.Scene {
         this.runManager = this.registry.get('runManager');
         if (!this.runManager) {
              console.error('RunManager missing in roguelike mode');
-             this.runManager = new RunManager();
+             // Fallback registry
+             const reg = this.registry.get('contentRegistry') ?? new ContentRegistry();
+             if (!this.registry.get('contentRegistry')) ContentBootstrapper.bootstrap(reg);
+             this.runManager = new RunManager(reg);
         }
         this.ftpW = this.runManager.getRun()?.ftpW ?? 200;
 
@@ -214,7 +219,11 @@ export class GameScene extends Phaser.Scene {
             console.warn('SaveManager not found in registry (init fallback?)');
         }
     } else {
-        this.runManager = new RunManager();
+        // Non-roguelike mode still needs a run manager instance for some logic (or we refactor to not need it)
+        // For now, create a dummy one with a registry.
+        const reg = this.registry.get('contentRegistry') ?? new ContentRegistry();
+        if (!this.registry.get('contentRegistry')) ContentBootstrapper.bootstrap(reg);
+        this.runManager = new RunManager(reg);
         this.ftpW = 200; // Default for demo
     }
 

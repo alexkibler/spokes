@@ -5,9 +5,37 @@
  * roguelike run data (gold, inventory, modifiers, edge traversal, stats).
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { RunManager } from '../RunManager';
+import { ContentRegistry } from '../registry/ContentRegistry';
+import { ContentBootstrapper } from '../content/ContentBootstrapper';
 import type { MapNode, MapEdge } from '../RunManager';
+
+// Mock Phaser.Events.EventEmitter to avoid loading Phaser in Node
+vi.mock('phaser', () => {
+  class EventEmitter {
+    events: Record<string, Function[]> = {};
+    emit(event: string, ...args: any[]) {
+      if (this.events[event]) {
+        this.events[event].forEach(fn => fn(...args));
+      }
+      return true;
+    }
+    on(event: string, fn: Function) {
+      if (!this.events[event]) this.events[event] = [];
+      this.events[event].push(fn);
+      return this;
+    }
+    off() { return this; }
+  }
+  return {
+    default: {
+      Events: {
+        EventEmitter
+      }
+    }
+  };
+});
 
 function makeNode(id: string, type: MapNode['type'] = 'standard', floor = 0): MapNode {
   return { id, type, floor, col: 0, x: 0, y: 0, connectedTo: [] };
@@ -23,9 +51,12 @@ function makeEdge(from: string, to: string): MapEdge {
 
 describe('RunManager', () => {
   let manager: RunManager;
+  let registry: ContentRegistry;
 
   beforeEach(() => {
-    manager = new RunManager();
+    registry = new ContentRegistry();
+    ContentBootstrapper.bootstrap(registry);
+    manager = new RunManager(registry);
   });
 
   describe('startNewRun', () => {

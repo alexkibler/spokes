@@ -7,6 +7,8 @@
 
 import Phaser from 'phaser';
 import { RunManager, type MapNode } from '../roguelike/RunManager';
+import { ContentRegistry } from '../roguelike/registry/ContentRegistry';
+import { ContentBootstrapper } from '../roguelike/content/ContentBootstrapper';
 import { generateCourseProfile, invertCourseProfile, type CourseProfile } from '../course/CourseProfile';
 import { generateHubAndSpokeMap } from '../course/CourseGenerator';
 import { type EliteChallenge } from '../roguelike/EliteChallenge';
@@ -50,7 +52,9 @@ export class MapScene extends Phaser.Scene {
     this.runManager = this.registry.get('runManager');
     if (!this.runManager) {
         console.error('RunManager not found in registry! Creating fallback.');
-        this.runManager = new RunManager();
+        const reg = this.registry.get('contentRegistry') ?? new ContentRegistry();
+        if (!this.registry.get('contentRegistry')) ContentBootstrapper.bootstrap(reg);
+        this.runManager = new RunManager(reg);
     }
 
     this.saveManager = this.registry.get('saveManager');
