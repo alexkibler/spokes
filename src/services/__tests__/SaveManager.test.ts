@@ -8,9 +8,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SaveManager } from '../SaveManager';
 import { IStorageProvider } from '../storage/IStorageProvider';
-import { RunData } from '../../roguelike/RunManager';
+import { RunData } from '../../core/roguelike/RunManager';
 import { FitWriter } from '../../fit/FitWriter';
-import type { ContentRegistry } from '../../roguelike/registry/ContentRegistry';
+import type { ContentRegistry } from '../../core/roguelike/registry/ContentRegistry';
 
 const MOCK_ITEMS: Record<string, { id: string; label: string }> = {
   valid_item:   { id: 'valid_item',   label: 'Valid Item' },

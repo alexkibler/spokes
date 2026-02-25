@@ -12,13 +12,13 @@ import { MapScene } from './scenes/MapScene';
 import { GameScene } from './scenes/GameScene';
 import { VictoryScene } from './scenes/VictoryScene';
 
-import { ContentRegistry } from './roguelike/registry/ContentRegistry';
-import { ContentBootstrapper } from './roguelike/content/ContentBootstrapper';
+import { ContentRegistry } from './core/roguelike/registry/ContentRegistry';
+import { ContentBootstrapper } from './core/roguelike/content/ContentBootstrapper';
 import { SaveManager } from './services/SaveManager';
 import { LocalStorageProvider } from './services/storage/LocalStorageProvider';
-import { RemoteService } from './services/RemoteService';
-import { SessionService } from './services/SessionService';
-import { RunManager } from './roguelike/RunManager';
+import { RemoteService } from './network/RemoteService';
+import { SessionService } from './services/game/SessionService';
+import { RunManager } from './core/roguelike/RunManager';
 import type { GameServices } from './services/ServiceLocator';
 
 // Initialize Capacitor BLE — must run before any BleClient calls in the services

@@ -1,8 +1,8 @@
-import type { ContentRegistry } from '../roguelike/registry/ContentRegistry';
+import type { ContentRegistry } from '../core/roguelike/registry/ContentRegistry';
 import type { SaveManager } from './SaveManager';
-import type { RemoteService } from './RemoteService';
-import type { SessionService } from './SessionService';
-import type { RunManager } from '../roguelike/RunManager';
+import type { RemoteService } from '../network/RemoteService';
+import type { SessionService } from './game/SessionService';
+import type { RunManager } from '../core/roguelike/RunManager';
 
 export interface GameServices {
   contentRegistry: ContentRegistry;

@@ -6,7 +6,7 @@
  */
 
 import Phaser from 'phaser';
-import { RunManager } from '../roguelike/RunManager';
+import { RunManager } from '../core/roguelike/RunManager';
 import { SaveManager } from '../services/SaveManager';
 import { THEME } from '../theme';
 

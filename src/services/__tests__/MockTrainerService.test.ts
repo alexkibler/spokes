@@ -7,8 +7,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { MockTrainerService } from '../MockTrainerService';
-import type { TrainerData } from '../ITrainerService';
+import { MockTrainerService } from '../hardware/MockTrainerService';
+import type { TrainerData } from '../hardware/ITrainerService';
 
 // ─── Construction / defaults ──────────────────────────────────────────────────
 
