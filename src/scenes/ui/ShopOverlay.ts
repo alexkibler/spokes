@@ -127,8 +127,7 @@ export class ShopOverlay extends BaseOverlay {
         this.destroy();
         onClose();
       },
-      color: THEME.colors.buttons.secondary,
-      hoverColor: THEME.colors.buttons.secondaryHover,
+      variant: 'secondary',
     });
     this.panelContainer.add(closeBtn);
   }
@@ -368,8 +367,7 @@ export class ShopOverlay extends BaseOverlay {
         width: RW - 20,
         height: ITEM_H,
         text: btnText,
-        color: itemCfg.color,
-        hoverColor: itemCfg.hoverColor,
+        variant: 'primary',
         onClick: () => {
           const p = itemPrice(itemCfg);
           if (!this.runManager.spendGold(p)) return;

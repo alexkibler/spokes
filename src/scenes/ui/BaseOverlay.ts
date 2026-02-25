@@ -81,8 +81,7 @@ export abstract class BaseOverlay extends Phaser.GameObjects.Container {
                 this.destroy();
                 this.onClose?.();
             },
-            color: THEME.colors.buttons.secondary,
-            hoverColor: THEME.colors.buttons.secondaryHover,
+            variant: 'secondary',
         });
 
         this.panelContainer.add(closeBtn);

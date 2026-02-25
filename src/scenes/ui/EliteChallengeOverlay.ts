@@ -151,8 +151,7 @@ export class EliteChallengeOverlay extends BaseOverlay {
       width: btnWidth,
       height: btnHeight,
       text: 'ACCEPT CHALLENGE',
-      color: 0x4a3600,
-      hoverColor: 0x6b4e00,
+      variant: 'primary',
       textColor: '#f0c030',
       onClick: () => {
         // Elite nodes ride their own dedicated course profile (not the edge's profile)
@@ -173,8 +172,7 @@ export class EliteChallengeOverlay extends BaseOverlay {
       width: btnWidth,
       height: btnHeight,
       text: 'RETREAT',
-      color: THEME.colors.buttons.secondary,
-      hoverColor: THEME.colors.buttons.secondaryHover,
+      variant: 'secondary',
       onClick: () => {
         this.destroy();
         onClose();

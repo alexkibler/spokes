@@ -203,5 +203,36 @@ export const en = {
     confirm_save_msg: 'Your run progress will be saved.\\nReturn to main menu?',
     confirm_save_btn: 'SAVE & QUIT',
     cancel: 'CANCEL'
+  },
+
+  ui: {
+    stats: {
+      title: 'RUN STATS',
+      distance: 'DISTANCE',
+      elevation: 'ELEVATION',
+      avg_power: 'AVG POWER',
+      avg_cadence: 'AVG CADENCE',
+      floor: 'FLOOR',
+      total_map: 'TOTAL MAP'
+    },
+    hud: {
+      title: 'ROGUELIKE RUN',
+      gold: 'GOLD: {{amount}}',
+      equipment: '⚙ EQUIPMENT',
+      remote: '📡 REMOTE',
+      return_to_base: 'RETURN TO BASE',
+      teleport: 'TELEPORT ({{count}})',
+      cancel_teleport: 'CANCEL TELEPORT'
+    },
+    boss: {
+      title: '⚠ FINAL BOSS',
+      race_btn: 'RACE!',
+      stats: {
+        power: 'POWER',
+        mass: 'MASS',
+        cda: 'CdA',
+        crr: 'Crr'
+      }
+    }
   }
 };

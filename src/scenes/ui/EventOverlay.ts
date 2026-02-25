@@ -98,8 +98,7 @@ export class EventOverlay extends BaseOverlay {
         width: btnWidth,
         height: btnHeight,
         text: i18n.t('event.attempt', { chance: successPct }),
-        color: 0x093d46,
-        hoverColor: 0x0e5560,
+        variant: 'primary',
         onClick: () => {
             this.handleAttempt(item, successChance);
         }
@@ -113,8 +112,7 @@ export class EventOverlay extends BaseOverlay {
         width: btnWidth,
         height: btnHeight,
         text: i18n.t('event.leave'),
-        color: 0x444455,
-        hoverColor: 0x555566,
+        variant: 'secondary',
         onClick: () => {
             this.destroy();
             onAction();
@@ -214,8 +212,7 @@ export class EventOverlay extends BaseOverlay {
           x: cx, y: cy + 90,
           width: 140, height: 46,
           text: i18n.t('event.continue'),
-          color: THEME.colors.buttons.primary,
-          hoverColor: THEME.colors.buttons.primaryHover,
+          variant: 'primary',
           onClick: () => {
               this.destroy();
               this.onAction();

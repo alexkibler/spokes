@@ -2,23 +2,19 @@ import Phaser from 'phaser';
 import { type RunData } from '../../roguelike/RunManager';
 import { THEME } from '../../theme';
 import { RemoteService } from '../../services/RemoteService';
+import { Button } from '../../ui/Button';
+import { Typography } from '../../ui/components/Typography';
+import i18next from '../../i18n';
 
 export class MapHUD {
   private scene: Phaser.Scene;
 
-  private goldText!: Phaser.GameObjects.Text;
+  private goldText!: Typography;
 
-  private teleportBg: Phaser.GameObjects.Rectangle | null = null;
-  private teleportTxt: Phaser.GameObjects.Text | null = null;
-
-  private gearBtnBg: Phaser.GameObjects.Rectangle | null = null;
-  private gearBtnTxt: Phaser.GameObjects.Text | null = null;
-
-  private remoteBtnBg: Phaser.GameObjects.Rectangle | null = null;
-  private remoteBtnTxt: Phaser.GameObjects.Text | null = null;
-
-  private returnBtnBg: Phaser.GameObjects.Rectangle | null = null;
-  private returnBtnTxt: Phaser.GameObjects.Text | null = null;
+  private teleportBtn: Button | null = null;
+  private gearBtn: Button | null = null;
+  private remoteBtn: Button | null = null;
+  private returnBtn: Button | null = null;
 
   private onGearClick: () => void;
   private onRemoteClick: () => void;
@@ -45,27 +41,37 @@ export class MapHUD {
 
   private createStaticElements(): void {
     // Title
-    this.scene.add.text(this.scene.scale.width / 2, 30, 'ROGUELIKE RUN', {
-      fontFamily: THEME.fonts.main,
-      fontSize: THEME.fonts.sizes.hero,
+    new Typography(this.scene, {
+      x: this.scene.scale.width / 2,
+      y: 30,
+      text: i18next.t('ui.hud.title'),
+      variant: 'hero',
+      align: 'center',
       color: THEME.colors.text.dark,
-      fontStyle: 'bold',
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
+      scrollFactor: 0
+    }).setOrigin(0.5).setDepth(THEME.depths.ui);
 
     // Gold Text
-    this.goldText = this.scene.add.text(this.scene.scale.width - 20, 20, 'GOLD: 0', {
-      fontFamily: THEME.fonts.main, fontSize: '20px', color: THEME.colors.text.gold, fontStyle: 'bold',
-    }).setOrigin(1, 0).setScrollFactor(0).setDepth(20);
+    this.goldText = new Typography(this.scene, {
+      x: this.scene.scale.width - 20,
+      y: 20,
+      text: i18next.t('ui.hud.gold', { amount: 0 }),
+      variant: 'h2',
+      color: THEME.colors.text.gold,
+      align: 'right',
+      fontSize: '20px', // Explicit size to match old style
+      scrollFactor: 0
+    });
+    this.goldText.setOrigin(1, 0).setDepth(THEME.depths.ui);
 
     // Buttons
     this.createGearButton();
     this.createRemoteButton();
-    // Return button depends on state, created dynamically or hidden
   }
 
   public update(run: RunData, isTeleportMode: boolean): void {
     // Update Gold
-    this.goldText.setText(`GOLD: ${run.gold}`);
+    this.goldText.setText(i18next.t('ui.hud.gold', { amount: run.gold }));
     this.goldText.setX(this.scene.scale.width - 20);
 
     // Update Teleport Button
@@ -74,64 +80,65 @@ export class MapHUD {
     // Update Return Button
     this.updateReturnButton(run);
 
-    // Update Remote Button (status check)
+    // Update Remote Button
     this.updateRemoteButton();
   }
 
   private createGearButton(): void {
-    // Position at top-left
-    this.gearBtnBg = this.scene.add.rectangle(70, 20, 130, 26, THEME.colors.buttons.primary)
-      .setScrollFactor(0).setDepth(30)
-      .setInteractive({ useHandCursor: true });
-    this.gearBtnTxt = this.scene.add.text(70, 20, '⚙ EQUIPMENT', {
-      fontFamily: THEME.fonts.main, fontSize: '11px', color: '#ccccff', fontStyle: 'bold',
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(31);
-
-    this.gearBtnBg.on('pointerover', () => this.gearBtnBg!.setFillStyle(THEME.colors.buttons.primaryHover));
-    this.gearBtnBg.on('pointerout',  () => this.gearBtnBg!.setFillStyle(THEME.colors.buttons.primary));
-    this.gearBtnBg.on('pointerdown', this.onGearClick);
+    this.gearBtn = new Button(this.scene, {
+      x: 70, // Centered
+      y: 20,
+      width: 130,
+      height: 26,
+      text: i18next.t('ui.hud.equipment'),
+      variant: 'primary',
+      textColor: '#ccccff',
+      fontSize: '11px',
+      onClick: this.onGearClick,
+      scrollFactor: 0
+    });
+    this.gearBtn.setDepth(THEME.depths.ui + 10);
   }
 
   private createRemoteButton(): void {
-    // Initial creation
     const y = 52;
-    this.remoteBtnBg = this.scene.add.rectangle(70, y, 130, 26, THEME.colors.buttons.primary)
-      .setScrollFactor(0).setDepth(30)
-      .setInteractive({ useHandCursor: true });
-
-    this.remoteBtnTxt = this.scene.add.text(70, y, '📡 REMOTE', {
-      fontFamily: THEME.fonts.main, fontSize: '11px', color: '#ccccff', fontStyle: 'bold',
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(31);
-
-    this.remoteBtnBg.on('pointerover', () => this.remoteBtnBg!.setFillStyle(THEME.colors.buttons.primaryHover));
-    this.remoteBtnBg.on('pointerout',  () => this.remoteBtnBg!.setFillStyle(THEME.colors.buttons.primary));
-    this.remoteBtnBg.on('pointerdown', this.onRemoteClick);
+    this.remoteBtn = new Button(this.scene, {
+      x: 70,
+      y: y,
+      width: 130,
+      height: 26,
+      text: i18next.t('ui.hud.remote'),
+      variant: 'primary',
+      textColor: '#ccccff',
+      fontSize: '11px',
+      onClick: this.onRemoteClick,
+      scrollFactor: 0
+    });
+    this.remoteBtn.setDepth(THEME.depths.ui + 10);
   }
 
   public setRemoteButtonText(text: string, color?: string): void {
-    if (this.remoteBtnTxt) {
-        this.remoteBtnTxt.setText(text);
-        if (color) this.remoteBtnTxt.setColor(color);
+    if (this.remoteBtn) {
+        this.remoteBtn.setText(text);
+        if (color) this.remoteBtn.setTextColor(color);
     }
   }
 
   private updateRemoteButton(): void {
+    if (!this.remoteBtn) return;
+
     const code = RemoteService.getInstance().getRoomCode();
     const isConnected = !!code;
-    const label = isConnected ? `REMOTE: ${code}` : '📡 REMOTE';
+    const label = isConnected ? `REMOTE: ${code}` : i18next.t('ui.hud.remote');
     const color = isConnected ? '#00ff88' : '#ccccff';
 
-    if (this.remoteBtnTxt) {
-         const currentText = this.remoteBtnTxt.text;
-         // If connected, always show code.
-         // If disconnected, respect transient messages.
-         if (!isConnected && (currentText === 'CONNECTING...' || currentText === 'ERR')) {
-             return;
-         }
-
-         this.remoteBtnTxt.setText(label);
-         this.remoteBtnTxt.setColor(color);
+    const currentText = this.remoteBtn.getText();
+    if (!isConnected && (currentText === 'CONNECTING...' || currentText === 'ERR')) {
+         return;
     }
+
+    this.remoteBtn.setText(label);
+    this.remoteBtn.setTextColor(color);
   }
 
   private updateTeleportButton(run: RunData, isTeleportMode: boolean): void {
@@ -139,46 +146,40 @@ export class MapHUD {
     const teleX = this.scene.scale.width - 90;
 
     if (teleCount > 0) {
-      if (!this.teleportBg) {
-        this.teleportBg = this.scene.add.rectangle(teleX, 60, 160, 30, THEME.colors.buttons.primary)
-          .setScrollFactor(0).setDepth(20)
-          .setInteractive({ useHandCursor: true });
-        this.teleportTxt = this.scene.add.text(teleX, 60, `TELEPORT (${teleCount})`, {
-          fontFamily: THEME.fonts.main, fontSize: '12px', color: '#ff88ff', fontStyle: 'bold',
-        }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
-
-        this.teleportBg.on('pointerdown', this.onTeleportClick);
-        this.teleportBg.on('pointerover', () =>
-          this.teleportBg!.setFillStyle(isTeleportMode ? 0x995599 : THEME.colors.buttons.primaryHover));
-        this.teleportBg.on('pointerout', () =>
-          this.teleportBg!.setFillStyle(isTeleportMode ? 0x884488 : THEME.colors.buttons.primary));
+      if (!this.teleportBtn) {
+        this.teleportBtn = new Button(this.scene, {
+            x: teleX,
+            y: 60,
+            width: 160,
+            height: 30,
+            text: i18next.t('ui.hud.teleport', { count: teleCount }),
+            variant: 'primary',
+            textColor: '#ff88ff',
+            fontSize: '12px',
+            onClick: this.onTeleportClick,
+            scrollFactor: 0
+        });
+        this.teleportBtn.setDepth(THEME.depths.ui);
       } else {
-        this.teleportBg.setVisible(true).setX(teleX);
-        this.teleportTxt!.setVisible(true).setX(teleX);
-        this.teleportTxt!.setText(isTeleportMode ? 'CANCEL TELEPORT' : `TELEPORT (${teleCount})`);
-        this.teleportBg.setFillStyle(isTeleportMode ? 0x884488 : THEME.colors.buttons.primary);
+        this.teleportBtn.setVisible(true);
+        this.teleportBtn.setPosition(teleX, 60);
 
-        // Update listeners for hover state based on mode
-        this.teleportBg.off('pointerover').on('pointerover', () =>
-            this.teleportBg!.setFillStyle(isTeleportMode ? 0x995599 : THEME.colors.buttons.primaryHover));
-        this.teleportBg.off('pointerout').on('pointerout', () =>
-            this.teleportBg!.setFillStyle(isTeleportMode ? 0x884488 : THEME.colors.buttons.primary));
+        const label = isTeleportMode
+            ? i18next.t('ui.hud.cancel_teleport')
+            : i18next.t('ui.hud.teleport', { count: teleCount });
+
+        this.teleportBtn.setText(label);
       }
     } else {
-      this.teleportBg?.setVisible(false);
-      this.teleportTxt?.setVisible(false);
+      if (this.teleportBtn) this.teleportBtn.setVisible(false);
     }
   }
 
   private updateReturnButton(run: RunData): void {
     if (!run || run.currentNodeId === 'node_hub') {
-        if (this.returnBtnBg) {
-            this.returnBtnBg.destroy();
-            this.returnBtnBg = null;
-        }
-        if (this.returnBtnTxt) {
-            this.returnBtnTxt.destroy();
-            this.returnBtnTxt = null;
+        if (this.returnBtn) {
+            this.returnBtn.destroy();
+            this.returnBtn = null;
         }
         return;
     }
@@ -186,32 +187,32 @@ export class MapHUD {
     const x = this.scene.scale.width - 20;
     const y = this.scene.scale.height - 180;
 
-    if (!this.returnBtnBg) {
-        this.returnBtnBg = this.scene.add.rectangle(x, y, 160, 40, THEME.colors.buttons.danger)
-            .setOrigin(1, 1).setScrollFactor(0).setDepth(30).setInteractive({ useHandCursor: true });
+    // Center coords
+    const cx = x - 80; // 160/2
+    const cy = y - 20; // 40/2
 
-        this.returnBtnTxt = this.scene.add.text(x - 80, y - 20, 'RETURN TO BASE', {
-            fontFamily: THEME.fonts.main, fontSize: '14px', fontStyle: 'bold', color: '#ffffff'
-        }).setOrigin(0.5).setScrollFactor(0).setDepth(31);
-
-        this.returnBtnBg.on('pointerdown', this.onReturnClick);
-        this.returnBtnBg.on('pointerover', () => this.returnBtnBg!.setFillStyle(THEME.colors.buttons.dangerHover));
-        this.returnBtnBg.on('pointerout', () => this.returnBtnBg!.setFillStyle(THEME.colors.buttons.danger));
+    if (!this.returnBtn) {
+        this.returnBtn = new Button(this.scene, {
+            x: cx,
+            y: cy,
+            width: 160,
+            height: 40,
+            text: i18next.t('ui.hud.return_to_base'),
+            variant: 'danger',
+            onClick: this.onReturnClick,
+            scrollFactor: 0
+        });
+        this.returnBtn.setDepth(THEME.depths.ui + 10);
     } else {
-        this.returnBtnBg.setPosition(x, y);
-        this.returnBtnTxt!.setPosition(x - 80, y - 20);
+        this.returnBtn.setPosition(cx, cy);
     }
   }
 
   public destroy(): void {
-    this.goldText.destroy();
-    this.teleportBg?.destroy();
-    this.teleportTxt?.destroy();
-    this.gearBtnBg?.destroy();
-    this.gearBtnTxt?.destroy();
-    this.remoteBtnBg?.destroy();
-    this.remoteBtnTxt?.destroy();
-    this.returnBtnBg?.destroy();
-    this.returnBtnTxt?.destroy();
+    if (this.goldText) this.goldText.destroy();
+    if (this.teleportBtn) this.teleportBtn.destroy();
+    if (this.gearBtn) this.gearBtn.destroy();
+    if (this.remoteBtn) this.remoteBtn.destroy();
+    if (this.returnBtn) this.returnBtn.destroy();
   }
 }
