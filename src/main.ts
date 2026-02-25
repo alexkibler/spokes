@@ -54,12 +54,7 @@ const config: Phaser.Types.Core.GameConfig = {
     width: 960,
     height: 540,
   },
-  callbacks: {
-    postBoot: (game) => {
-      game.registry.set('services', services);
-      console.log('Services injected into registry');
-    }
-  }
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+game.registry.set('services', services);
