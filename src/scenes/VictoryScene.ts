@@ -7,7 +7,7 @@
 
 import Phaser from 'phaser';
 import { RunManager } from '../roguelike/RunManager';
-import { SaveService } from '../services/SaveService';
+import { SaveManager } from '../services/SaveManager';
 
 export class VictoryScene extends Phaser.Scene {
   constructor() {
@@ -16,7 +16,10 @@ export class VictoryScene extends Phaser.Scene {
 
   create(): void {
     // Run is complete — wipe the save so the menu shows a fresh state
-    SaveService.clear();
+    const saveManager = this.registry.get('saveManager') as SaveManager;
+    if (saveManager) {
+        saveManager.clearSave();
+    }
 
     const w = this.scale.width;
     const h = this.scale.height;

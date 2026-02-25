@@ -25,6 +25,7 @@ import { MapStatsPanel } from './ui/MapStatsPanel';
 import { MapModifiersBar } from './ui/MapModifiersBar';
 import { MapHUD } from './ui/MapHUD';
 import { MapCameraController } from './controllers/MapCameraController';
+import { SaveManager } from '../services/SaveManager';
 
 export class MapScene extends Phaser.Scene {
   private mapRenderer!: MapRenderer;
@@ -33,6 +34,7 @@ export class MapScene extends Phaser.Scene {
   private hud!: MapHUD;
   private cameraController!: MapCameraController;
   private runManager!: RunManager;
+  private saveManager!: SaveManager;
 
   private isTeleportMode = false;
   private overlayActive = false;
@@ -51,11 +53,22 @@ export class MapScene extends Phaser.Scene {
         this.runManager = new RunManager();
     }
 
+    this.saveManager = this.registry.get('saveManager');
+    if (!this.saveManager) {
+        console.warn('SaveManager not found in registry (init fallback?)');
+        // We can't easily create it without storage, assume it exists or fail gracefully
+    }
+
     const run = this.runManager.getRun();
     if (run && run.nodes.length === 0) {
       this.generateMap(run);
       const startNode = run.nodes.find((n: MapNode) => n.type === 'start');
       if (startNode) this.runManager.setCurrentNode(startNode.id);
+
+      // Save initial map generation
+      if (this.saveManager) {
+          this.saveManager.saveRun(this.runManager.exportData());
+      }
     }
   }
 
@@ -87,6 +100,7 @@ export class MapScene extends Phaser.Scene {
         onRemoteClick: () => this.handleRemoteClick(),
         onReturnClick: () => {
             this.runManager.returnToHub();
+            if (this.saveManager) this.saveManager.saveRun(this.runManager.exportData());
             this.scene.restart();
         },
         onTeleportClick: () => {
@@ -141,6 +155,7 @@ export class MapScene extends Phaser.Scene {
         this.overlayActive = false;
         this.cameraController.inputEnabled = true;
         this.refresh();
+        if (this.saveManager) this.saveManager.saveRun(this.runManager.exportData());
       });
       overlay.setDepth(2100);
   }
@@ -274,6 +289,7 @@ export class MapScene extends Phaser.Scene {
           this.runManager.setCurrentNode(node.id);
           this.isTeleportMode = false;
           this.refresh();
+          if (this.saveManager) this.saveManager.saveRun(this.runManager.exportData());
         }
       }
       return;
@@ -412,6 +428,7 @@ export class MapScene extends Phaser.Scene {
 
     const action = run.pendingNodeAction;
     this.runManager.setPendingNodeAction(null);
+    if (this.saveManager) this.saveManager.saveRun(this.runManager.exportData());
 
     if (action === 'shop') {
       this.openShop();
@@ -438,8 +455,14 @@ export class MapScene extends Phaser.Scene {
       this,
       this.cameraController.getScrollY(),
       this.runManager,
-      () => this.refresh(), // Update Gold
-      () => this.closeOverlay()
+      () => {
+          this.refresh(); // Update Gold
+          if (this.saveManager) this.saveManager.saveRun(this.runManager.exportData());
+      },
+      () => {
+          this.closeOverlay();
+          if (this.saveManager) this.saveManager.saveRun(this.runManager.exportData());
+      }
     ));
   }
 
@@ -451,6 +474,7 @@ export class MapScene extends Phaser.Scene {
       () => {
         onComplete?.();
         this.refresh();
+        if (this.saveManager) this.saveManager.saveRun(this.runManager.exportData());
       },
       () => this.closeOverlay()
     ));

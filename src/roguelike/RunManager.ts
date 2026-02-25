@@ -5,13 +5,12 @@
  * Tracks player progress, currency, and the procedurally generated map.
  */
 
-import Phaser from 'phaser';
 import type { CourseProfile } from '../course/CourseProfile';
 import type { EliteChallenge } from './EliteChallenge';
 import { FitWriter } from '../fit/FitWriter';
 import type { Units } from '../scenes/MenuScene';
 import { ITEM_REGISTRY, type EquipmentSlot } from './ItemRegistry';
-import type { SavedRun } from '../services/SaveService';
+import type { SavedRun } from '../services/SaveManager';
 
 export type { EquipmentSlot };
 
@@ -93,11 +92,10 @@ export interface RunData {
 }
 
 /** Context-managed state for the current run */
-export class RunManager extends Phaser.Events.EventEmitter {
+export class RunManager {
   private runData: RunData | null = null;
 
   constructor(initialData?: RunData) {
-    super();
     if (initialData) {
       this.runData = initialData;
     }
@@ -130,7 +128,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
       isRealTrainerRun: false,
       stats: { totalMapDistanceM: 0, totalRiddenDistanceM: 0, totalRecordCount: 0, totalPowerSum: 0, totalCadenceSum: 0 },
     };
-    this.persist();
     return this.runData;
   }
 
@@ -153,11 +150,19 @@ export class RunManager extends Phaser.Events.EventEmitter {
         this.applyModifier(def.modifier, `${def.label} (equipped)`);
       }
     }
-    this.persist();
     return this.runData;
   }
 
   getRun(): RunData | null {
+    return this.runData;
+  }
+
+  /**
+   * Returns a reference to the underlying run data for saving.
+   * Throws if no run is active.
+   */
+  exportData(): RunData {
+    if (!this.runData) throw new Error('No active run to export');
     return this.runData;
   }
 
@@ -167,7 +172,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
       if (!this.runData.visitedNodeIds.includes(nodeId)) {
         this.runData.visitedNodeIds.push(nodeId);
       }
-      this.persist();
     }
   }
 
@@ -175,7 +179,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
     if (this.runData) {
       this.runData.currentNodeId = 'node_hub';
       // Do NOT wipe visitedNodeIds
-      this.persist();
     }
   }
 
@@ -184,7 +187,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
       const idx = this.runData.inventory.indexOf(item);
       if (idx !== -1) {
         this.runData.inventory.splice(idx, 1);
-        this.persist();
         return true;
       }
     }
@@ -233,15 +235,12 @@ export class RunManager extends Phaser.Events.EventEmitter {
           edge.isCleared = true;
           // Also update the active reference
           this.runData.activeEdge.isCleared = true;
-          this.persist();
           console.log(`[SPOKES] completeActiveEdge: returning true (first clear)`);
           return true;
         } else {
           console.log(`[SPOKES] completeActiveEdge: edge already cleared → returning false`);
         }
       }
-
-      this.persist();
     } else {
       console.warn(`[SPOKES] completeActiveEdge: no activeEdge → returning false`);
     }
@@ -257,21 +256,18 @@ export class RunManager extends Phaser.Events.EventEmitter {
   setFtp(w: number): void {
     if (this.runData) {
       this.runData.ftpW = w;
-      this.persist();
     }
   }
 
   addGold(amount: number): void {
     if (this.runData) {
       this.runData.gold += amount;
-      this.persist();
     }
   }
 
   spendGold(amount: number): boolean {
     if (this.runData && this.runData.gold >= amount) {
       this.runData.gold -= amount;
-      this.persist();
       return true;
     }
     return false;
@@ -280,7 +276,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
   addToInventory(item: string): void {
     if (this.runData) {
       this.runData.inventory.push(item);
-      this.persist();
     }
   }
 
@@ -301,7 +296,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
     if (delta.weightMult !== undefined)   m.weightMult    = Math.max(0.01, m.weightMult * delta.weightMult);
     if (delta.crrMult !== undefined)      m.crrMult       = Math.max(0.01, m.crrMult * delta.crrMult);
     if (label) this.runData.modifierLog.push({ label, ...delta });
-    this.persist();
   }
 
   /** Reverses a previously-applied modifier delta (used when unequipping). */
@@ -337,7 +331,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
     if (def.modifier) {
       this.applyModifier(def.modifier, `${def.label} (equipped)`);
     }
-    this.persist();
     return true;
   }
 
@@ -361,7 +354,6 @@ export class RunManager extends Phaser.Events.EventEmitter {
 
     delete this.runData.equipped[slot];
     this.runData.inventory.push(itemId);
-    this.persist();
     return itemId;
   }
 
@@ -372,13 +364,5 @@ export class RunManager extends Phaser.Events.EventEmitter {
     s.totalRecordCount     += recordCount;
     s.totalPowerSum        += powerSum;
     s.totalCadenceSum      += cadenceSum;
-    this.persist();
-  }
-
-  /** Emits 'save' event with current state. */
-  private persist(): void {
-    if (this.runData) {
-      this.emit('save', this.runData);
-    }
   }
 }

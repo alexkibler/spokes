@@ -5,35 +5,9 @@
  * roguelike run data (gold, inventory, modifiers, edge traversal, stats).
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { RunManager } from '../RunManager';
 import type { MapNode, MapEdge } from '../RunManager';
-
-// Mock Phaser.Events.EventEmitter to avoid loading Phaser in Node
-vi.mock('phaser', () => {
-  class EventEmitter {
-    events: Record<string, Function[]> = {};
-    emit(event: string, ...args: any[]) {
-      if (this.events[event]) {
-        this.events[event].forEach(fn => fn(...args));
-      }
-      return true;
-    }
-    on(event: string, fn: Function) {
-      if (!this.events[event]) this.events[event] = [];
-      this.events[event].push(fn);
-      return this;
-    }
-    off() { return this; }
-  }
-  return {
-    default: {
-      Events: {
-        EventEmitter
-      }
-    }
-  };
-});
 
 function makeNode(id: string, type: MapNode['type'] = 'standard', floor = 0): MapNode {
   return { id, type, floor, col: 0, x: 0, y: 0, connectedTo: [] };
@@ -128,18 +102,22 @@ describe('RunManager', () => {
       manager.startNewRun(5, 20, 'hard');
       expect(manager.getRun()?.gold).toBe(0);
     });
-
-    it('emits save event', () => {
-      const spy = vi.fn();
-      manager.on('save', spy);
-      manager.startNewRun(3, 10, 'normal');
-      expect(spy).toHaveBeenCalled();
-    });
   });
 
   describe('getRun', () => {
     it('returns null when no run has been started', () => {
       expect(manager.getRun()).toBeNull();
+    });
+  });
+
+  describe('exportData', () => {
+    it('throws error when no run active', () => {
+        expect(() => manager.exportData()).toThrow();
+    });
+
+    it('returns run data when active', () => {
+        manager.startNewRun(3, 10, 'normal');
+        expect(manager.exportData()).toBeDefined();
     });
   });
 
