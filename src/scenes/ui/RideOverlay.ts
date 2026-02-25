@@ -165,10 +165,6 @@ export class RideOverlay extends Phaser.GameObjects.Container {
     if (isRoguelike && isCompleted) {
       const btnText = isFinishNode ? 'VICTORY!' : 'CONTINUE RUN';
       const textColor = isFinishNode ? '#000000' : '#ffffff';
-      // Wait, THEME.colors.text.gold is a string '#ffcc00'. Button needs number.
-      // THEME has `gold` in `text` but maybe I should use `buttons` or parse it.
-      // I'll use raw hex for specific logic or add to theme.
-      const btnColorNum = isFinishNode ? 0xffcc00 : 0x8b5a00;
 
       const btn = new Button(scene, {
         x: cx,
@@ -176,8 +172,7 @@ export class RideOverlay extends Phaser.GameObjects.Container {
         width: btnW,
         height: btnH,
         text: btnText,
-        color: btnColorNum,
-        hoverColor: isFinishNode ? 0xffdd44 : 0xcc8800,
+        variant: 'primary', // TODO: Add gold/victory variant
         textColor: textColor,
         onClick: onContinue,
       });
@@ -193,7 +188,7 @@ export class RideOverlay extends Phaser.GameObjects.Container {
         width: btnW,
         height: btnH,
         text: 'DOWNLOAD .FIT',
-        color: THEME.colors.buttons.success,
+        variant: 'success',
         textColor: THEME.colors.text.accent,
         onClick: onDownload,
       });
@@ -205,7 +200,7 @@ export class RideOverlay extends Phaser.GameObjects.Container {
         width: btnW,
         height: btnH,
         text: 'MAIN MENU',
-        color: THEME.colors.buttons.primary,
+        variant: 'primary',
         onClick: onMenu,
       });
       this.add(menuBtn);
@@ -217,7 +212,7 @@ export class RideOverlay extends Phaser.GameObjects.Container {
         width: btnW,
         height: btnH,
         text: 'MAIN MENU',
-        color: THEME.colors.buttons.primary,
+        variant: 'primary',
         onClick: onMenu,
       });
       this.add(menuBtn);

@@ -24,8 +24,7 @@ export class BottomControls {
     this.btnMenu = new Button(this.scene, {
       x: 0, y: 0, width: 120, height: 34,
       text: 'PAUSE',
-      color: THEME.colors.buttons.primary,
-      hoverColor: THEME.colors.buttons.primaryHover,
+      variant: 'primary',
       textColor: '#ffffff',
       onClick: onPause,
     });

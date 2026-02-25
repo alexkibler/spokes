@@ -102,6 +102,10 @@ export const THEME = {
       hero: '28px',
       hudValue: '26px',
     },
+    weights: {
+      normal: 'normal',
+      bold: 'bold',
+    }
   },
 
   layout: {
@@ -110,5 +114,30 @@ export const THEME = {
     elevHeight: 75,
     overlayPad: 20,
     borderRadius: 8,
+  },
+
+  // New Design System Tokens
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 16,
+    lg: 24,
+    xl: 32,
+    xxl: 48,
+  },
+
+  borderRadius: {
+    default: 8,
+    large: 12,
+    round: 9999,
+  },
+
+  depths: {
+    background: 0,
+    map: 10,
+    ui: 50,
+    overlay: 100,
+    modal: 2000, // Ensuring modals sit on top
+    tooltip: 3000,
   }
 };

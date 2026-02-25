@@ -243,8 +243,7 @@ export class RewardOverlay extends BaseOverlay {
         width: 220,
         height: 36,
         text: i18n.t('reward.reroll', { count: rerollCount }),
-        color: 0x2a2a08,
-        hoverColor: 0x444410,
+        variant: 'secondary',
         textColor: THEME.colors.text.gold,
         onClick: onReroll,
       });

@@ -1,10 +1,13 @@
 import Phaser from 'phaser';
 import { type RunData } from '../../roguelike/RunManager';
 import { THEME } from '../../theme';
+import i18next from '../../i18n';
+import { Panel } from '../../ui/components/Panel';
+import { Typography } from '../../ui/components/Typography';
 
 export class MapStatsPanel {
   private scene: Phaser.Scene;
-  private container: Phaser.GameObjects.Container | null = null;
+  private container: Panel | null = null;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -19,7 +22,7 @@ export class MapStatsPanel {
     if (!run) return;
 
     const stats = run.stats;
-    const units = run.units; // Assuming run.units exists (it does in RunData)
+    const units = run.units;
 
     const recs = stats?.totalRecordCount ?? 0;
     const avgPowW = recs > 0 ? Math.round(stats!.totalPowerSum / recs) : 0;
@@ -48,12 +51,12 @@ export class MapStatsPanel {
       : '—';
 
     const rows: [string, string][] = [
-      ['DISTANCE',   distM > 0 ? distStr : '—'],
-      ['ELEVATION',  elevStr],
-      ['AVG POWER',  avgPowW > 0 ? `${avgPowW} W` : '—'],
-      ['AVG CADENCE', avgCadRpm > 0 ? `${avgCadRpm} rpm` : '—'],
-      ['FLOOR', totalFloors > 0 ? `${currentFloor} / ${totalFloors}` : '—'],
-      ['TOTAL MAP', mapDistM > 0 ? mapDistStr : '—'],
+      [i18next.t('ui.stats.distance'),   distM > 0 ? distStr : '—'],
+      [i18next.t('ui.stats.elevation'),  elevStr],
+      [i18next.t('ui.stats.avg_power'),  avgPowW > 0 ? `${avgPowW} W` : '—'],
+      [i18next.t('ui.stats.avg_cadence'), avgCadRpm > 0 ? `${avgCadRpm} rpm` : '—'],
+      [i18next.t('ui.stats.floor'), totalFloors > 0 ? `${currentFloor} / ${totalFloors}` : '—'],
+      [i18next.t('ui.stats.total_map'), mapDistM > 0 ? mapDistStr : '—'],
     ];
 
     const panW = 190;
@@ -65,27 +68,43 @@ export class MapStatsPanel {
     const x = 20;
     const y = this.scene.scale.height - panH - 20;
 
-    this.container = this.scene.add.container(x, y).setScrollFactor(0).setDepth(10);
+    this.container = new Panel(this.scene, {
+        x, y,
+        width: panW,
+        height: panH,
+        depth: THEME.depths.ui,
+    });
 
-    const bg = this.scene.add.graphics();
-    bg.fillStyle(THEME.colors.ui.hudBackground, 0.7);
-    bg.fillRoundedRect(0, 0, panW, panH, 8);
-    bg.lineStyle(1, 0x2a2018, 1);
-    bg.strokeRoundedRect(0, 0, panW, panH, 8);
-    this.container.add(bg);
-
-    this.container.add(this.scene.add.text(panW / 2, padV - 2, 'RUN STATS', {
-      fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: THEME.colors.text.muted, fontStyle: 'bold',
-    }).setOrigin(0.5, 0));
+    const title = new Typography(this.scene, {
+        x: panW / 2,
+        y: padV - 2,
+        text: i18next.t('ui.stats.title'),
+        variant: 'label',
+        align: 'center'
+    }).setOrigin(0.5, 0);
+    this.container.add(title);
 
     rows.forEach(([label, value], i) => {
       const ry = padV + titleH + i * rowH;
-      this.container!.add(this.scene.add.text(padH, ry, label, {
-        fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: THEME.colors.text.subtle,
-      }).setOrigin(0, 0));
-      this.container!.add(this.scene.add.text(panW - padH, ry, value, {
-        fontFamily: THEME.fonts.main, fontSize: THEME.fonts.sizes.default, color: THEME.colors.text.main, fontStyle: 'bold',
-      }).setOrigin(1, 0));
+
+      const lbl = new Typography(this.scene, {
+          x: padH,
+          y: ry,
+          text: label,
+          variant: 'caption',
+          color: THEME.colors.text.subtle
+      }).setOrigin(0, 0);
+      this.container!.add(lbl);
+
+      const val = new Typography(this.scene, {
+          x: panW - padH,
+          y: ry,
+          text: value,
+          variant: 'body',
+          fontStyle: 'bold',
+          align: 'right'
+      }).setOrigin(1, 0);
+      this.container!.add(val);
     });
   }
 

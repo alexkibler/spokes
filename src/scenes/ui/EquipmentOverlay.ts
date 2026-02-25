@@ -51,8 +51,7 @@ export class EquipmentOverlay extends BaseOverlay {
             this.destroy();
             this.onClose?.();
         },
-        color: THEME.colors.buttons.secondary,
-        hoverColor: THEME.colors.buttons.secondaryHover,
+        variant: 'secondary',
     });
     this.panelContainer.add(this.closeBtn);
 
