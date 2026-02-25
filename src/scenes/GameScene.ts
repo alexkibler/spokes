@@ -109,6 +109,7 @@ export class GameScene extends Phaser.Scene {
   private currentGrade = 0;
   private currentSurface: SurfaceType = 'asphalt';
   private lastSentGrade = -999;
+  private lastTrainerUpdateMs = 0;
   private lastSentSurface: SurfaceType | null = null;
   private smoothGrade = 0;
 
@@ -248,8 +249,9 @@ export class GameScene extends Phaser.Scene {
     this.currentGrade     = 0;
     this.currentSurface   = 'asphalt';
     this.smoothGrade      = 0;
-    this.lastSentGrade    = -999;
-    this.lastSentSurface  = null;
+    this.lastSentGrade       = -999;
+    this.lastSentSurface     = null;
+    this.lastTrainerUpdateMs = 0;
     this.latestPower      = initialPower;
     this.crankAngle       = 0;
     this.cadenceHistory   = [];
@@ -485,19 +487,25 @@ export class GameScene extends Phaser.Scene {
     this.worldContainer.rotation = rotationAngle;
     this.worldContainer.setScale(Math.sqrt(1 + this.smoothGrade * this.smoothGrade) * 1.02);
 
-    if (
-      this.trainer.setSimulationParams &&
-      (this.currentGrade !== this.lastSentGrade ||
-       this.currentSurface !== this.lastSentSurface)
-    ) {
+    const trainerGradeChanged = this.currentGrade !== this.lastSentGrade;
+    const trainerSurfaceChanged = this.currentSurface !== this.lastSentSurface;
+    const timeToPing = nowMs - this.lastTrainerUpdateMs > 2000;
+
+    if (this.trainer.setSimulationParams && (trainerGradeChanged || trainerSurfaceChanged || timeToPing)) {
       this.lastSentGrade   = this.currentGrade;
       this.lastSentSurface = this.currentSurface;
+      this.lastTrainerUpdateMs = nowMs;
 
+      // The FTMS spec assumes a standard system mass (usually ~83kg).
+      // We must scale the incline and friction so the trainer applies the correct torque for the player's actual weight.
       const assumedTrainerMass = 83;
-      const effectiveCrr = this.physicsConfig.crr * (this.physicsConfig.massKg / assumedTrainerMass);
+      const massRatio = this.physicsConfig.massKg / assumedTrainerMass;
+
+      const effectiveGrade = this.currentGrade * massRatio;
+      const effectiveCrr = this.physicsConfig.crr * massRatio;
       const cwa = 0.5 * this.physicsConfig.rhoAir * this.physicsConfig.cdA;
 
-      void this.trainer.setSimulationParams(this.currentGrade, effectiveCrr, cwa);
+      void this.trainer.setSimulationParams(effectiveGrade, effectiveCrr, cwa);
     }
 
     // Drafting

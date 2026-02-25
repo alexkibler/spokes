@@ -1128,12 +1128,12 @@ export class MenuScene extends Phaser.Scene {
     hwTestBtn.on('pointerdown', () => {
       const calibrationCourse = {
         segments: [
-          { distanceM: 300, grade: 0.00, surface: 'asphalt' },
-          { distanceM: 500,  grade: 0.03, surface: 'asphalt' },
-          { distanceM: 500,  grade: -0.02, surface: 'asphalt' },
-          { distanceM: 500,  grade: 0.00, surface: 'asphalt' },
+          { distanceM: 3000, grade: 0.00, surface: 'asphalt' },
+          // { distanceM: 500,  grade: 0.03, surface: 'asphalt' },
+          // { distanceM: 500,  grade: -0.02, surface: 'asphalt' },
+          // { distanceM: 500,  grade: 0.00, surface: 'asphalt' },
         ],
-        totalDistanceM: 2500
+        totalDistanceM: 3000
       };
 
       this.services.sessionService.setUnits(this.units);
