@@ -58,7 +58,6 @@ import { RunManager as RunManagerClass } from '../core/roguelike/RunManager';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const GRADE_SEND_THRESHOLD = 0.001;
 const GRADE_LERP_RATE = 1.0;
 
 interface GhostState {
@@ -110,6 +109,7 @@ export class GameScene extends Phaser.Scene {
   private currentGrade = 0;
   private currentSurface: SurfaceType = 'asphalt';
   private lastSentGrade = -999;
+  private lastTrainerUpdateMs = 0;
   private lastSentSurface: SurfaceType | null = null;
   private smoothGrade = 0;
 
@@ -137,6 +137,7 @@ export class GameScene extends Phaser.Scene {
   private activePauseOverlay: PauseOverlay | null = null;
 
   private isRealTrainer = false;
+  private rawTrainerSpeedMs: number = 0;
 
   private fitWriter!: FitWriter;
   private rideStartTime = 0;
@@ -201,12 +202,17 @@ export class GameScene extends Phaser.Scene {
     if (!this.services) {
         throw new Error('GameServices not found in registry!');
     }
+    const preConnectedTrainer = this.services.sessionService.trainer;
+    const isRealTrainer = preConnectedTrainer && !(preConnectedTrainer instanceof MockTrainerService);
+    const initialPower = isRealTrainer ? 0 : DEMO_POWER_WATTS;
     this.runManager = this.services.runManager;
     this.saveManager = this.services.saveManager;
 
     this.course = data?.course ?? DEFAULT_COURSE;
     this.units    = this.services.sessionService.units;
     this.weightKg = this.services.sessionService.weightKg;
+    this.latestPower      = initialPower;
+    this.rawPower         = initialPower;
     this.isRoguelike         = data?.isRoguelike ?? false;
     this.isBackwards         = data?.isBackwards ?? false;
     this.activeChallenge     = data?.activeChallenge ?? null;
@@ -233,8 +239,10 @@ export class GameScene extends Phaser.Scene {
     console.log(`[SPOKES] GameScene.init: isRoguelike=${this.isRoguelike} activeChallenge=${this.activeChallenge?.id ?? 'none'} racers=${this.racerProfiles.length} ftpW=${this.ftpW}`);
 
     const massKg = this.weightKg + 8;
-    const cdA = 0.325 * Math.pow(this.weightKg / 75, 0.66);
-    this.basePhysics = { ...DEFAULT_PHYSICS, massKg, cdA };
+    // Scale the aerodynamic profile dynamically from our known 114.3 kg (252 lb) calibrated baseline
+    const cdA = 0.416 * Math.pow(this.weightKg / 114.3, 0.66);
+    const crr = 0.0041; // Our calibrated Saris H3 baseline friction
+    this.basePhysics = { ...DEFAULT_PHYSICS, massKg, cdA, crr };
 
     // Reset state
     this.distanceM        = 0;
@@ -242,13 +250,14 @@ export class GameScene extends Phaser.Scene {
     this.currentGrade     = 0;
     this.currentSurface   = 'asphalt';
     this.smoothGrade      = 0;
-    this.lastSentGrade    = -999;
-    this.lastSentSurface  = null;
-    this.latestPower      = DEMO_POWER_WATTS;
+    this.lastSentGrade       = -999;
+    this.lastSentSurface     = null;
+    this.lastTrainerUpdateMs = 0;
+    this.latestPower      = initialPower;
     this.crankAngle       = 0;
     this.cadenceHistory   = [];
     this.avgCadence       = 0;
-    this.rawPower         = DEMO_POWER_WATTS;
+    this.rawPower         = initialPower;
     this.activeEffect     = null;
     this.physicsConfig    = { ...this.basePhysics };
     this.rideComplete       = false;
@@ -313,7 +322,7 @@ export class GameScene extends Phaser.Scene {
     this.physicsConfig = {
       ...this.basePhysics,
       grade: this.currentGrade,
-      crr:   getCrrForSurface(this.currentSurface) * (this.runModifiers.crrMult ?? 1),
+      crr: this.basePhysics.crr * (getCrrForSurface(this.currentSurface) / CRR_BY_SURFACE['asphalt']) * (this.runModifiers.crrMult ?? 1),
     };
     this.parallaxBg.setSurface(this.currentSurface);
 
@@ -469,7 +478,7 @@ export class GameScene extends Phaser.Scene {
       this.physicsConfig = {
         ...this.basePhysics,
         grade: this.currentGrade,
-        crr:   getCrrForSurface(this.currentSurface) * (this.runModifiers.crrMult ?? 1),
+        crr: this.basePhysics.crr * (getCrrForSurface(this.currentSurface) / CRR_BY_SURFACE['asphalt']) * (this.runModifiers.crrMult ?? 1),
       };
     }
 
@@ -479,19 +488,28 @@ export class GameScene extends Phaser.Scene {
     this.worldContainer.rotation = rotationAngle;
     this.worldContainer.setScale(Math.sqrt(1 + this.smoothGrade * this.smoothGrade) * 1.02);
 
-    if (
-      this.trainer.setSimulationParams &&
-      (Math.abs(this.smoothGrade - this.lastSentGrade) >= GRADE_SEND_THRESHOLD ||
-       this.currentSurface !== this.lastSentSurface)
-    ) {
-      this.lastSentGrade   = this.smoothGrade;
+    const trainerGradeChanged = this.currentGrade !== this.lastSentGrade;
+    const trainerSurfaceChanged = this.currentSurface !== this.lastSentSurface;
+    const timeToPing = nowMs - this.lastTrainerUpdateMs > 2000;
+
+    if (this.trainer.setSimulationParams && (trainerGradeChanged || trainerSurfaceChanged || timeToPing)) {
+      this.lastSentGrade   = this.currentGrade;
       this.lastSentSurface = this.currentSurface;
-      
+      this.lastTrainerUpdateMs = nowMs;
+
+      // The FTMS spec assumes a standard system mass (usually ~83kg).
+      // We must scale the incline and friction so the trainer applies the correct torque for the player's actual weight.
       const assumedTrainerMass = 83;
-      const effectiveCrr = this.physicsConfig.crr * (this.physicsConfig.massKg / assumedTrainerMass);
-      const cwa = 0.5 * this.physicsConfig.rhoAir * this.physicsConfig.cdA;
-      
-      void this.trainer.setSimulationParams(this.smoothGrade, effectiveCrr, cwa);
+      const massRatio = this.physicsConfig.massKg / assumedTrainerMass;
+
+      const effectiveGrade = this.currentGrade * massRatio;
+      const effectiveCrr = this.physicsConfig.crr * massRatio;
+      // Scale CWA to force the trainer to clamp harder at high speeds
+      const cwa = this.physicsConfig.cdA;
+      // commented out to see if this feels better
+      // const cwa = (0.5 * this.physicsConfig.rhoAir * this.physicsConfig.cdA);
+
+      void this.trainer.setSimulationParams(effectiveGrade, effectiveCrr, cwa);
     }
 
     // Drafting
@@ -507,12 +525,19 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Physics
-    const draftModifiers: RunModifiers = this.playerDraftFactor > 0
-      ? { ...this.runModifiers, dragReduction: Math.min(0.99, this.runModifiers.dragReduction + this.playerDraftFactor) }
-      : this.runModifiers;
-    const acceleration = calculateAcceleration(this.latestPower, this.smoothVelocityMs, this.physicsConfig, draftModifiers);
+    if (this.isRealTrainer) {
+      // Directly tie in-game speed to the physical flywheel's speed (bypassing virtual inertia)
+      // We use a fast lerp to smooth out any Bluetooth packet jitter
+      this.smoothVelocityMs += (this.rawTrainerSpeedMs - this.smoothVelocityMs) * dt * 5.0;
+    } else {
+      // Fallback to virtual acceleration for Mock Trainers
+      const draftModifiers: RunModifiers = this.playerDraftFactor > 0
+        ? { ...this.runModifiers, dragReduction: Math.min(0.99, this.runModifiers.dragReduction + this.playerDraftFactor) }
+        : this.runModifiers;
+      const acceleration = calculateAcceleration(this.latestPower, this.smoothVelocityMs, this.physicsConfig, draftModifiers);
+      this.smoothVelocityMs += acceleration * dt;
+    }
 
-    this.smoothVelocityMs += acceleration * dt;
     if (this.smoothVelocityMs < 0) this.smoothVelocityMs = 0;
 
     // Parallax
@@ -626,6 +651,9 @@ export class GameScene extends Phaser.Scene {
     if (data.instantaneousPower !== undefined) {
       this.rawPower = data.instantaneousPower;
       this.updatePowerDisplay();
+    }
+    if (data.instantaneousSpeed !== undefined) {
+      this.rawTrainerSpeedMs = data.instantaneousSpeed / 3.6; // Convert km/h to m/s
     }
     if (data.instantaneousCadence !== undefined) {
       this.hud.updateCadence(data.instantaneousCadence);

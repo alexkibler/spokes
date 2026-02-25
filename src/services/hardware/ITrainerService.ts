@@ -38,4 +38,8 @@ export interface ITrainerService {
    * @param cwa   - Wind resistance coefficient in kg/m (= ½ × ρ_air × CdA)
    */
   setSimulationParams?(grade: number, crr: number, cwa: number): Promise<void>;
+  /**
+   * Optional debug method to download internal logs (for hardware diagnostics).
+   */
+  downloadDebugLog?(): void;
 }

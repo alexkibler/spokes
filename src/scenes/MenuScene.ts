@@ -66,7 +66,7 @@ const PRESETS_MI_KM: number[] = [5, 10, 20, 40, 62, 100, 200].map(mi => mi * MI_
 
 const MIN_KG            =  40;
 const MAX_KG            = 200;
-const DEFAULT_WEIGHT_KG =  150 * LB_TO_KG; // 150 lb default
+const DEFAULT_WEIGHT_KG =  252 * LB_TO_KG; // 252 lb default
 
 const CURSOR_BLINK_MS = 530;
 
@@ -1114,6 +1114,36 @@ export class MenuScene extends Phaser.Scene {
       // Layout: [START RUN] (centred)
       this.buildStartRunButton(0, btnW);
     }
+
+    // Hardware Test Button (Debug)
+    // Placed just below the main start button (y=40 relative to container at y=H-60)
+    const hwTestBtn = this.add.text(0, 42, 'HARDWARE TEST', {
+      fontFamily: THEME.fonts.main, fontSize: '14px', color: '#555577', fontStyle: 'bold'
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    this.startBtnContainer.add(hwTestBtn);
+
+    hwTestBtn.on('pointerover', () => hwTestBtn.setColor('#8888aa'));
+    hwTestBtn.on('pointerout', () => hwTestBtn.setColor('#555577'));
+    hwTestBtn.on('pointerdown', () => {
+      const calibrationCourse = {
+        segments: [
+          { distanceM: 1500, grade: 0.00, surface: 'asphalt' },
+          // { distanceM: 500,  grade: 0.03, surface: 'asphalt' },
+          // { distanceM: 500,  grade: -0.02, surface: 'asphalt' },
+          // { distanceM: 500,  grade: 0.00, surface: 'asphalt' },
+        ],
+        totalDistanceM: 1500
+      };
+
+      this.services.sessionService.setUnits(this.units);
+      this.services.sessionService.setWeightKg(this.weightKg);
+
+      this.scene.start('GameScene', {
+        course: calibrationCourse,
+        isRoguelike: false
+      });
+    });
   }
 
   private buildContinueRunButton(x: number, btnW: number, saved: SavedRun): void {
