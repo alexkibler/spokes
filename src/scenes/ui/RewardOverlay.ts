@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import { THEME } from '../../theme';
-import type { RewardDefinition, RewardRarity } from '../../roguelike/RewardPool';
+import type { RewardDefinition, RewardRarity, EquipmentSlot } from '../../roguelike/registry/types';
 import { RunManager } from '../../roguelike/RunManager';
-import { ITEM_REGISTRY, formatModifierLines } from '../../roguelike/ItemRegistry';
+import { formatModifierLines } from '../../roguelike/ModifierUtils';
 import { Button } from '../../ui/Button';
 import { msToKmh, msToMph } from '../../physics/CyclistPhysics';
 import i18n from '../../i18n';
@@ -261,7 +261,7 @@ export class RewardOverlay extends BaseOverlay {
   private showEquipPrompt(
     itemId: string,
     itemLabel: string,
-    slot: import('../../roguelike/ItemRegistry').EquipmentSlot,
+    slot: EquipmentSlot,
     onDone: () => void,
   ): void {
     const scene = this.scene;
@@ -305,7 +305,7 @@ export class RewardOverlay extends BaseOverlay {
 
     const slotLabel = i18n.t('slots.' + slot);
     if (occupantId) {
-      const occupantDef = ITEM_REGISTRY[occupantId];
+      const occupantDef = this.runManager.registry.getItem(occupantId);
       // occupantDef.label should be a key now, so translate it.
       const occupantName = i18n.t(occupantDef?.label ?? occupantId);
       const warnTxt = scene.add.text(cx, py + 46, [
@@ -384,7 +384,7 @@ export class RewardOverlay extends BaseOverlay {
    */
   private showSwapWarning(
     incomingId: string,
-    slot: import('../../roguelike/ItemRegistry').EquipmentSlot,
+    slot: EquipmentSlot,
     currentId: string,
     onDone: () => void,
   ): void {
@@ -393,8 +393,8 @@ export class RewardOverlay extends BaseOverlay {
     const h = scene.scale.height;
     const cx = w / 2;
 
-    const incomingDef = ITEM_REGISTRY[incomingId];
-    const currentDef  = ITEM_REGISTRY[currentId];
+    const incomingDef = this.runManager.registry.getItem(incomingId);
+    const currentDef  = this.runManager.registry.getItem(currentId);
 
     const MODAL_W = 360;
     const MODAL_H = 220;

@@ -10,10 +10,11 @@ import type { CourseProfile } from '../course/CourseProfile';
 import type { EliteChallenge } from './EliteChallenge';
 import { FitWriter } from '../fit/FitWriter';
 import type { Units } from '../scenes/MenuScene';
-import { ITEM_REGISTRY, type EquipmentSlot } from './ItemRegistry';
 import type { SavedRun } from '../services/SaveService';
+import { ContentRegistry } from './registry/ContentRegistry';
+import { EquipmentSlot, RunModifiers } from './registry/types';
 
-export type { EquipmentSlot };
+export type { EquipmentSlot, RunModifiers };
 
 export type NodeType = 'start' | 'standard' | 'hard' | 'shop' | 'event' | 'elite' | 'finish' | 'boss';
 
@@ -35,17 +36,6 @@ export interface MapEdge {
   to: string;
   profile: CourseProfile;
   isCleared?: boolean; // True if the player has successfully traversed this edge at least once
-}
-
-export interface RunModifiers {
-  /** Multiplicative power bonus. 1.0 = no bonus. Stacks multiplicatively. */
-  powerMult: number;
-  /** Additive drag reduction fraction. 0.0 = none, 0.99 = near vacuum. Capped at 0.99. */
-  dragReduction: number;
-  /** Multiplicative weight factor. 1.0 = normal, 0.01 = near weightless. Stacks multiplicatively, floored at 0.01. */
-  weightMult: number;
-  /** Multiplicative rolling-resistance factor. 1.0 = normal, <1.0 reduces Crr on all surfaces. Floored at 0.01. */
-  crrMult: number;
 }
 
 /** One entry per modifier application; session-only (not persisted). */
@@ -96,7 +86,7 @@ export interface RunData {
 export class RunManager extends Phaser.Events.EventEmitter {
   private runData: RunData | null = null;
 
-  constructor(initialData?: RunData) {
+  constructor(public readonly registry: ContentRegistry, initialData?: RunData) {
     super();
     if (initialData) {
       this.runData = initialData;
@@ -148,7 +138,7 @@ export class RunManager extends Phaser.Events.EventEmitter {
     // Re-apply modifiers from equipped items (modifiers are not persisted).
     for (const itemId of Object.values(this.runData.equipped)) {
       if (!itemId) continue;
-      const def = ITEM_REGISTRY[itemId];
+      const def = this.registry.getItem(itemId);
       if (def?.modifier) {
         this.applyModifier(def.modifier, `${def.label} (equipped)`);
       }
@@ -321,7 +311,7 @@ export class RunManager extends Phaser.Events.EventEmitter {
    */
   equipItem(itemId: string): boolean {
     if (!this.runData) return false;
-    const def = ITEM_REGISTRY[itemId];
+    const def = this.registry.getItem(itemId);
     if (!def?.slot) return false;
 
     const idx = this.runData.inventory.indexOf(itemId);
@@ -350,7 +340,7 @@ export class RunManager extends Phaser.Events.EventEmitter {
     const itemId = this.runData.equipped[slot];
     if (!itemId) return undefined;
 
-    const def = ITEM_REGISTRY[itemId];
+    const def = this.registry.getItem(itemId);
     if (def?.modifier) {
       this.reverseModifier(def.modifier);
       // Remove the corresponding modifierLog entry.

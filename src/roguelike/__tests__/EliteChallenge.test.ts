@@ -20,6 +20,8 @@ import {
   type ChallengeMetrics,
 } from '../EliteChallenge';
 import { RunManager } from '../RunManager';
+import { ContentRegistry } from '../registry/ContentRegistry';
+import { ContentBootstrapper } from '../content/ContentBootstrapper';
 
 // Mock Phaser.Events.EventEmitter to avoid loading Phaser in Node
 vi.mock('phaser', () => {
@@ -317,9 +319,12 @@ describe('formatChallengeText', () => {
 
 describe('grantChallengeReward', () => {
   let runManager: RunManager;
+  let registry: ContentRegistry;
 
   beforeEach(() => {
-    runManager = new RunManager();
+    registry = new ContentRegistry();
+    ContentBootstrapper.bootstrap(registry);
+    runManager = new RunManager(registry);
     runManager.startNewRun(3, 10, 'normal');
   });
 

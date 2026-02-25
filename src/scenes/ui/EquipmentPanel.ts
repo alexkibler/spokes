@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { RunManager } from '../../roguelike/RunManager';
-import { ITEM_REGISTRY, ALL_SLOTS, formatModifierLines, type EquipmentSlot } from '../../roguelike/ItemRegistry';
+import { ALL_SLOTS, type EquipmentSlot } from '../../roguelike/registry/types';
+import { formatModifierLines } from '../../roguelike/ModifierUtils';
 import { THEME } from '../../theme';
 import i18n from '../../i18n';
 
@@ -97,7 +98,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
       this.contentGroup.push(slotLabel);
 
       if (equippedId) {
-        const def = ITEM_REGISTRY[equippedId];
+        const def = this.runManager.registry.getItem(equippedId);
 
         const labelKey = def?.label ?? equippedId;
         const translatedLabel = i18n.exists(`item.${equippedId}`) ? i18n.t(`item.${equippedId}`) : labelKey;
@@ -178,7 +179,7 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
     } else {
        invIds.forEach((itemId, rowIdx) => {
          const count = invCounts.get(itemId) ?? 1;
-         const def   = ITEM_REGISTRY[itemId];
+         const def   = this.runManager.registry.getItem(itemId);
          const isEquipment = !!def?.slot;
          const ry    = rowsStartY + rowIdx * (ROW_H + ROW_GAP);
 
@@ -258,8 +259,8 @@ export class EquipmentPanel extends Phaser.GameObjects.Container {
     const cx = w / 2;
     const cy = h / 2;
 
-    const incomingDef = ITEM_REGISTRY[incomingId];
-    const currentDef  = ITEM_REGISTRY[currentId];
+    const incomingDef = this.runManager.registry.getItem(incomingId);
+    const currentDef  = this.runManager.registry.getItem(currentId);
 
     const MODAL_W = 360;
     const MODAL_H = 220;
