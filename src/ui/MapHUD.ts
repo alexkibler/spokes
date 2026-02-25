@@ -15,11 +15,13 @@ export class MapHUD {
   private gearBtn: Button | null = null;
   private remoteBtn: Button | null = null;
   private returnBtn: Button | null = null;
+  private autoplayBtn: Button | null = null;
 
   private onGearClick: () => void;
   private onRemoteClick: () => void;
   private onReturnClick: () => void;
   private onTeleportClick: () => void;
+  private onAutoplayClick: () => void;
   private remoteService: RemoteService;
 
   constructor(
@@ -30,6 +32,7 @@ export class MapHUD {
       onRemoteClick: () => void;
       onReturnClick: () => void;
       onTeleportClick: () => void;
+      onAutoplayClick: () => void;
     }
   ) {
     this.scene = scene;
@@ -38,6 +41,7 @@ export class MapHUD {
     this.onRemoteClick = callbacks.onRemoteClick;
     this.onReturnClick = callbacks.onReturnClick;
     this.onTeleportClick = callbacks.onTeleportClick;
+    this.onAutoplayClick = callbacks.onAutoplayClick;
 
     this.createStaticElements();
   }
@@ -70,9 +74,10 @@ export class MapHUD {
     // Buttons
     this.createGearButton();
     this.createRemoteButton();
+    this.createAutoplayButton();
   }
 
-  public update(run: RunData, isTeleportMode: boolean): void {
+  public update(run: RunData, isTeleportMode: boolean, isAutoplay: boolean): void {
     // Update Gold
     this.goldText.setText(i18next.t('ui.hud.gold', { amount: run.gold }));
     this.goldText.setX(this.scene.scale.width - 20);
@@ -85,6 +90,9 @@ export class MapHUD {
 
     // Update Remote Button
     this.updateRemoteButton();
+
+    // Update Autoplay Button
+    this.updateAutoplayButton(isAutoplay);
   }
 
   private createGearButton(): void {
@@ -118,6 +126,30 @@ export class MapHUD {
       scrollFactor: 0
     });
     this.remoteBtn.setDepth(THEME.depths.ui + 10);
+  }
+
+  private createAutoplayButton(): void {
+    const y = 84;
+    this.autoplayBtn = new Button(this.scene, {
+      x: 70,
+      y: y,
+      width: 130,
+      height: 26,
+      text: 'AUTOPLAY: OFF',
+      variant: 'secondary',
+      textColor: THEME.colors.text.main,
+      fontSize: '11px',
+      onClick: this.onAutoplayClick,
+      scrollFactor: 0
+    });
+    this.autoplayBtn.setDepth(THEME.depths.ui + 10);
+  }
+
+  private updateAutoplayButton(enabled: boolean): void {
+    if (!this.autoplayBtn) return;
+    this.autoplayBtn.setText(`AUTOPLAY: ${enabled ? 'ON' : 'OFF'}`);
+    this.autoplayBtn.setVariant(enabled ? 'success' : 'secondary');
+    this.autoplayBtn.setTextColor(enabled ? THEME.colors.text.gold : THEME.colors.text.main);
   }
 
   public setRemoteButtonText(text: string, color?: string): void {

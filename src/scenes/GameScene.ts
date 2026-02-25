@@ -884,6 +884,7 @@ export class GameScene extends Phaser.Scene {
           goToMap();
         },
         rerollCount > 0 ? () => {
+          this.services.sessionService.setAutoplay(false);
           this.runManager.removeFromInventory('reroll_voucher');
           if (this.saveManager) this.saveManager.saveRun(this.runManager.exportData());
           overlay.destroy();
@@ -891,6 +892,7 @@ export class GameScene extends Phaser.Scene {
           showOverlay();
         } : null,
         this.runManager,
+        this.services.sessionService,
         headerStats ? { stats: headerStats, units: this.units } : undefined,
       );
     };

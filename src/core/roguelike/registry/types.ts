@@ -40,4 +40,8 @@ export interface RewardDefinition {
   /** Optional: return false to exclude this reward from the pool this run */
   available?: (run: RunManager) => boolean;
   apply: (run: RunManager) => void;
+  /** Optional: The modifiers this reward grants directly (for StatRewards) */
+  statModifiers?: Partial<RunModifiers>;
+  /** Optional: The item ID this reward grants (for ItemRewards). Defaults to reward ID if not specified but equipmentSlot is present. */
+  itemId?: string;
 }

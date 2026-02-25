@@ -9,22 +9,37 @@ import type { ITrainerService } from '../hardware/ITrainerService';
 import { MockTrainerService } from '../hardware/MockTrainerService';
 import { HeartRateService } from '../hardware/HeartRateService';
 import type { Units } from '../../scenes/MenuScene';
+import type { RemoteService } from '../../network/RemoteService';
 
 export class SessionService {
   private _trainer: ITrainerService | null = null;
   private _hrm: HeartRateService | null = null;
   private _units: Units = 'imperial';
   private _weightKg = 75;
+  private _remoteService: RemoteService | null = null;
+  private _autoplayEnabled = false;
 
   get trainer(): ITrainerService | null { return this._trainer; }
   get hrm(): HeartRateService | null { return this._hrm; }
   get units(): Units { return this._units; }
   get weightKg(): number { return this._weightKg; }
+  get autoplayEnabled(): boolean { return this._autoplayEnabled; }
 
   setTrainer(t: ITrainerService | null): void { this._trainer = t; }
   setHrm(h: HeartRateService | null): void { this._hrm = h; }
   setUnits(u: Units): void { this._units = u; }
   setWeightKg(w: number): void { this._weightKg = w; }
+
+  setRemoteService(remote: RemoteService): void {
+    this._remoteService = remote;
+  }
+
+  setAutoplay(enabled: boolean): void {
+    this._autoplayEnabled = enabled;
+    if (this._remoteService) {
+      this._remoteService.sendAutoplayUpdate(enabled);
+    }
+  }
 
   /**
    * Disconnect and forget all device services.

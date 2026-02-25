@@ -9,6 +9,8 @@ import i18n from '../../i18n';
 import type { RideStats } from './RideOverlay';
 import type { Units } from '../../scenes/MenuScene';
 import { BaseOverlay } from './BaseOverlay';
+import { CountdownUI } from '../CountdownUI';
+import type { SessionService } from '../../services/game/SessionService';
 
 const RARITY_STYLE: Record<RewardRarity, { border: number; badgeBg: number; badgeText: string }> = {
   common:   { border: 0x445566, badgeBg: 0x2a3a44, badgeText: '#8899aa' },
@@ -22,12 +24,16 @@ export interface RewardOverlayHeader {
 }
 
 export class RewardOverlay extends BaseOverlay {
+  private countdownUI: CountdownUI;
+  private sessionService: SessionService;
+
   constructor(
     scene: Phaser.Scene,
     rewards: RewardDefinition[],
     onPick: (reward: RewardDefinition) => void,
     onReroll: (() => void) | null,
     runManager: RunManager,
+    sessionService: SessionService,
     header?: RewardOverlayHeader,
   ) {
     const w = scene.scale.width;
@@ -58,6 +64,9 @@ export class RewardOverlay extends BaseOverlay {
 
     this.setScrollFactor(0);
     this.drawPanelBackground(0x0d0d14, 0x3a3a5a);
+
+    this.sessionService = sessionService;
+    this.countdownUI = new CountdownUI(scene, this.panelContainer);
 
     const cx = panW / 2; // relative to panelContainer
 
@@ -163,6 +172,9 @@ export class RewardOverlay extends BaseOverlay {
     const cardsLeft = cx - totalCardsW / 2;
     const cardsTop = bannerY + BANNER_H + SUBTITLE_H + 8;
 
+    // Identify Best Reward
+    const bestReward = this.runManager.getBestReward(rewards);
+
     rewards.forEach((reward, i) => {
       const cardCx = cardsLeft + i * (cardW + CARD_GAP) + cardW / 2;
       const cardCy = cardsTop + CARD_H / 2;
@@ -172,6 +184,35 @@ export class RewardOverlay extends BaseOverlay {
 
       const cardFill = scene.add.rectangle(cardCx, cardCy, cardW, CARD_H, 0x1a1a2c);
       this.panelContainer.add(cardFill);
+
+      // Highlight Best Reward
+      const isBest = reward === bestReward;
+      if (isBest) {
+          const glow = scene.add.graphics();
+          glow.lineStyle(4, 0xffd700, 0.6);
+          glow.strokeRoundedRect(cardL - 4, cardT - 4, cardW + 8, CARD_H + 8, 12);
+          this.panelContainer.add(glow);
+
+          const recText = scene.add.text(cardCx, cardT - 16, 'RECOMMENDED', {
+              fontFamily: THEME.fonts.main, fontSize: '10px', color: '#ffd700', fontStyle: 'bold'
+          }).setOrigin(0.5);
+          this.panelContainer.add(recText);
+
+          if (this.sessionService.autoplayEnabled) {
+              this.countdownUI.startButtonCountdown(cardL, cardT, cardW, CARD_H, 5000, () => {
+                  if (this.sessionService.autoplayEnabled) {
+                      // Trigger pick logic
+                      if (reward.equipmentSlot) {
+                        reward.apply(this.runManager);
+                        const shell: typeof reward = { ...reward, apply: () => {} };
+                        this.showEquipPrompt(reward.id, reward.label, reward.equipmentSlot, () => onPick(shell));
+                      } else {
+                        onPick(reward);
+                      }
+                  }
+              });
+          }
+      }
 
       const cardBorder = scene.add.graphics();
       cardBorder.lineStyle(2, rs.border, 1);
@@ -220,6 +261,12 @@ export class RewardOverlay extends BaseOverlay {
       hitRect.on('pointerover', () => { cardFill.setFillStyle(0x26263a); });
       hitRect.on('pointerout',  () => { cardFill.setFillStyle(0x1a1a2c); });
       hitRect.on('pointerdown', () => {
+        // Cancel Autoplay on interaction
+        if (this.sessionService.autoplayEnabled) {
+            this.sessionService.setAutoplay(false);
+            this.countdownUI.stop();
+        }
+
         if (reward.equipmentSlot) {
           // Apply reward now (adds item to inventory), then let the player
           // decide whether to equip it before leaving.  We pass a shell reward
