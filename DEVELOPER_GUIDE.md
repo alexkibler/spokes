@@ -1,4 +1,4 @@
-# Spokes – Developer Guide
+# Spokes – Developer Guide (formerly Paper Peloton)
 
 > For experienced JS/TS developers with no prior Phaser or game dev experience.
 

@@ -1,0 +1,62 @@
+[gd_scene load_steps=2 format=3 uid="uid://menu_scene"]
+
+[ext_resource type="Script" path="res://scenes/menu/Menu.gd" id="1_menu"]
+
+[node name="Menu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_menu")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -100.0
+offset_top = -100.0
+offset_right = 100.0
+offset_bottom = 100.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="StartButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Start Run"
+
+[node name="ConnectButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Connect Trainer"
+
+[node name="WeightInput" type="LineEdit" parent="VBoxContainer"]
+layout_mode = 2
+placeholder_text = "Weight (kg)"
+
+[node name="FTPInput" type="LineEdit" parent="VBoxContainer"]
+layout_mode = 2
+placeholder_text = "FTP (W)"
+
+[node name="DifficultyOption" type="OptionButton" parent="VBoxContainer"]
+layout_mode = 2
+item_count = 3
+selected = 0
+popup/item_0/text = "Normal"
+popup/item_0/id = 0
+popup/item_1/text = "Hard"
+popup/item_1/id = 1
+popup/item_2/text = "Extreme"
+popup/item_2/id = 2
+
+[node name="UnitsOption" type="OptionButton" parent="VBoxContainer"]
+layout_mode = 2
+item_count = 2
+selected = 0
+popup/item_0/text = "Metric"
+popup/item_0/id = 0
+popup/item_1/text = "Imperial"
+popup/item_1/id = 1
