@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { THEME } from '../../theme';
 import type { RewardDefinition, RewardRarity, EquipmentSlot } from '../../core/roguelike/registry/types';
 import { RunManager } from '../../core/roguelike/RunManager';
+import type { RunModifiers } from '../../core/roguelike/RunManager';
 import { formatModifierLines } from '../../core/roguelike/ModifierUtils';
 import { Button } from '../../components/Button';
 import { msToKmh, msToMph } from '../../core/physics/CyclistPhysics';
@@ -422,6 +423,48 @@ export class RewardOverlay extends BaseOverlay {
     this.add(skipLbl);
     layer.push(skipBg);
     layer.push(skipLbl);
+
+    // Autoplay: auto-click equip or skip after 2 seconds
+    if (this.sessionService.autoplayEnabled) {
+      const calcItemScore = (mod: Partial<RunModifiers>): number => {
+        let s = 0;
+        if (mod.powerMult)     s += (mod.powerMult - 1) * 100;
+        if (mod.dragReduction) s += mod.dragReduction * 100;
+        if (mod.weightMult)    s += (1 - mod.weightMult) * 100;
+        if (mod.crrMult)       s += (1 - mod.crrMult) * 100;
+        return s;
+      };
+
+      const itemDef = this.runManager.registry.getItem(itemId);
+      const newScore = itemDef?.modifier ? calcItemScore(itemDef.modifier) : 0;
+
+      let isImprovement = true;
+      if (occupantId) {
+        const occupantDef = this.runManager.registry.getItem(occupantId);
+        const currentScore = occupantDef?.modifier ? calcItemScore(occupantDef.modifier) : 0;
+        isImprovement = newScore > currentScore;
+      }
+
+      const promptCountdown = new CountdownUI(scene, this as unknown as Phaser.GameObjects.Container);
+
+      // Cancel countdown if user clicks manually
+      equipBg.on('pointerdown', () => promptCountdown.stop());
+      skipBg.on('pointerdown', () => promptCountdown.stop());
+
+      if (isImprovement) {
+        // Countdown on Equip Now button → auto-equip
+        promptCountdown.startButtonCountdown(
+          cx - 137, equipBtnY - 15, 130, 30, 2000,
+          () => { if (this.sessionService.autoplayEnabled) { promptCountdown.destroy(); doEquipAndDone(); } }
+        );
+      } else {
+        // Countdown on Equip Later button → auto-skip
+        promptCountdown.startButtonCountdown(
+          cx + 7, equipBtnY - 15, 130, 30, 2000,
+          () => { if (this.sessionService.autoplayEnabled) { promptCountdown.destroy(); destroyLayer(); onDone(); } }
+        );
+      }
+    }
   }
 
   /**

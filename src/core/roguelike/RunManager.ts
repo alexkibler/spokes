@@ -431,10 +431,20 @@ export class RunManager extends Phaser.Events.EventEmitter {
     const currentNode = run.nodes.find(n => n.id === run.currentNodeId);
     if (!currentNode) return null;
 
+    // Medal gate: don't route to the finish until all medals are collected
+    const medalsHeld = run.inventory.filter(i => i.startsWith('medal_')).length;
+    const medalsNeeded = run.runLength;
+
     // 1. Identify Target (Finish or Boss)
-    // We'll calculate min cost to *any* finish/boss node on the highest floor.
     const maxFloor = Math.max(...run.nodes.map(n => n.floor));
-    const targets = run.nodes.filter(n => n.floor === maxFloor); // Usually just one finish node
+    let targets = run.nodes.filter(n =>
+      n.floor === maxFloor && !(n.type === 'finish' && medalsHeld < medalsNeeded)
+    );
+
+    // If finish was excluded and no other maxFloor nodes remain, target unvisited boss nodes
+    if (targets.length === 0 && medalsHeld < medalsNeeded) {
+      targets = run.nodes.filter(n => n.type === 'boss' && !run.visitedNodeIds.includes(n.id));
+    }
 
     // 2. Compute Costs (DP backwards)
     const costToFinish = new Map<string, number>(); // NodeID -> Min Cost to Finish
