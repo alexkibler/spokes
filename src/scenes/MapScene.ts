@@ -501,6 +501,7 @@ export class MapScene extends Phaser.Scene {
   private closeOverlay(): void {
       this.overlayActive = false;
       this.cameraController.inputEnabled = true;
+      this.checkAutoplay();
   }
 
   private openShop(): void {
@@ -529,7 +530,8 @@ export class MapScene extends Phaser.Scene {
         this.refresh();
         if (this.saveManager) this.saveManager.saveRun(this.runManager.exportData());
       },
-      () => this.closeOverlay()
+      () => this.closeOverlay(),
+      this.services.sessionService
     ));
   }
 
@@ -678,12 +680,15 @@ export class MapScene extends Phaser.Scene {
         onProceed();
       });
 
-    // Autoplay: auto-click RACE! after 2 seconds
+    // Autoplay: auto-click RACE! after delay (screen-space CountdownUI)
     if (this.services.sessionService.autoplayEnabled) {
-      btnHit.on('pointerdown', () => this.countdownUI.stop());
-      this.countdownUI.setDepth(depth + 5);
-      this.countdownUI.startButtonCountdown(btnX, btnY, btnW, btnH, this.services.sessionService.autoplayDelayMs, () => {
+      const overlayCountdown = new CountdownUI(this);
+      overlayCountdown.setScrollFactor(0);
+      overlayCountdown.setDepth(depth + 5);
+      btnHit.on('pointerdown', () => overlayCountdown.stop());
+      overlayCountdown.startButtonCountdown(btnX, btnY, btnW, btnH, this.services.sessionService.autoplayDelayMs, () => {
         if (this.services.sessionService.autoplayEnabled) {
+          overlayCountdown.destroy();
           this.closeOverlay();
           onProceed();
         }

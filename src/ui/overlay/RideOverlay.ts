@@ -3,6 +3,8 @@ import { THEME } from '../../theme';
 import { Button } from '../../components/Button';
 import { msToKmh, msToMph } from '../../core/physics/CyclistPhysics';
 import type { Units } from '../../scenes/MenuScene';
+import { CountdownUI } from '../CountdownUI';
+import type { SessionService } from '../../services/game/SessionService';
 
 export interface RideStats {
   distanceM: number;
@@ -34,7 +36,8 @@ export class RideOverlay extends Phaser.GameObjects.Container {
     isRealTrainer: boolean,
     onContinue: () => void,
     onDownload: () => void,
-    onMenu: () => void
+    onMenu: () => void,
+    sessionService?: SessionService
   ) {
     super(scene, 0, 0);
     this.setDepth(50);
@@ -174,9 +177,25 @@ export class RideOverlay extends Phaser.GameObjects.Container {
         text: btnText,
         variant: 'primary', // TODO: Add gold/victory variant
         textColor: textColor,
-        onClick: onContinue,
+        onClick: () => {
+          continueCountdown?.stop();
+          onContinue();
+        },
       });
       this.add(btn);
+
+      let continueCountdown: CountdownUI | undefined;
+      if (sessionService?.autoplayEnabled) {
+        continueCountdown = new CountdownUI(scene);
+        continueCountdown.setScrollFactor(0);
+        continueCountdown.setDepth(51);
+        continueCountdown.startButtonCountdown(cx - btnW / 2, btnY - btnH / 2, btnW, btnH, sessionService.autoplayDelayMs, () => {
+          if (sessionService.autoplayEnabled) {
+            continueCountdown!.destroy();
+            onContinue();
+          }
+        });
+      }
 
     } else if (isRealTrainer) {
       const dlX = cx - btnW/2 - gap/2;

@@ -24,13 +24,6 @@ export class VictoryScene extends Phaser.Scene {
         saveManager.clearSave();
     }
 
-    // Autoplay transition
-    if (services?.sessionService.autoplayEnabled) {
-        this.time.delayedCall(5000, () => {
-            this.scene.start('MenuScene');
-        });
-    }
-
     const w = this.scale.width;
     const h = this.scale.height;
     const cx = w / 2;

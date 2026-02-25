@@ -860,7 +860,8 @@ export class GameScene extends Phaser.Scene {
       },
       () => {
         this.scene.start('MenuScene');
-      }
+      },
+      this.services.sessionService
     );
   }
 

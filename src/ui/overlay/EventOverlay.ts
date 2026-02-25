@@ -5,12 +5,16 @@ import { Button } from '../../components/Button';
 import { ItemDefinition } from '../../core/roguelike/registry/types';
 import i18n from '../../i18n';
 import { BaseOverlay } from './BaseOverlay';
+import { CountdownUI } from '../CountdownUI';
+import type { SessionService } from '../../services/game/SessionService';
 
 export class EventOverlay extends BaseOverlay {
   private onAction: () => void;
   // private onClose: () => void; // Inherited
+  private countdownUI: CountdownUI;
+  private sessionService: SessionService | undefined;
 
-  constructor(scene: Phaser.Scene, scrollY: number, runManager: RunManager, onAction: () => void, onClose: () => void) {
+  constructor(scene: Phaser.Scene, _scrollY: number, runManager: RunManager, onAction: () => void, onClose: () => void, sessionService?: SessionService) {
     const w = scene.scale.width;
 
     // Panel dimensions logic (moved from original)
@@ -47,14 +51,17 @@ export class EventOverlay extends BaseOverlay {
         scene,
         width: pw,
         height: ph,
-        scrollY,
+        scrollY: 0,
         runManager,
         onClose: undefined, // We implement custom buttons
         hasPanelBackground: true
     });
 
+    this.setScrollFactor(0);
     this.onAction = onAction;
     this.onClose = onClose;
+    this.sessionService = sessionService;
+    this.countdownUI = new CountdownUI(scene, this.panelContainer);
 
     // Custom panel colors
     this.drawPanelBackground(0x0d0d12, 0x2a1a4a);
@@ -100,6 +107,7 @@ export class EventOverlay extends BaseOverlay {
         text: i18n.t('event.attempt', { chance: successPct }),
         variant: 'primary',
         onClick: () => {
+            this.countdownUI.stop();
             this.handleAttempt(item, successChance);
         }
     });
@@ -114,12 +122,24 @@ export class EventOverlay extends BaseOverlay {
         text: i18n.t('event.leave'),
         variant: 'secondary',
         onClick: () => {
+            this.countdownUI.stop();
             this.destroy();
             onAction();
             onClose();
         }
     });
     this.panelContainer.add(leaveBtn);
+
+    // Autoplay: auto-click Attempt after delay
+    if (sessionService?.autoplayEnabled) {
+        const attemptBtnX = padH;
+        const attemptBtnY = btnsStartY;
+        this.countdownUI.startButtonCountdown(attemptBtnX, attemptBtnY, btnWidth, btnHeight, sessionService.autoplayDelayMs, () => {
+            if (sessionService.autoplayEnabled) {
+                this.handleAttempt(item, successChance);
+            }
+        });
+    }
   }
 
   // Changed to static so it can be called before super()
@@ -214,11 +234,26 @@ export class EventOverlay extends BaseOverlay {
           text: i18n.t('event.continue'),
           variant: 'primary',
           onClick: () => {
+              this.countdownUI.stop();
               this.destroy();
               this.onAction();
               this.onClose?.();
           }
       });
       this.panelContainer.add(okBtn);
+
+      // Autoplay: auto-click OK after delay
+      if (this.sessionService?.autoplayEnabled) {
+          const okBtnX = cx - 70;
+          const okBtnY = cy + 67;
+          this.countdownUI.stop();
+          this.countdownUI.startButtonCountdown(okBtnX, okBtnY, 140, 46, this.sessionService.autoplayDelayMs, () => {
+              if (this.sessionService?.autoplayEnabled) {
+                  this.destroy();
+                  this.onAction();
+                  this.onClose?.();
+              }
+          });
+      }
   }
 }
