@@ -6,13 +6,10 @@
  */
 
 import Phaser from 'phaser';
-import { RunManager, type MapNode } from '../roguelike/RunManager';
-import { ContentRegistry } from '../roguelike/registry/ContentRegistry';
-import { ContentBootstrapper } from '../roguelike/content/ContentBootstrapper';
+import type { RunManager, MapNode } from '../roguelike/RunManager';
 import { generateCourseProfile, invertCourseProfile, type CourseProfile } from '../course/CourseProfile';
 import { generateHubAndSpokeMap } from '../course/CourseGenerator';
-import { type EliteChallenge } from '../roguelike/EliteChallenge';
-import { RemoteService } from '../services/RemoteService';
+import type { EliteChallenge } from '../roguelike/EliteChallenge';
 import { createBossRacers, createSpokeBoss, type RacerProfile } from '../race/RacerProfile';
 import { THEME } from '../theme';
 import { ShopOverlay } from './ui/ShopOverlay';
@@ -27,7 +24,9 @@ import { MapStatsPanel } from './ui/MapStatsPanel';
 import { MapModifiersBar } from './ui/MapModifiersBar';
 import { MapHUD } from './ui/MapHUD';
 import { MapCameraController } from './controllers/MapCameraController';
-import { SaveManager } from '../services/SaveManager';
+import type { SaveManager } from '../services/SaveManager';
+import type { GameServices } from '../services/ServiceLocator';
+import i18n from '../i18n';
 
 export class MapScene extends Phaser.Scene {
   private mapRenderer!: MapRenderer;
@@ -37,6 +36,7 @@ export class MapScene extends Phaser.Scene {
   private cameraController!: MapCameraController;
   private runManager!: RunManager;
   private saveManager!: SaveManager;
+  private services!: GameServices;
 
   private isTeleportMode = false;
   private overlayActive = false;
@@ -49,19 +49,12 @@ export class MapScene extends Phaser.Scene {
   }
 
   init(): void {
-    this.runManager = this.registry.get('runManager');
-    if (!this.runManager) {
-        console.error('RunManager not found in registry! Creating fallback.');
-        const reg = this.registry.get('contentRegistry') ?? new ContentRegistry();
-        if (!this.registry.get('contentRegistry')) ContentBootstrapper.bootstrap(reg);
-        this.runManager = new RunManager(reg);
+    this.services = this.registry.get('services') as GameServices;
+    if (!this.services) {
+        throw new Error('GameServices not found in registry!');
     }
-
-    this.saveManager = this.registry.get('saveManager');
-    if (!this.saveManager) {
-        console.warn('SaveManager not found in registry (init fallback?)');
-        // We can't easily create it without storage, assume it exists or fail gracefully
-    }
+    this.runManager = this.services.runManager;
+    this.saveManager = this.services.saveManager;
 
     const run = this.runManager.getRun();
     if (run && run.nodes.length === 0) {
@@ -99,7 +92,7 @@ export class MapScene extends Phaser.Scene {
     this.statsPanel = new MapStatsPanel(this);
     this.modifiersBar = new MapModifiersBar(this);
 
-    this.hud = new MapHUD(this, {
+    this.hud = new MapHUD(this, this.services.remoteService, {
         onGearClick: () => this.openEquipmentOverlay(),
         onRemoteClick: () => this.handleRemoteClick(),
         onReturnClick: () => {
@@ -126,8 +119,8 @@ export class MapScene extends Phaser.Scene {
 
     this.checkPendingNodeAction();
 
-    RemoteService.getInstance().onCursorMove(this.onRemoteCursorMoveBound);
-    RemoteService.getInstance().onCursorSelect(this.onRemoteCursorSelectBound);
+    this.services.remoteService.onCursorMove(this.onRemoteCursorMoveBound);
+    this.services.remoteService.onCursorSelect(this.onRemoteCursorSelectBound);
   }
 
   private refresh(): void {
@@ -167,7 +160,7 @@ export class MapScene extends Phaser.Scene {
   private handleRemoteClick(): void {
       if (this.overlayActive) return;
 
-      const currentCode = RemoteService.getInstance().getRoomCode();
+      const currentCode = this.services.remoteService.getRoomCode();
       if (currentCode) {
         this.overlayActive = true;
         this.cameraController.inputEnabled = false;
@@ -181,7 +174,7 @@ export class MapScene extends Phaser.Scene {
       this.hud.setRemoteButtonText('CONNECTING...');
       
       // We perform the async operation here
-      RemoteService.getInstance().initHost().then(newCode => {
+      this.services.remoteService.initHost().then(newCode => {
           this.hud.setRemoteButtonText(`REMOTE: ${newCode}`, '#00ff88'); // Handled by HUD update too, but instant feedback
           this.overlayActive = true;
           this.cameraController.inputEnabled = false;
@@ -412,12 +405,13 @@ export class MapScene extends Phaser.Scene {
 
     const splashRacer = destNode?.type === 'boss' ? racers[0] : racers[4];
     if (racers.length > 0 && splashRacer) {
+      const spokeId = destNode?.metadata?.spokeId;
       this.showBossEncounterSplash(splashRacer, () => {
         this.scene.start('GameScene', {
           course, isBackwards,
           isRoguelike: true, activeChallenge: null, racers,
         });
-      });
+      }, spokeId);
     } else {
       this.scene.start('GameScene', {
         course, isBackwards,
@@ -538,7 +532,7 @@ export class MapScene extends Phaser.Scene {
     });
   }
 
-  private showBossEncounterSplash(racer: RacerProfile, onProceed: () => void): void {
+  private showBossEncounterSplash(racer: RacerProfile, onProceed: () => void, spokeId?: string): void {
     const w  = this.scale.width;
     const h  = this.scale.height;
     const cx = w / 2;
@@ -567,7 +561,9 @@ export class MapScene extends Phaser.Scene {
     panel.fillStyle(racer.accentColor, 1);
     panel.fillRect(px, py, panW, 6);
 
-    this.add.text(cx, py + 22, '⚠ FINAL BOSS', {
+    const titleText = spokeId ? '⚠ ' + i18n.t(`biomes.${spokeId}.name`) + ' BOSS' : '⚠ FINAL BOSS';
+
+    this.add.text(cx, py + 22, titleText, {
       fontFamily: mono, fontSize: '11px', color: racer.accentHex, letterSpacing: 4,
     }).setOrigin(0.5, 0).setDepth(depth + 2).setScrollFactor(0);
 
@@ -636,7 +632,7 @@ export class MapScene extends Phaser.Scene {
     this.hud.destroy();
     this.cameraController.destroy();
 
-    RemoteService.getInstance().offCursorMove(this.onRemoteCursorMoveBound);
-    RemoteService.getInstance().offCursorSelect(this.onRemoteCursorSelectBound);
+    this.services.remoteService.offCursorMove(this.onRemoteCursorMoveBound);
+    this.services.remoteService.offCursorSelect(this.onRemoteCursorSelectBound);
   }
 }

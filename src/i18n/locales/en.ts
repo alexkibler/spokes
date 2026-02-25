@@ -205,6 +205,17 @@ export const en = {
     cancel: 'CANCEL'
   },
 
+  biomes: {
+    plains: { name: 'PLAINS' },
+    coast: { name: 'COAST' },
+    mountain: { name: 'MOUNTAIN' },
+    forest: { name: 'FOREST' },
+    desert: { name: 'DESERT' },
+    tundra: { name: 'TUNDRA' },
+    canyon: { name: 'CANYON' },
+    jungle: { name: 'JUNGLE' },
+  },
+
   ui: {
     stats: {
       title: 'RUN STATS',

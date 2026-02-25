@@ -1,20 +1,18 @@
 import { io, Socket } from 'socket.io-client';
-import type { RunModifiers, ModifierLogEntry } from '../roguelike/RunManager';
+import type {
+  CursorDirection,
+  PauseStateData,
+  CreateRoomResponse,
+  ClientConnectedPayload,
+  ClientInputPayload,
+  HostStateUpdatePayload,
+  HostResumeStatePayload
+} from '../shared/network/types';
 
-export type CursorDirection = 'up' | 'down' | 'left' | 'right';
-
-export interface PauseStateData {
-  inventory: string[];
-  equipped: Record<string, string>;
-  modifiers: RunModifiers;
-  modifierLog: ModifierLogEntry[];
-  ftpW: number;
-  gold: number;
-  isRoguelike: boolean;
-}
+// Re-export for consumers (MapScene, GameScene)
+export type { CursorDirection, PauseStateData };
 
 export class RemoteService {
-  private static instance: RemoteService;
   private socket: Socket | null = null;
   private roomCode: string | null = null;
 
@@ -27,14 +25,7 @@ export class RemoteService {
   private backToMapHandlers: (() => void)[] = [];
   private saveQuitHandlers: (() => void)[] = [];
 
-  private constructor() {}
-
-  public static getInstance(): RemoteService {
-    if (!RemoteService.instance) {
-      RemoteService.instance = new RemoteService();
-    }
-    return RemoteService.instance;
-  }
+  public constructor() {}
 
   public async initHost(): Promise<string> {
     if (this.roomCode) return this.roomCode;
@@ -60,7 +51,7 @@ export class RemoteService {
   }
 
   private doCreateRoom(resolve: (code: string) => void, reject: (err: any) => void) {
-    this.socket!.emit('HOST_CREATE_ROOM', (response: { roomCode?: string; error?: string }) => {
+    this.socket!.emit('HOST_CREATE_ROOM', (response: CreateRoomResponse) => {
       if (response.error) {
         reject(response.error);
       } else if (response.roomCode) {
@@ -79,7 +70,7 @@ export class RemoteService {
     this.socket.off('CLIENT_INPUT');
     this.socket.off('CLIENT_CONNECTED');
 
-    this.socket.on('CLIENT_INPUT', (payload: any) => {
+    this.socket.on('CLIENT_INPUT', (payload: ClientInputPayload) => {
       console.log('Received input:', payload);
       if (payload.type === 'dpad') {
         this.emitCursorMove(payload.direction);
@@ -98,12 +89,12 @@ export class RemoteService {
       }
     });
 
-    this.socket.on('CLIENT_CONNECTED', (payload: any) => {
+    this.socket.on('CLIENT_CONNECTED', (payload: ClientConnectedPayload) => {
         console.log('Client connected:', payload);
     });
   }
 
-  public sendStateUpdate(data: any) {
+  public sendStateUpdate(data: HostStateUpdatePayload) {
     if (this.socket && this.roomCode) {
       this.socket.emit('HOST_STATE_UPDATE', data);
     }
@@ -117,7 +108,8 @@ export class RemoteService {
 
   public sendResumeState() {
     if (this.socket && this.roomCode) {
-      this.socket.emit('HOST_RESUME_STATE', {});
+      const payload: HostResumeStatePayload = {};
+      this.socket.emit('HOST_RESUME_STATE', payload);
     }
   }
 

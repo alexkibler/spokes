@@ -1,5 +1,13 @@
 import { io, Socket } from 'socket.io-client';
 import i18n from '../i18n';
+import type {
+  HostStateUpdatePayload,
+  PauseStateData,
+  JoinRoomResponse,
+  ClientInputType,
+  ClientInputPayload,
+  JoinRoomPayload
+} from '../shared/network/types';
 
 const socket: Socket = io();
 
@@ -220,8 +228,8 @@ document.head.appendChild(style);
 
 let roomCode: string | null = new URLSearchParams(window.location.search).get('code');
 let isConnected = false;
-let gameState: any = {};
-let pauseState: any = null;
+let gameState: HostStateUpdatePayload | null = null;
+let pauseState: PauseStateData | null = null;
 let currentView: 'join' | 'map' | 'ride' | 'pause' = 'join';
 let lastStateTime = 0;
 
@@ -242,7 +250,7 @@ socket.on('disconnect', () => {
   render();
 });
 
-socket.on('HOST_STATE_UPDATE', (state) => {
+socket.on('HOST_STATE_UPDATE', (state: HostStateUpdatePayload) => {
   gameState = state;
   if (currentView === 'pause') return; // Don't switch away from pause mid-update
   if (currentView !== 'ride') {
@@ -252,7 +260,7 @@ socket.on('HOST_STATE_UPDATE', (state) => {
   render();
 });
 
-socket.on('HOST_PAUSE_STATE', (state) => {
+socket.on('HOST_PAUSE_STATE', (state: PauseStateData) => {
   pauseState = state;
   currentView = 'pause';
   render();
@@ -275,7 +283,8 @@ setInterval(() => {
 
 function joinRoom(code: string) {
   code = code.toUpperCase();
-  socket.emit('CLIENT_JOIN_ROOM', { roomCode: code }, (response: any) => {
+  const payload: JoinRoomPayload = { roomCode: code };
+  socket.emit('CLIENT_JOIN_ROOM', payload, (response: JoinRoomResponse) => {
     if (response.success) {
       roomCode = code;
       isConnected = true;
@@ -289,9 +298,10 @@ function joinRoom(code: string) {
   });
 }
 
-function sendInput(type: string, payload: any = {}) {
+function sendInput(type: ClientInputType, payload: any = {}) {
   if (!isConnected) return;
-  socket.emit('CLIENT_INPUT', { type, ...payload });
+  const msg = { type, ...payload } as ClientInputPayload;
+  socket.emit('CLIENT_INPUT', msg);
 }
 
 // Render logic
@@ -471,7 +481,7 @@ function renderRide() {
 }
 
 function renderPause() {
-  const ps = pauseState ?? {};
+  const ps: Partial<PauseStateData> = pauseState ?? {};
   const inventory: string[] = ps.inventory ?? [];
   const modifiers = ps.modifiers ?? { powerMult: 1.0, dragReduction: 0.0, weightMult: 1.0, crrMult: 1.0 };
   const equipped: Record<string, string> = ps.equipped ?? {};
@@ -625,8 +635,10 @@ function renderPause() {
         sendInput('item', { itemId });
         if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
         // Remove one instance from local state for feedback
-        const idx = pauseState?.inventory?.indexOf(itemId);
-        if (idx !== undefined && idx >= 0) pauseState.inventory.splice(idx, 1);
+        if (pauseState && pauseState.inventory) {
+          const idx = pauseState.inventory.indexOf(itemId);
+          if (idx >= 0) pauseState.inventory.splice(idx, 1);
+        }
         renderPause();
       }
     };

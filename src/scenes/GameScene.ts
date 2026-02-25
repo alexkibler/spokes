@@ -11,9 +11,8 @@ import type { RideRecord } from '../fit/FitWriter';
 import type { ITrainerService, TrainerData } from '../services/ITrainerService';
 import { MockTrainerService } from '../services/MockTrainerService';
 import type { HeartRateData } from '../services/HeartRateService';
-import { RemoteService, type CursorDirection } from '../services/RemoteService';
-import { SessionService } from '../services/SessionService';
-import { RunManager, type RunModifiers } from '../roguelike/RunManager';
+import type { CursorDirection } from '../services/RemoteService';
+import type { RunManager, RunModifiers } from '../roguelike/RunManager';
 import { ContentRegistry } from '../roguelike/registry/ContentRegistry';
 import { ContentBootstrapper } from '../roguelike/content/ContentBootstrapper';
 import { evaluateChallenge, grantChallengeReward, type EliteChallenge } from '../roguelike/EliteChallenge';
@@ -53,7 +52,9 @@ import { RaceGapPanel } from './ui/RaceGapPanel';
 import { ChallengePanel, type ChallengeStats } from './ui/ChallengePanel';
 import { BottomControls } from './ui/BottomControls';
 import { EnvironmentEffectsUI, type ActiveEffect, EFFECT_META } from './ui/EnvironmentEffectsUI';
-import { SaveManager } from '../services/SaveManager';
+import type { SaveManager } from '../services/SaveManager';
+import type { GameServices } from '../services/ServiceLocator';
+import { RunManager as RunManagerClass } from '../roguelike/RunManager';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -164,6 +165,7 @@ export class GameScene extends Phaser.Scene {
 
   private runManager!: RunManager;
   private saveManager!: SaveManager;
+  private services!: GameServices;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -195,35 +197,36 @@ export class GameScene extends Phaser.Scene {
     racers?: RacerProfile[];
     racer?: RacerProfile | null;
   }): void {
+    this.services = this.registry.get('services') as GameServices;
+    if (!this.services) {
+        throw new Error('GameServices not found in registry!');
+    }
+    this.runManager = this.services.runManager;
+    this.saveManager = this.services.saveManager;
+
     this.course = data?.course ?? DEFAULT_COURSE;
-    this.units    = SessionService.units;
-    this.weightKg = SessionService.weightKg;
+    this.units    = this.services.sessionService.units;
+    this.weightKg = this.services.sessionService.weightKg;
     this.isRoguelike         = data?.isRoguelike ?? false;
     this.isBackwards         = data?.isBackwards ?? false;
     this.activeChallenge     = data?.activeChallenge ?? null;
     this.racerProfiles = data?.racers ?? (data?.racer ? [data.racer] : []);
 
     if (this.isRoguelike) {
-        this.runManager = this.registry.get('runManager');
         if (!this.runManager) {
              console.error('RunManager missing in roguelike mode');
              // Fallback registry
              const reg = this.registry.get('contentRegistry') ?? new ContentRegistry();
              if (!this.registry.get('contentRegistry')) ContentBootstrapper.bootstrap(reg);
-             this.runManager = new RunManager(reg);
+             this.runManager = new RunManagerClass(reg);
         }
         this.ftpW = this.runManager.getRun()?.ftpW ?? 200;
-
-        this.saveManager = this.registry.get('saveManager');
-        if (!this.saveManager) {
-            console.warn('SaveManager not found in registry (init fallback?)');
-        }
     } else {
         // Non-roguelike mode still needs a run manager instance for some logic (or we refactor to not need it)
         // For now, create a dummy one with a registry.
         const reg = this.registry.get('contentRegistry') ?? new ContentRegistry();
         if (!this.registry.get('contentRegistry')) ContentBootstrapper.bootstrap(reg);
-        this.runManager = new RunManager(reg);
+        this.runManager = new RunManagerClass(reg);
         this.ftpW = 200; // Default for demo
     }
 
@@ -332,7 +335,7 @@ export class GameScene extends Phaser.Scene {
     this.bottomControls = new BottomControls(this,
       () => this.showPauseOverlay(),
       () => {
-        const code = RemoteService.getInstance().getRoomCode();
+        const code = this.services.remoteService.getRoomCode();
         if (code) {
           new RemotePairingOverlay(this, code, () => {});
         }
@@ -340,7 +343,7 @@ export class GameScene extends Phaser.Scene {
     );
 
     // Init Remote
-    RemoteService.getInstance().initHost()
+    this.services.remoteService.initHost()
       .then((code) => {
         if (this.bottomControls && this.sys.isActive()) {
           this.bottomControls.setRemoteStatus(`CODE: ${code}`);
@@ -357,8 +360,8 @@ export class GameScene extends Phaser.Scene {
     this.onResize();
 
     // ── Trainer ─────────────────────────────────────────────────────────────
-    SessionService.disconnectMock();
-    const preConnectedTrainer = SessionService.trainer;
+    this.services.sessionService.disconnectMock();
+    const preConnectedTrainer = this.services.sessionService.trainer;
 
     if (preConnectedTrainer) {
       this.trainer = preConnectedTrainer;
@@ -377,7 +380,7 @@ export class GameScene extends Phaser.Scene {
       this.bottomControls.setStatus('demo', `SIM ${simPower}W`);
     }
 
-    const preConnectedHrm = SessionService.hrm;
+    const preConnectedHrm = this.services.sessionService.hrm;
     if (preConnectedHrm) {
       preConnectedHrm.onData((data) => this.handleHrmData(data));
     }
@@ -390,13 +393,13 @@ export class GameScene extends Phaser.Scene {
       this.runModifiers = this.runManager.getModifiers();
     }
 
-    RemoteService.getInstance().onUseItem(this.onRemoteUseItemBound);
-    RemoteService.getInstance().onPause(this.onRemotePauseBound);
-    RemoteService.getInstance().onCursorMove(this.onRemoteCursorMoveBound);
-    RemoteService.getInstance().onCursorSelect(this.onRemoteCursorSelectBound);
-    RemoteService.getInstance().onResume(this.onRemoteResumeBound);
-    RemoteService.getInstance().onBackToMap(this.onRemoteBackToMapBound);
-    RemoteService.getInstance().onSaveQuit(this.onRemoteSaveQuitBound);
+    this.services.remoteService.onUseItem(this.onRemoteUseItemBound);
+    this.services.remoteService.onPause(this.onRemotePauseBound);
+    this.services.remoteService.onCursorMove(this.onRemoteCursorMoveBound);
+    this.services.remoteService.onCursorSelect(this.onRemoteCursorSelectBound);
+    this.services.remoteService.onResume(this.onRemoteResumeBound);
+    this.services.remoteService.onBackToMap(this.onRemoteBackToMapBound);
+    this.services.remoteService.onSaveQuit(this.onRemoteSaveQuitBound);
   }
 
   private buildGhostStates(): void {
@@ -418,7 +421,7 @@ export class GameScene extends Phaser.Scene {
     const nowMs = Date.now();
     if (nowMs - this.lastStateUpdateMs >= 250) {
       this.lastStateUpdateMs = nowMs;
-      RemoteService.getInstance().sendStateUpdate({
+      this.services.remoteService.sendStateUpdate({
         instantaneousPower: Math.round(this.latestPower),
         speedMs: this.smoothVelocityMs,
         distanceM: this.distanceM,
@@ -888,7 +891,7 @@ export class GameScene extends Phaser.Scene {
       onResume: () => {
         this.overlayVisible = false;
         this.activePauseOverlay = null;
-        RemoteService.getInstance().sendResumeState();
+        this.services.remoteService.sendResumeState();
       },
       onBackToMap: () => {
         this.overlayVisible = false;
@@ -907,7 +910,7 @@ export class GameScene extends Phaser.Scene {
 
     // Tell the remote the game is paused so it can show the pause screen
     const run = this.runManager.getRun();
-    RemoteService.getInstance().sendPauseState({
+    this.services.remoteService.sendPauseState({
       inventory: run?.inventory ?? [],
       equipped: (run?.equipped ?? {}) as Record<string, string>,
       modifiers: this.runModifiers,
@@ -947,7 +950,7 @@ export class GameScene extends Phaser.Scene {
       this.overlayVisible = false;
       this.activePauseOverlay.destroy();
       this.activePauseOverlay = null;
-      RemoteService.getInstance().sendResumeState();
+      this.services.remoteService.sendResumeState();
     }
   }
 
@@ -976,13 +979,13 @@ export class GameScene extends Phaser.Scene {
     if (this.trainer instanceof MockTrainerService) {
       this.trainer.disconnect();
     }
-    RemoteService.getInstance().offUseItem(this.onRemoteUseItemBound);
-    RemoteService.getInstance().offPause(this.onRemotePauseBound);
-    RemoteService.getInstance().offCursorMove(this.onRemoteCursorMoveBound);
-    RemoteService.getInstance().offCursorSelect(this.onRemoteCursorSelectBound);
-    RemoteService.getInstance().offResume(this.onRemoteResumeBound);
-    RemoteService.getInstance().offBackToMap(this.onRemoteBackToMapBound);
-    RemoteService.getInstance().offSaveQuit(this.onRemoteSaveQuitBound);
+    this.services.remoteService.offUseItem(this.onRemoteUseItemBound);
+    this.services.remoteService.offPause(this.onRemotePauseBound);
+    this.services.remoteService.offCursorMove(this.onRemoteCursorMoveBound);
+    this.services.remoteService.offCursorSelect(this.onRemoteCursorSelectBound);
+    this.services.remoteService.offResume(this.onRemoteResumeBound);
+    this.services.remoteService.offBackToMap(this.onRemoteBackToMapBound);
+    this.services.remoteService.offSaveQuit(this.onRemoteSaveQuitBound);
     this.hud?.destroy();
     this.elevGraph?.destroy();
     this.rideOverlay?.destroy();
