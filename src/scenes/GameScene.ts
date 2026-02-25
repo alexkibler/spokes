@@ -201,12 +201,17 @@ export class GameScene extends Phaser.Scene {
     if (!this.services) {
         throw new Error('GameServices not found in registry!');
     }
+    const preConnectedTrainer = this.services.sessionService.trainer;
+    const isRealTrainer = preConnectedTrainer && !(preConnectedTrainer instanceof MockTrainerService);
+    const initialPower = isRealTrainer ? 0 : DEMO_POWER_WATTS;
     this.runManager = this.services.runManager;
     this.saveManager = this.services.saveManager;
 
     this.course = data?.course ?? DEFAULT_COURSE;
     this.units    = this.services.sessionService.units;
     this.weightKg = this.services.sessionService.weightKg;
+    this.latestPower      = initialPower;
+    this.rawPower         = initialPower;
     this.isRoguelike         = data?.isRoguelike ?? false;
     this.isBackwards         = data?.isBackwards ?? false;
     this.activeChallenge     = data?.activeChallenge ?? null;
@@ -244,11 +249,11 @@ export class GameScene extends Phaser.Scene {
     this.smoothGrade      = 0;
     this.lastSentGrade    = -999;
     this.lastSentSurface  = null;
-    this.latestPower      = DEMO_POWER_WATTS;
+    this.latestPower      = initialPower;
     this.crankAngle       = 0;
     this.cadenceHistory   = [];
     this.avgCadence       = 0;
-    this.rawPower         = DEMO_POWER_WATTS;
+    this.rawPower         = initialPower;
     this.activeEffect     = null;
     this.physicsConfig    = { ...this.basePhysics };
     this.rideComplete       = false;
