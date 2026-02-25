@@ -505,7 +505,9 @@ export class GameScene extends Phaser.Scene {
       const effectiveGrade = this.currentGrade * massRatio;
       const effectiveCrr = this.physicsConfig.crr * massRatio;
       // Scale CWA to force the trainer to clamp harder at high speeds
-      const cwa = (0.5 * this.physicsConfig.rhoAir * this.physicsConfig.cdA);
+      const cwa = this.physicsConfig.cdA;
+      // commented out to see if this feels better
+      // const cwa = (0.5 * this.physicsConfig.rhoAir * this.physicsConfig.cdA);
 
       void this.trainer.setSimulationParams(effectiveGrade, effectiveCrr, cwa);
     }
