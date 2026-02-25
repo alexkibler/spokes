@@ -58,7 +58,6 @@ import { RunManager as RunManagerClass } from '../core/roguelike/RunManager';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const GRADE_SEND_THRESHOLD = 0.001;
 const GRADE_LERP_RATE = 1.0;
 
 interface GhostState {
@@ -238,8 +237,10 @@ export class GameScene extends Phaser.Scene {
     console.log(`[SPOKES] GameScene.init: isRoguelike=${this.isRoguelike} activeChallenge=${this.activeChallenge?.id ?? 'none'} racers=${this.racerProfiles.length} ftpW=${this.ftpW}`);
 
     const massKg = this.weightKg + 8;
-    const cdA = 0.325 * Math.pow(this.weightKg / 75, 0.66);
-    this.basePhysics = { ...DEFAULT_PHYSICS, massKg, cdA };
+    // Scale the aerodynamic profile dynamically from our known 114.3 kg (252 lb) calibrated baseline
+    const cdA = 0.416 * Math.pow(this.weightKg / 114.3, 0.66);
+    const crr = 0.0041; // Our calibrated Saris H3 baseline friction
+    this.basePhysics = { ...DEFAULT_PHYSICS, massKg, cdA, crr };
 
     // Reset state
     this.distanceM        = 0;
@@ -318,7 +319,7 @@ export class GameScene extends Phaser.Scene {
     this.physicsConfig = {
       ...this.basePhysics,
       grade: this.currentGrade,
-      crr:   getCrrForSurface(this.currentSurface) * (this.runModifiers.crrMult ?? 1),
+      crr: this.basePhysics.crr * (getCrrForSurface(this.currentSurface) / CRR_BY_SURFACE['asphalt']) * (this.runModifiers.crrMult ?? 1),
     };
     this.parallaxBg.setSurface(this.currentSurface);
 
@@ -474,7 +475,7 @@ export class GameScene extends Phaser.Scene {
       this.physicsConfig = {
         ...this.basePhysics,
         grade: this.currentGrade,
-        crr:   getCrrForSurface(this.currentSurface) * (this.runModifiers.crrMult ?? 1),
+        crr: this.basePhysics.crr * (getCrrForSurface(this.currentSurface) / CRR_BY_SURFACE['asphalt']) * (this.runModifiers.crrMult ?? 1),
       };
     }
 
@@ -486,17 +487,17 @@ export class GameScene extends Phaser.Scene {
 
     if (
       this.trainer.setSimulationParams &&
-      (Math.abs(this.smoothGrade - this.lastSentGrade) >= GRADE_SEND_THRESHOLD ||
+      (this.currentGrade !== this.lastSentGrade ||
        this.currentSurface !== this.lastSentSurface)
     ) {
-      this.lastSentGrade   = this.smoothGrade;
+      this.lastSentGrade   = this.currentGrade;
       this.lastSentSurface = this.currentSurface;
-      
+
       const assumedTrainerMass = 83;
       const effectiveCrr = this.physicsConfig.crr * (this.physicsConfig.massKg / assumedTrainerMass);
       const cwa = 0.5 * this.physicsConfig.rhoAir * this.physicsConfig.cdA;
-      
-      void this.trainer.setSimulationParams(this.smoothGrade, effectiveCrr, cwa);
+
+      void this.trainer.setSimulationParams(this.currentGrade, effectiveCrr, cwa);
     }
 
     // Drafting
